@@ -1,0 +1,28 @@
+# secrets
+.env
+.env.*
+*.env
+!.env.example
+
+# tool caches, builds, and the Flutter version that fvm links
+.dart_tool/
+.flutter-plugins-dependencies
+.fvm/
+build/
+coverage/
+
+# the macOS project: generated files, pods, and the settings of each user
+macos/Flutter/ephemeral/
+macos/Pods/
+macos/**/xcuserdata/
+macos/**/dgph
+# the Monero library that tool/fetch_monero_c.sh downloads and checks
+macos/Libraries/
+
+# logs
+*.log
+
+# operating system and editor files
+.DS_Store
+.idea/
+*.iml
