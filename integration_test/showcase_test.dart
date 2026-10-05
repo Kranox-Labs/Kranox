@@ -54,18 +54,23 @@ const Duration _patience = Duration(seconds: 30);
 const double _qrSize = 240;
 const double _qrQuietZone = 16;
 
-/// A stagenet address of a throwaway wallet, as in test/core/address_test.dart: the recipient of the sample payment.
+/// A mainnet address of a throwaway wallet, as in test/core/address_test.dart: the recipient of the sample payment.
 const String _recipientAddress =
-    '54gC41sfYPoXMRg6ytR2hRTtwK2TES1cbZ1KPxxXKAv2drLzkQbakX4ifsEGq2SZo5WeXHRM7hLRA1YC3F6Eyu6aLwnPUng';
+    '48PFnHrr8bVGx463yo8SMXGZUp7PyYPgwZJR4MnpgjKCDXpw3XvK6UTbarKkpwaPbPSYSdJ4rozjZjGxr2t3qVP4B4DzzVs';
 
-/// A stagenet subaddress of a throwaway wallet, as in test/core/address_test.dart.
+/// A mainnet subaddress of a throwaway wallet, as in test/core/address_test.dart: the receive address of the sample.
 const String _sampleAddress =
+    '883z7Wmbd5nhoH6xQxLzgniNhN6jqdvxFiza4rMdErWA1XW1TCL1tqrCwWFwhG1QkuL17RRHP45J33y6u4sH8Rfa7kryRza';
+
+/// A stagenet subaddress of a throwaway wallet for the QR code of the receive widget of the site. A code on the site
+/// that anyone can scan must never take real XMR, so it holds a stagenet address.
+const String _qrAddress =
     '7BNzVRGC5eFgRd1oQzSiTN3bpUQyH8MELWpBLU8TDHZaCswUbfDnZKnUaKVC6F4SWcNCbLtC8s9FctBAqKwg2ygJCL4H5h';
 
 XmrAmount _xmr(String text) => XmrAmount.parse(text);
 
-/// The sample addresses belong to stagenet, so the pictures show the app on stagenet.
-const MoneroNetwork _network = MoneroNetwork.stagenet;
+/// The pictures show the app on mainnet, as the release 0.1.0 starts, so the sample addresses belong to mainnet.
+const MoneroNetwork _network = MoneroNetwork.mainnet;
 const AppSettings _settings = AppSettings(network: _network);
 
 /// The answers of a wallet that holds a large balance and has paid and been paid a few times.
@@ -74,7 +79,8 @@ final class _SampleBackend implements WalletBackend {
 
   final DateTime _now;
 
-  static const int _height = 2222040;
+  // The height of mainnet: CHECKED 5 Oct 2026, source get_info of xmr-node.cakewallet.com:18081.
+  static const int _height = 3777437;
 
   // Four transfers: the home page shows them all without cutting the last one at the foot of the window.
   late final List<WalletTransfer> _history = [
@@ -419,7 +425,7 @@ void main() {
               child: Padding(
                 padding: const EdgeInsets.all(_qrQuietZone),
                 child: QrImageView(
-                  data: _sampleAddress,
+                  data: _qrAddress,
                   size: _qrSize,
                   padding: EdgeInsets.zero,
                   backgroundColor: BrandColors.white,
