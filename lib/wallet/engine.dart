@@ -262,7 +262,14 @@ final class WalletEngine {
     _pending = null;
     _wallet = null;
     _path = null;
-    monero.WalletManager_closeWallet(_manager, wallet, true);
+    // closeWallet with its store flag writes the file while the scan of wallet2 may still run, and the two break the
+    // hash chain of the wallet: CHECKED 5 Oct 2026, the app crashed in trim_hashchain and in the serialization of the
+    // hash chain when it locked a stagenet wallet that had just caught up. Wallet_store stops a running scan and waits
+    // for it (the patch "store crash fix" of monero_c), and the paused scan does not start again. A failed write
+    // costs only a new scan from the keys file at the next unlock, so the wallet closes either way.
+    monero.Wallet_pauseRefresh(wallet);
+    monero.Wallet_store(wallet);
+    monero.WalletManager_closeWallet(_manager, wallet, false);
     return null;
   }
 
