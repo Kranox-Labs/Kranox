@@ -141,12 +141,13 @@ final class WalletEngine {
   }
 
   WalletTransfer _transfer(monero.TransactionInfo info) {
-    final subaddresses = monero.TransactionInfo_subaddrIndex(info).split(_listSeparator);
+    final incoming = monero.TransactionInfo_direction(info) == monero.TransactionInfo_Direction.In;
+    // Only an incoming transfer shows its subaddress, and it always has one. monero_c gives an empty set as a static
+    // "" that its Dart binding then frees, which crashes the app, so the app never asks for the set of a payment out.
+    final subaddresses = incoming ? monero.TransactionInfo_subaddrIndex(info).split(_listSeparator) : const <String>[];
     return WalletTransfer(
       hash: monero.TransactionInfo_hash(info),
-      direction: monero.TransactionInfo_direction(info) == monero.TransactionInfo_Direction.In
-          ? TransferDirection.incoming
-          : TransferDirection.outgoing,
+      direction: incoming ? TransferDirection.incoming : TransferDirection.outgoing,
       amount: XmrAmount(monero.TransactionInfo_amount(info)),
       fee: XmrAmount(monero.TransactionInfo_fee(info)),
       time: DateTime.fromMillisecondsSinceEpoch(monero.TransactionInfo_timestamp(info) * 1000),
@@ -154,7 +155,7 @@ final class WalletEngine {
       confirmations: monero.TransactionInfo_confirmations(info),
       isPending: monero.TransactionInfo_isPending(info),
       isFailed: monero.TransactionInfo_isFailed(info),
-      subaddressIndex: int.tryParse(subaddresses.first.trim()),
+      subaddressIndex: subaddresses.isEmpty ? null : int.tryParse(subaddresses.first.trim()),
     );
   }
 
@@ -206,16 +207,21 @@ final class WalletEngine {
       throw StateError('No payment waits for its confirmation.');
     }
     _pending = null;
-    final committed = monero.PendingTransaction_commit(pending, filename: '', overwrite: false);
-    _checkPending(pending);
-    if (!committed) {
-      throw WalletException(WalletFailure.native, monero.PendingTransaction_errorString(pending));
-    }
+    // The id, the amount, and the fee come before the commit: a commit sends each transaction and drops it from the
+    // pending payment, so afterwards the amount and the fee read 0, and monero_c gives the id of an empty list as a
+    // static "" that its Dart binding then frees. CHECKED 5 Oct 2026: the app crashed with "pointer being freed was not
+    // allocated" right after the first payment on mainnet left the wallet (vectorToString in helpers.cpp of
+    // monero_c v0.18.4.6-RC2, and PendingTransactionImpl::commit of wallet2).
     final payment = SentPayment(
       transactionId: monero.PendingTransaction_txid(pending, _listSeparator),
       amount: XmrAmount(monero.PendingTransaction_amount(pending)),
       fee: XmrAmount(monero.PendingTransaction_fee(pending)),
     );
+    final committed = monero.PendingTransaction_commit(pending, filename: '', overwrite: false);
+    _checkPending(pending);
+    if (!committed) {
+      throw WalletException(WalletFailure.native, monero.PendingTransaction_errorString(pending));
+    }
     // The node has the payment at this point. A failed write of the wallet file does not undo it, and the file is
     // written again when the wallet closes, so the app reports the payment as sent either way.
     monero.Wallet_store(wallet);
