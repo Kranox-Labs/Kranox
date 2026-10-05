@@ -41,7 +41,7 @@ class HomePage extends StatelessWidget {
       title: Copy.greeting(DateTime.now()),
       lead: Copy.homeLead,
       chips: [
-        StatusChip(label: AppConfig.network.label),
+        StatusChip(label: controller.network.label),
         _NodeChip(connection: status.connection),
       ],
       children: [

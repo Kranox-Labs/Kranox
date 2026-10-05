@@ -6,7 +6,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kranox_wallet/config/app_config.dart';
+import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/address.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
@@ -35,6 +35,7 @@ Future<WalletController> _controllerIn(Directory root) async {
   final worker = await WalletWorker.start(libraryPath: _libraryPath);
   final controller = WalletController(worker: worker, storage: AppStorage(root.path));
   await controller.start();
+  await controller.switchNetwork(MoneroNetwork.stagenet);
   return controller;
 }
 
@@ -69,7 +70,7 @@ void main() {
     // The app hands out subaddresses, and each new one has the next index.
     final first = controller.receiveAddress!;
     expect(first.index, 1);
-    expect(checkAddress(first.address, AppConfig.network), AddressKind.subaddress);
+    expect(checkAddress(first.address, MoneroNetwork.stagenet), AddressKind.subaddress);
     await controller.newReceiveAddress();
     expect(controller.receiveAddress!.index, first.index + 1);
 

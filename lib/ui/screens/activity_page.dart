@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../config/app_config.dart';
 import '../../wallet/controller.dart';
 import '../copy.dart';
 import '../theme/kranox_theme.dart';
@@ -25,7 +24,7 @@ class ActivityPage extends StatelessWidget {
     return PageFrame(
       title: Copy.activityTitle,
       lead: Copy.activityLead,
-      chips: [StatusChip(label: AppConfig.network.label)],
+      chips: [StatusChip(label: controller.network.label)],
       children: [
         Surface(
           padding: const EdgeInsets.fromLTRB(Metrics.cardPadding, 8, Metrics.cardPadding, 8),

@@ -13,11 +13,11 @@ abstract final class Copy {
   static const String welcomeLead =
       'A private Monero wallet. Only you hold the keys, and they never leave this device.';
 
-  /// The note on the network of the build. With [lineBreak], its two sentences stand on two lines, for a narrow
+  /// The note on the network of the wallet. With [lineBreak], its two sentences stand on two lines, for a narrow
   /// card.
-  static String networkNote(MoneroNetwork network, {bool lineBreak = false}) => network == MoneroNetwork.mainnet
-      ? 'This wallet runs on the Monero mainnet.'
-      : 'This build runs on ${network.label}, a test network of Monero.${lineBreak ? '\n' : ' '}Its coins have no value.';
+  static String networkNote(MoneroNetwork network, {bool lineBreak = false}) => network.isTest
+      ? 'This wallet runs on ${network.label}, a test network of Monero.${lineBreak ? '\n' : ' '}Its coins have no value.'
+      : 'This wallet runs on the Monero mainnet.${lineBreak ? '\n' : ' '}Its coins are real XMR.';
   static const String createWallet = 'Create a new wallet';
   static const String restoreWallet = 'Restore from your seed';
   static const String back = 'Back';
@@ -91,7 +91,7 @@ abstract final class Copy {
   static const String sendTitle = 'Send XMR';
   static const String sendLead = 'Payments in Monero are final. Check the address before you send.';
   static const String recipient = 'Address';
-  static String recipientHint(MoneroNetwork network) => 'A Monero address of ${network.label}';
+  static String recipientHint(MoneroNetwork network) => 'A Monero address on ${network.label}';
   static const String amount = 'Amount';
   static String available(String amount) => 'Unlocked: $amount XMR';
   static const String review = 'Review payment';
@@ -130,7 +130,7 @@ abstract final class Copy {
 
   // Settings.
   static const String settingsTitle = 'Settings';
-  static const String settingsLead = 'Your node, your seed, and the lock of this wallet.';
+  static const String settingsLead = 'Your node, your network, your seed, and the lock of this wallet.';
   static const String nodeTitle = 'Node';
   static const String nodeLead = 'The node that your wallet talks to. Run your own node for the most privacy.';
   static const String nodeField = 'Node address';
@@ -138,6 +138,9 @@ abstract final class Copy {
   static const String saveNode = 'Save node';
   static const String nodeSaved = 'The wallet uses the new node.';
   static const String networkTitle = 'Network';
+  static const String networkLead =
+      'Each network keeps its own wallet and its own node. A switch locks this wallet and opens the wallet of the '
+      'other network.';
   static const String seedSettingsLead = 'Show the 25 words of your seed. Kranox asks for your password first.';
   static const String showSeed = 'Show seed';
   static const String hideSeed = 'Hide seed';
@@ -151,7 +154,8 @@ abstract final class Copy {
   static String seedWordCount(int count) => 'A seed has 25 words. This one has $count.';
   static const String seedCharacters = 'A seed has letters only.';
   static const String restoreHeightInvalid = 'Enter the restore height as a whole number.';
-  static const String nodeInvalid = 'Enter the node as host:port, such as node.example.org:38089.';
+  static String nodeInvalid(MoneroNetwork network) =>
+      'Enter the node as host:port, such as node.example.org:${network.rpcPort}.';
   static const String addressEmpty = 'Enter an address.';
   static const String addressLength = 'This address has the wrong length.';
   static const String addressNotBase58 = 'This address has characters that no Monero address has.';

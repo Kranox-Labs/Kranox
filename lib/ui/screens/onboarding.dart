@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../config/app_config.dart';
+import '../../config/network.dart';
 import '../../core/block_height.dart';
 import '../../core/seed.dart';
 import '../../wallet/controller.dart';
@@ -14,6 +14,7 @@ import '../widgets/backdrop.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
+import '../widgets/network_choice.dart';
 import '../widgets/seed_grid.dart';
 import '../widgets/surfaces.dart';
 
@@ -86,17 +87,24 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
 
   @override
   Widget build(BuildContext context) => switch (_step) {
-    _Step.welcome => _Welcome(onCreate: () => _go(_Step.create), onRestore: () => _go(_Step.restore)),
+    _Step.welcome => _Welcome(
+      network: widget.controller.network,
+      onNetwork: widget.controller.switchNetwork,
+      onCreate: () => _go(_Step.create),
+      onRestore: () => _go(_Step.restore),
+    ),
     _Step.create => _Create(controller: widget.controller, onBack: () => _go(_Step.welcome)),
     _Step.restore => _Restore(controller: widget.controller, onBack: () => _go(_Step.welcome)),
   };
 }
 
-/// The first screen on a device without a wallet: one card of glass in the middle of the window, over the picture
-/// of the look.
+/// The first screen on a network without a wallet: one card of glass in the middle of the window, over the picture
+/// of the look, with the choice of the network at its foot.
 class _Welcome extends StatelessWidget {
-  const _Welcome({required this.onCreate, required this.onRestore});
+  const _Welcome({required this.network, required this.onNetwork, required this.onCreate, required this.onRestore});
 
+  final MoneroNetwork network;
+  final ValueChanged<MoneroNetwork> onNetwork;
   final VoidCallback onCreate;
   final VoidCallback onRestore;
 
@@ -134,9 +142,11 @@ class _Welcome extends StatelessWidget {
                     PillButton(label: Copy.createWallet, expand: true, onPressed: onCreate),
                     const SizedBox(height: Metrics.gapSmall),
                     PillButton(label: Copy.restoreWallet, tone: PillTone.quiet, expand: true, onPressed: onRestore),
-                    const SizedBox(height: Metrics.gap),
+                    const SizedBox(height: Metrics.gap + 4),
+                    NetworkChoice(network: network, onSelect: onNetwork, alignment: WrapAlignment.center),
+                    const SizedBox(height: Metrics.gapSmall),
                     Text(
-                      Copy.networkNote(AppConfig.network, lineBreak: true),
+                      Copy.networkNote(network, lineBreak: true),
                       textAlign: TextAlign.center,
                       style: KranoxType.small.copyWith(color: palette.inkFaint),
                     ),
@@ -253,6 +263,7 @@ class _CreateState extends State<_Create> {
         PillButton(label: Copy.createAction, busy: _busy, busyLabel: Copy.creating, expand: true, onPressed: _create),
         const SizedBox(height: Metrics.gapSmall),
         PillButton(label: Copy.back, tone: PillTone.quiet, expand: true, onPressed: _busy ? null : widget.onBack),
+        _NetworkLine(widget.controller.network),
       ],
     );
   }
@@ -346,6 +357,7 @@ class _RestoreState extends State<_Restore> {
       PillButton(label: Copy.restoreAction, busy: _busy, busyLabel: Copy.restoring, expand: true, onPressed: _restore),
       const SizedBox(height: Metrics.gapSmall),
       PillButton(label: Copy.back, tone: PillTone.quiet, expand: true, onPressed: _busy ? null : widget.onBack),
+      _NetworkLine(widget.controller.network),
     ],
   );
 }
@@ -369,6 +381,13 @@ class _UnlockScreenState extends State<UnlockScreen> {
   void dispose() {
     _password.dispose();
     super.dispose();
+  }
+
+  /// Moves to the wallet of another network. The password of this wallet does not belong there.
+  void _switchNetwork(MoneroNetwork network) {
+    _password.clear();
+    setState(() => _error = null);
+    widget.controller.switchNetwork(network);
   }
 
   Future<void> _unlock() async {
@@ -400,6 +419,22 @@ class _UnlockScreenState extends State<UnlockScreen> {
       ),
       const SizedBox(height: Metrics.gap + 4),
       PillButton(label: Copy.unlockAction, busy: _busy, busyLabel: Copy.opening, expand: true, onPressed: _unlock),
+      const SizedBox(height: Metrics.gap + 8),
+      NetworkChoice(network: widget.controller.network, onSelect: _busy ? null : _switchNetwork),
+      _NetworkLine(widget.controller.network),
     ],
+  );
+}
+
+/// The note on the network of the wallet, at the foot of a screen before the wallet opens.
+class _NetworkLine extends StatelessWidget {
+  const _NetworkLine(this.network);
+
+  final MoneroNetwork network;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: Metrics.gapSmall),
+    child: Text(Copy.networkNote(network), style: KranoxType.small.copyWith(color: context.palette.inkFaint)),
   );
 }

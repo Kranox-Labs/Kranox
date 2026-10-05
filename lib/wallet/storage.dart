@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../config/app_config.dart';
+import '../config/network.dart';
+import 'settings.dart';
 
 /// The name of the Monero library inside the app, and the folder of the app bundle that holds it.
 const String _moneroLibraryName = 'libmonero_wallet2_api_c.dylib';
@@ -15,7 +17,7 @@ String moneroLibraryPath() {
   return '${executable.parent.parent.path}/$_bundleLibraryFolder/$_moneroLibraryName';
 }
 
-/// The files of the app in its support folder: the wallet of the network of this build, and the settings.
+/// The files of the app in its support folder: one wallet for each network, and the settings.
 final class AppStorage {
   const AppStorage(this.root);
 
@@ -23,35 +25,29 @@ final class AppStorage {
 
   static Future<AppStorage> locate() async => AppStorage((await getApplicationSupportDirectory()).path);
 
-  String get walletFolder => '$root/${AppConfig.walletsFolderName}/${AppConfig.network.name}';
-  String get walletPath => '$walletFolder/${AppConfig.walletFileName}';
+  String walletFolder(MoneroNetwork network) => '$root/${AppConfig.walletsFolderName}/${network.name}';
+  String walletPath(MoneroNetwork network) => '${walletFolder(network)}/${AppConfig.walletFileName}';
   String get _settingsPath => '$root/${AppConfig.settingsFileName}';
 
-  Future<bool> walletExists() => File('$walletPath.keys').exists();
+  Future<bool> walletExists(MoneroNetwork network) => File('${walletPath(network)}.keys').exists();
 
-  Future<void> prepareWalletFolder() => Directory(walletFolder).create(recursive: true);
+  Future<void> prepareWalletFolder(MoneroNetwork network) => Directory(walletFolder(network)).create(recursive: true);
 
-  /// Reads the node that the user chose, or the default node of the network.
-  Future<String> readNode() async {
+  /// Reads the choices of the user, or the defaults when the user has made none.
+  Future<AppSettings> readSettings() async {
     final file = File(_settingsPath);
     if (!await file.exists()) {
-      return AppConfig.defaultNode;
+      return const AppSettings();
     }
-    final data = jsonDecode(await file.readAsString());
-    if (data is! Map<String, Object?>) {
-      throw FormatException('The settings file holds no object.', _settingsPath);
+    try {
+      return AppSettings.fromJson(jsonDecode(await file.readAsString()));
+    } on FormatException catch (error) {
+      throw FormatException('${error.message} File: $_settingsPath', error.source);
     }
-    final node = data[_nodeKey];
-    if (node is! String) {
-      throw FormatException('The settings file holds no node.', _settingsPath);
-    }
-    return node;
   }
 
-  Future<void> writeNode(String node) async {
+  Future<void> writeSettings(AppSettings settings) async {
     await Directory(root).create(recursive: true);
-    await File(_settingsPath).writeAsString(jsonEncode({_nodeKey: node}));
+    await File(_settingsPath).writeAsString(jsonEncode(settings.toJson()));
   }
-
-  static const String _nodeKey = 'node';
 }

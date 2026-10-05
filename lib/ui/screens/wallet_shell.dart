@@ -37,7 +37,14 @@ class _WalletShellState extends State<WalletShell> {
           // Each page fills the height of the window and starts at its top.
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Sidebar(page: _page, onSelect: _go, onLock: _lock, status: controller.status, node: controller.node),
+            Sidebar(
+              page: _page,
+              onSelect: _go,
+              onLock: _lock,
+              status: controller.status,
+              network: controller.network,
+              node: controller.node,
+            ),
             Expanded(
               child: switch (_page) {
                 WalletPage.home => HomePage(controller: controller, onNavigate: _go),

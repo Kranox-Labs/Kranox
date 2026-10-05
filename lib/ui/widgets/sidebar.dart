@@ -2,7 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-import '../../config/app_config.dart';
+import '../../config/network.dart';
 import '../../wallet/models.dart';
 import '../copy.dart';
 import '../theme/kranox_theme.dart';
@@ -23,6 +23,7 @@ class Sidebar extends StatelessWidget {
     required this.onSelect,
     required this.onLock,
     required this.status,
+    required this.network,
     required this.node,
   });
 
@@ -30,6 +31,7 @@ class Sidebar extends StatelessWidget {
   final ValueChanged<WalletPage> onSelect;
   final VoidCallback onLock;
   final WalletStatus status;
+  final MoneroNetwork network;
   final String node;
 
   /// The pages of the upper group, with their icons.
@@ -69,7 +71,7 @@ class Sidebar extends StatelessWidget {
                   children: [
                     const _Brand(),
                     const SizedBox(height: Metrics.gap - 4),
-                    const _WalletRow(),
+                    _WalletRow(network: network),
                     const SizedBox(height: Metrics.gap),
                     for (final (item, icon) in _pages)
                       _NavItem(label: _labelOf(item), icon: icon, active: page == item, onTap: () => onSelect(item)),
@@ -122,7 +124,9 @@ class _Brand extends StatelessWidget {
 /// The wallet at the top of the sidebar, like the account in System Settings: a round mark, the name, and the
 /// network.
 class _WalletRow extends StatelessWidget {
-  const _WalletRow();
+  const _WalletRow({required this.network});
+
+  final MoneroNetwork network;
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +152,7 @@ class _WalletRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(Copy.walletName, style: KranoxType.body.copyWith(color: palette.ink)),
-              Text(AppConfig.network.label, style: KranoxType.small.copyWith(color: palette.inkSoft)),
+              Text(network.label, style: KranoxType.small.copyWith(color: palette.inkSoft)),
             ],
           ),
         ],
