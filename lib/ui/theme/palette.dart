@@ -54,6 +54,7 @@ final class Palette {
     required this.heroMainInk,
     required this.heroAlt,
     required this.heroAltInk,
+    required this.heroTrack,
     required this.solid,
     required this.solidInk,
     required this.outgoing,
@@ -111,6 +112,9 @@ final class Palette {
   final Color heroAlt;
   final Color heroAltInk;
 
+  /// The locked part of the bar of the balance card. The unlocked part has the color of the text of the card.
+  final Color heroTrack;
+
   /// A solid button or a round icon on a card.
   final Color solid;
   final Color solidInk;
@@ -166,6 +170,7 @@ final class Palette {
     heroMainInk: BrandColors.cream,
     heroAlt: Color(0x29FFFFFF),
     heroAltInk: BrandColors.white,
+    heroTrack: Color(0x47FFFFFF),
     solid: Color(0x1AF6F3EC),
     solidInk: BrandColors.cream,
     outgoing: BrandColors.orange,
@@ -205,6 +210,7 @@ final class Palette {
     heroMainInk: BrandColors.cream,
     heroAlt: Color(0x8CFFFFFF),
     heroAltInk: BrandColors.coal,
+    heroTrack: Color(0x38211D1A),
     solid: BrandColors.coal,
     solidInk: BrandColors.cream,
     outgoing: BrandColors.coal,

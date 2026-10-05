@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../config/app_config.dart';
+import '../../core/amount.dart';
+import '../../core/unlock.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/models.dart';
 import '../copy.dart';
 import '../format.dart';
 import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
+import '../theme/palette.dart';
 import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
@@ -18,8 +21,8 @@ import '../widgets/transfer_row.dart';
 /// The width below which the side cards move under the balance card.
 const double _twoColumnWidth = 760;
 
-/// The home of the open wallet: the balance card, the unlocked part, the receive address, and the latest
-/// transactions.
+/// The home of the open wallet: the balance card, the card of the unlocked or the locked part, the receive address,
+/// and the latest transactions.
 class HomePage extends StatelessWidget {
   const HomePage({super.key, required this.controller, required this.onNavigate});
 
@@ -32,7 +35,10 @@ class HomePage extends StatelessWidget {
     final hero = _BalanceCard(status: status, onNavigate: onNavigate);
     final side = Column(
       children: [
-        _UnlockedCard(status: status),
+        if (status.isLoading || status.locked.units <= 0)
+          _UnlockedCard(status: status)
+        else
+          _UnlockingCard(locked: status.locked, wait: controller.unlockWait),
         const SizedBox(height: Metrics.gap),
         _ReceiveCard(address: controller.receiveAddress),
       ],
@@ -93,6 +99,9 @@ class _NodeChip extends StatelessWidget {
   }
 }
 
+/// The quieter text of the balance card.
+Color _heroSoft(Palette palette) => palette.heroInk.withValues(alpha: 0.75);
+
 class _BalanceCard extends StatelessWidget {
   const _BalanceCard({required this.status, required this.onNavigate});
 
@@ -102,7 +111,7 @@ class _BalanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final soft = palette.heroInk.withValues(alpha: 0.75);
+    final soft = _heroSoft(palette);
     return HeroSurface(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,15 +131,16 @@ class _BalanceCard extends StatelessWidget {
                 color: palette.heroInk,
               ),
             ),
-          const SizedBox(height: Metrics.gapSmall),
-          Text(
-            status.isLoading
-                ? Copy.balanceUpdating
-                : status.locked.units > 0
-                ? Copy.lockedNote(formatAmount(status.locked))
-                : Copy.allUnlocked,
-            style: KranoxType.bodyRegular.copyWith(color: soft),
-          ),
+          if (!status.isLoading && status.locked.units > 0) ...[
+            const SizedBox(height: Metrics.gap),
+            _BalanceSplit(unlocked: status.unlocked, locked: status.locked),
+          ] else ...[
+            const SizedBox(height: Metrics.gapSmall),
+            Text(
+              status.isLoading ? Copy.balanceUpdating : Copy.allUnlocked,
+              style: KranoxType.bodyRegular.copyWith(color: soft),
+            ),
+          ],
           const Spacer(),
           const SizedBox(height: Metrics.gap + 4),
           Row(
@@ -158,6 +168,222 @@ class _BalanceCard extends StatelessWidget {
   }
 }
 
+/// A balance with a locked part, split in two below the total: a bar with a part for the coins that the wallet can
+/// spend now and a part for the coins that wait for confirmations, and the two amounts under it.
+class _BalanceSplit extends StatelessWidget {
+  const _BalanceSplit({required this.unlocked, required this.locked});
+
+  final XmrAmount unlocked;
+  final XmrAmount locked;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SplitBar(unlockedShare: unlocked.units / (unlocked.units + locked.units)),
+        const SizedBox(height: Metrics.gapSmall + 2),
+        Wrap(
+          spacing: Metrics.gap * 2,
+          runSpacing: Metrics.gapSmall,
+          children: [
+            _SplitPart(label: Copy.unlocked, amount: unlocked, color: palette.heroInk),
+            _SplitPart(label: Copy.locked, amount: locked, color: palette.heroTrack),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// A thin bar in two parts: the unlocked share in the ink of the balance card, the locked share in a fainter tone.
+/// The unlocked part grows as coins unlock.
+class _SplitBar extends StatelessWidget {
+  const _SplitBar({required this.unlockedShare});
+
+  final double unlockedShare;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    // A painter learns the width of the bar when it paints: the balance card sits in a row of intrinsic height, which
+    // a LayoutBuilder does not support.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: unlockedShare),
+      duration: Metrics.fade,
+      builder: (context, share, _) => SizedBox(
+        height: Metrics.splitBarHeight,
+        child: CustomPaint(
+          painter: _SplitBarPainter(unlockedShare: share, unlocked: palette.heroInk, locked: palette.heroTrack),
+        ),
+      ),
+    );
+  }
+}
+
+class _SplitBarPainter extends CustomPainter {
+  const _SplitBarPainter({required this.unlockedShare, required this.unlocked, required this.locked});
+
+  final double unlockedShare;
+  final Color unlocked;
+  final Color locked;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final radius = Radius.circular(size.height / 2);
+    final unlockedWidth = _unlockedWidth(size.width);
+    if (unlockedWidth > 0) {
+      canvas.drawRRect(RRect.fromLTRBR(0, 0, unlockedWidth, size.height, radius), Paint()..color = unlocked);
+    }
+    final lockedLeft = unlockedWidth > 0 ? unlockedWidth + Metrics.splitBarGap : 0.0;
+    canvas.drawRRect(RRect.fromLTRBR(lockedLeft, 0, size.width, size.height, radius), Paint()..color = locked);
+  }
+
+  /// The width of the unlocked part: its share of the bar, but never so thin or so wide that a part disappears.
+  double _unlockedWidth(double width) {
+    if (unlockedShare <= 0) return 0;
+    final room = width - Metrics.splitBarGap;
+    return (room * unlockedShare).clamp(Metrics.splitBarMinPart, room - Metrics.splitBarMinPart).toDouble();
+  }
+
+  @override
+  bool shouldRepaint(_SplitBarPainter old) =>
+      old.unlockedShare != unlockedShare || old.unlocked != unlocked || old.locked != locked;
+}
+
+/// One part of the balance below the bar: a dot in the color of its part of the bar, its name, and its amount.
+class _SplitPart extends StatelessWidget {
+  const _SplitPart({required this.label, required this.amount, required this.color});
+
+  final String label;
+  final XmrAmount amount;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              child: const SizedBox.square(dimension: 7),
+            ),
+            const SizedBox(width: 7),
+            Text(label.toUpperCase(), style: KranoxType.label.copyWith(color: _heroSoft(palette))),
+          ],
+        ),
+        const SizedBox(height: 4),
+        AmountFigure(
+          value: formatAmount(amount),
+          style: KranoxType.rowFigure,
+          unitStyle: KranoxType.smallStrong,
+          color: palette.heroInk,
+        ),
+      ],
+    );
+  }
+}
+
+/// The round mark at the corner of a side card: a check, or a lock with a clock.
+class _CardMark extends StatelessWidget {
+  const _CardMark(this.icon);
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return DecoratedBox(
+      decoration: BoxDecoration(color: palette.solid, shape: BoxShape.circle),
+      child: SizedBox.square(
+        dimension: Metrics.smallRound,
+        child: Icon(icon, size: 15, color: palette.solidInk),
+      ),
+    );
+  }
+}
+
+/// The side card while a part of the balance is locked: a dot for each confirmation of the transfer that unlocks
+/// last, the time left, and why Monero locks new coins.
+class _UnlockingCard extends StatelessWidget {
+  const _UnlockingCard({required this.locked, required this.wait});
+
+  final XmrAmount locked;
+
+  /// Null when no transfer in the history explains the locked part yet: the card then states the rule alone.
+  final UnlockProgress? wait;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final amount = formatAmount(locked);
+    final progress = wait;
+    return Surface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const CardTitle(Copy.unlocking, trailing: _CardMark(Icons.lock_clock_rounded)),
+          const SizedBox(height: 14),
+          if (progress == null)
+            Text(Copy.lockedNote(amount), style: KranoxType.body.copyWith(color: palette.ink))
+          else ...[
+            Row(
+              children: [
+                _ConfirmationDots(confirmations: progress.confirmations),
+                const Spacer(),
+                Text(
+                  Copy.confirmationCount(progress.confirmations),
+                  style: KranoxType.smallStrong.copyWith(color: palette.inkSoft),
+                ),
+              ],
+            ),
+            const SizedBox(height: Metrics.gapSmall + 2),
+            Text(Copy.lockedReadyIn(amount, progress.timeLeft), style: KranoxType.body.copyWith(color: palette.ink)),
+            const SizedBox(height: Metrics.gapTiny),
+            Text(Copy.unlockReason, style: KranoxType.small.copyWith(color: palette.inkSoft)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One dot for each confirmation that coins wait for, like the dots of the sync bar: a reached dot has the accent
+/// color.
+class _ConfirmationDots extends StatelessWidget {
+  const _ConfirmationDots({required this.confirmations});
+
+  final int confirmations;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < spendableAge; index++) ...[
+          if (index > 0) const SizedBox(width: Metrics.unlockDotGap),
+          AnimatedContainer(
+            duration: Metrics.fade,
+            width: Metrics.unlockDot,
+            height: Metrics.unlockDot,
+            decoration: BoxDecoration(
+              color: index < confirmations ? palette.accent : palette.dotOff,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _UnlockedCard extends StatelessWidget {
   const _UnlockedCard({required this.status});
 
@@ -170,16 +396,7 @@ class _UnlockedCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CardTitle(
-            Copy.unlocked,
-            trailing: DecoratedBox(
-              decoration: BoxDecoration(color: palette.solid, shape: BoxShape.circle),
-              child: SizedBox.square(
-                dimension: Metrics.smallRound,
-                child: Icon(Icons.check_rounded, size: 15, color: palette.solidInk),
-              ),
-            ),
-          ),
+          const CardTitle(Copy.unlocked, trailing: _CardMark(Icons.check_rounded)),
           const SizedBox(height: 12),
           if (status.isLoading)
             LoadingFigure(style: KranoxType.cardFigure)

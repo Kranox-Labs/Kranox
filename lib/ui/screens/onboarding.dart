@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show appBuildName;
 
 import '../../config/network.dart';
 import '../../core/block_height.dart';
@@ -427,8 +428,29 @@ class _UnlockScreenState extends State<UnlockScreen> {
         const SizedBox(height: Metrics.gapSmall),
         _BackToMainnet(onPressed: _busy ? null : _backToMainnet),
       ],
+      const SizedBox(height: Metrics.gap),
+      const _Version(),
     ],
   );
+}
+
+/// The version of the app in small quiet type below the unlock form, which the owner asked for on 5 Oct 2026. It is
+/// `version` in `pubspec.yaml` before the `+`: the Flutter tool passes it to every build, and `appBuildName` reads it.
+class _Version extends StatelessWidget {
+  const _Version();
+
+  @override
+  Widget build(BuildContext context) {
+    final name = appBuildName;
+    if (name == null) {
+      throw StateError('pubspec.yaml holds no version, so the unlock screen has none to show.');
+    }
+    return Text(
+      Copy.version(name),
+      textAlign: TextAlign.center,
+      style: KranoxType.small.copyWith(color: context.palette.inkFaint),
+    );
+  }
 }
 
 /// A quiet way back to mainnet from a screen of a test network before its wallet opens. Settings, where the network

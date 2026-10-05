@@ -1,9 +1,13 @@
 import '../bridge/models.dart';
 import '../config/network.dart';
 import '../core/address.dart';
+import '../core/unlock.dart';
 
 /// All text of the app. The screens take their words from here.
 abstract final class Copy {
+  /// The minutes of a whole wait for coins to unlock, from the Monero constants.
+  static int get _unlockMinutes => (blockTarget * spendableAge).inMinutes;
+
   static const String appName = 'Kranox';
   static const String walletName = 'Main wallet';
   static const String currency = 'XMR';
@@ -56,6 +60,7 @@ abstract final class Copy {
   static const String unlockTitle = 'Welcome back';
   static const String unlockLead = 'Enter your password to open the wallet.';
   static const String unlockAction = 'Unlock';
+  static String version(String name) => 'Version $name';
 
   // Navigation.
   static const String navHome = 'Home';
@@ -76,10 +81,16 @@ abstract final class Copy {
   };
   static const String homeLead = 'Your keys stay on this device.';
   static const String balance = 'Balance';
-  static String lockedNote(String amount) => '$amount XMR waits for 10 confirmations.';
   static const String allUnlocked = 'All of it is ready to spend.';
   static const String unlocked = 'Unlocked';
+  static const String locked = 'Locked';
   static const String unlockedNote = 'Ready to send now.';
+  // The card of a locked balance. On 5 Oct 2026 the owner asked for a better look of the locked and the unlocked
+  // balance: the progress of the confirmations and the time left, in place of a bare "waits for 10 confirmations".
+  static const String unlocking = 'Unlocking';
+  static String lockedReadyIn(String amount, Duration wait) => '$amount XMR ${readyIn(wait)}';
+  static String lockedNote(String amount) => '$amount XMR waits for $spendableAge confirmations.';
+  static const String unlockReason = 'New coins and change unlock after $spendableAge confirmations.';
   static const String receiveAddress = 'Receive address';
   static String subaddress(int index) => 'Subaddress #$index';
   static const String recentActivity = 'Recent activity';
@@ -143,7 +154,9 @@ abstract final class Copy {
   static const String sent = 'Sent';
   static const String pending = 'Pending';
   static const String failed = 'Failed';
-  static String confirmations(int count) => count == 1 ? '1 confirmation' : '$count confirmations';
+  static String confirmationCount(int count) => '$count/$spendableAge';
+  static String confirmationsOf(int count) => '${confirmationCount(count)} confirmations';
+  static String readyIn(Duration wait) => 'ready in about ${wait.inMinutes} min';
   static String feeOf(String amount) => 'Fee $amount XMR';
   static const String copyId = 'Copy ID';
 
@@ -210,7 +223,7 @@ abstract final class Copy {
   static String bridgeStepSendingNote(String xmr) => 'ChangeNOW sends $xmr XMR to this wallet.';
   static const String bridgeStepDone = 'XMR arrived';
   static String bridgeStepDoneNote(String xmr) =>
-      '$xmr XMR is in this wallet. You can spend it after 10 confirmations, about 20 minutes.';
+      '$xmr XMR is in this wallet. You can spend it after $spendableAge confirmations, about $_unlockMinutes minutes.';
   static const String bridgeStepHeld = 'Held for a check';
   static const String bridgeHeld =
       'ChangeNOW stopped this swap to check it. Write to $exchangerSupport with the swap ID; Kranox cannot release '
@@ -289,7 +302,9 @@ abstract final class Copy {
   static const String amountLeavesNoFee =
       'Keep a little of your unlocked balance for the network fee: send less than all of it.';
   static String lockedPart(String amount) =>
-      'Locked: $amount XMR. New coins and change unlock after 10 confirmations, about 20 minutes.';
+      'Locked: $amount XMR. New coins and change unlock after $spendableAge confirmations, about $_unlockMinutes '
+      'minutes.';
+  static String lockedPartReadyIn(String amount, Duration wait) => 'Locked: $amount XMR, ${readyIn(wait)}.';
 
   // Failures of the wallet.
   static const String wrongPassword = 'This password does not open the wallet.';

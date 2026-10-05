@@ -272,7 +272,10 @@ class _SendPageState extends State<SendPage> {
             if (status.locked.units > 0) ...[
               const SizedBox(height: 2),
               Text(
-                Copy.lockedPart(status.locked.toExact()),
+                switch (widget.controller.unlockWait) {
+                  final wait? => Copy.lockedPartReadyIn(status.locked.toExact(), wait.timeLeft),
+                  null => Copy.lockedPart(status.locked.toExact()),
+                },
                 textAlign: TextAlign.center,
                 style: KranoxType.small.copyWith(color: palette.inkFaint),
               ),

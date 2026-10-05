@@ -6,6 +6,7 @@ import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/amount.dart';
 import '../core/node_address.dart';
+import '../core/unlock.dart';
 import 'failure.dart';
 import 'models.dart';
 import 'requests.dart';
@@ -36,6 +37,12 @@ final class WalletController extends ChangeNotifier {
   WalletStatus get status => _status;
   List<WalletTransfer> get transfers => _transfers;
   ReceiveAddress? get receiveAddress => _receiveAddress;
+
+  /// The wait of the locked part of the balance: the progress of the transfer that unlocks last. Null when nothing is
+  /// locked, or when no transfer in the history explains the locked part, as before the first read of the history.
+  UnlockProgress? get unlockWait => _status.locked.units > 0
+      ? UnlockProgress.slowest(_transfers.where((transfer) => !transfer.isFailed).map((transfer) => transfer.unlock))
+      : null;
   MoneroNetwork get network => _settings.network;
   String get node => _settings.nodeOf(network);
   String get walletFolder => _storage.walletFolder(network);

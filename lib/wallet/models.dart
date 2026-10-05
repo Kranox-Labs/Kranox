@@ -1,4 +1,5 @@
 import '../core/amount.dart';
+import '../core/unlock.dart';
 
 /// The connection of the wallet to its node, in the numbers of wallet2.
 enum NodeConnection { disconnected, connected, wrongVersion }
@@ -78,6 +79,9 @@ final class WalletTransfer {
 
   /// The subaddress that received an incoming transfer, when the wallet knows it.
   final int? subaddressIndex;
+
+  /// How far the coins of the transfer are on their way to spendable: the coins received, or the change of a payment.
+  UnlockProgress get unlock => UnlockProgress(confirmations);
 }
 
 /// The address that the receive screen shows: the newest subaddress of the first account.
