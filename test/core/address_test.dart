@@ -14,6 +14,9 @@ const _mainnetStandard =
     '48PFnHrr8bVGx463yo8SMXGZUp7PyYPgwZJR4MnpgjKCDXpw3XvK6UTbarKkpwaPbPSYSdJ4rozjZjGxr2t3qVP4B4DzzVs';
 const _mainnetSubaddress =
     '883z7Wmbd5nhoH6xQxLzgniNhN6jqdvxFiza4rMdErWA1XW1TCL1tqrCwWFwhG1QkuL17RRHP45J33y6u4sH8Rfa7kryRza';
+// A subaddress of a throwaway testnet wallet that the app made through monero_c on 5 Oct 2026, deleted at once.
+const _testnetSubaddress =
+    'BhiqfXwsTiwYdqs86J8dzmfDpatezBqSiCEssGiaizdD4ibAeZH9fZYbRp31UnXC1zBYo1YE5W4AX2FqZfBS4aDTP6jqCkk';
 
 Matcher _throwsProblem(AddressProblem problem) =>
     throwsA(isA<AddressException>().having((error) => error.problem, 'problem', problem));
@@ -29,6 +32,16 @@ void main() {
   test('accepts mainnet addresses on mainnet', () {
     expect(checkAddress(_mainnetStandard, MoneroNetwork.mainnet), AddressKind.standard);
     expect(checkAddress(_mainnetSubaddress, MoneroNetwork.mainnet), AddressKind.subaddress);
+  });
+
+  test('accepts a testnet subaddress on testnet only', () {
+    expect(checkAddress(_testnetSubaddress, MoneroNetwork.testnet), AddressKind.subaddress);
+    for (final network in [MoneroNetwork.mainnet, MoneroNetwork.stagenet]) {
+      expect(
+        () => checkAddress(_testnetSubaddress, network),
+        throwsA(isA<AddressException>().having((error) => error.network, 'network', MoneroNetwork.testnet)),
+      );
+    }
   });
 
   test('names the network of an address of another network', () {

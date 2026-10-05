@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
+import '../config/network.dart';
 import '../core/amount.dart';
 import '../core/node_address.dart';
 import 'failure.dart';
 import 'models.dart';
 import 'requests.dart';
+import 'settings.dart';
 import 'storage.dart';
 import 'worker.dart';
 
@@ -26,7 +28,7 @@ final class WalletController extends ChangeNotifier {
   WalletStatus _status = WalletStatus.unknown;
   List<WalletTransfer> _transfers = const [];
   ReceiveAddress? _receiveAddress;
-  String _node = AppConfig.defaultNode;
+  AppSettings _settings = const AppSettings();
   Timer? _poll;
   Future<void>? _pollInFlight;
 
@@ -34,31 +36,45 @@ final class WalletController extends ChangeNotifier {
   WalletStatus get status => _status;
   List<WalletTransfer> get transfers => _transfers;
   ReceiveAddress? get receiveAddress => _receiveAddress;
-  String get node => _node;
-  String get walletFolder => _storage.walletFolder;
+  MoneroNetwork get network => _settings.network;
+  String get node => _settings.nodeOf(network);
+  String get walletFolder => _storage.walletFolder(network);
 
   Future<void> start() async {
-    _node = await _storage.readNode();
-    _setPhase(await _storage.walletExists() ? WalletPhase.locked : WalletPhase.noWallet);
+    _settings = await _storage.readSettings();
+    await _showWalletOfNetwork();
   }
+
+  /// Moves the app to another network. Each network keeps its own wallet: an open wallet closes, and the app asks
+  /// for the password of the wallet of the other network, or offers to make one.
+  Future<void> switchNetwork(MoneroNetwork network) async {
+    if (network == this.network) return;
+    await _closeWallet();
+    _settings = _settings.withNetwork(network);
+    await _storage.writeSettings(_settings);
+    await _showWalletOfNetwork();
+  }
+
+  Future<void> _showWalletOfNetwork() async =>
+      _setPhase(await _storage.walletExists(network) ? WalletPhase.locked : WalletPhase.noWallet);
 
   /// Makes a new wallet and gives its seed. The wallet opens when the user has written the seed down.
   Future<List<String>> create(String password) async {
-    await _storage.prepareWalletFolder();
+    await _storage.prepareWalletFolder(network);
     return _worker.call<List<String>>(
-      CreateWallet(path: _storage.walletPath, password: password, networkType: AppConfig.network.walletType),
+      CreateWallet(path: _storage.walletPath(network), password: password, networkType: network.walletType),
     );
   }
 
   Future<void> restore({required List<String> seed, required int restoreHeight, required String password}) async {
-    await _storage.prepareWalletFolder();
+    await _storage.prepareWalletFolder(network);
     await _worker.call<void>(
       RestoreWallet(
-        path: _storage.walletPath,
+        path: _storage.walletPath(network),
         password: password,
         seed: seed.join(' '),
         restoreHeight: restoreHeight,
-        networkType: AppConfig.network.walletType,
+        networkType: network.walletType,
       ),
     );
     await enterWallet();
@@ -66,7 +82,7 @@ final class WalletController extends ChangeNotifier {
 
   Future<void> unlock(String password) async {
     await _worker.call<void>(
-      OpenWallet(path: _storage.walletPath, password: password, networkType: AppConfig.network.walletType),
+      OpenWallet(path: _storage.walletPath(network), password: password, networkType: network.walletType),
     );
     await enterWallet();
   }
@@ -84,6 +100,12 @@ final class WalletController extends ChangeNotifier {
   }
 
   Future<void> lock() async {
+    await _closeWallet();
+    _setPhase(WalletPhase.locked);
+  }
+
+  /// Stops the reads of the state and closes the wallet in the engine, if one is open there.
+  Future<void> _closeWallet() async {
     _poll?.cancel();
     _poll = null;
     await _pollInFlight;
@@ -91,7 +113,6 @@ final class WalletController extends ChangeNotifier {
     _status = WalletStatus.unknown;
     _transfers = const [];
     _receiveAddress = null;
-    _setPhase(WalletPhase.locked);
   }
 
   /// Closes the wallet before the app quits, so that wallet2 writes its file.
@@ -120,12 +141,12 @@ final class WalletController extends ChangeNotifier {
 
   Future<List<String>> readSeed(String password) => _worker.call<List<String>>(ReadSeed(password: password));
 
-  /// Saves another node and connects the wallet to it. Throws a [NodeAddressException] for an address of the
-  /// wrong form.
+  /// Saves another node for the network of the app and connects the wallet to it. Throws a [NodeAddressException]
+  /// for an address of the wrong form.
   Future<void> changeNode(String text) async {
     final node = parseNodeAddress(text);
-    await _storage.writeNode(node);
-    _node = node;
+    _settings = _settings.withNode(network, node);
+    await _storage.writeSettings(_settings);
     if (_phase == WalletPhase.open) {
       await _connect();
       await _readState(withHistory: false);
@@ -135,7 +156,7 @@ final class WalletController extends ChangeNotifier {
 
   Future<void> _connect() async {
     try {
-      await _worker.call<void>(ConnectNode(address: _node));
+      await _worker.call<void>(ConnectNode(address: node));
     } on WalletException catch (error) {
       if (error.failure != WalletFailure.nodeUnreachable) rethrow;
     }

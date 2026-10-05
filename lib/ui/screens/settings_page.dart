@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../config/app_config.dart';
+import '../../config/network.dart';
 import '../../core/node_address.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
@@ -12,6 +12,7 @@ import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
+import '../widgets/network_choice.dart';
 import '../widgets/page_frame.dart';
 import '../widgets/seed_grid.dart';
 import '../widgets/surfaces.dart';
@@ -33,6 +34,7 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _nodeError;
   String? _nodeNote;
   bool _savingNode = false;
+  bool _switchingNetwork = false;
   String? _seedError;
   bool _readingSeed = false;
   List<String>? _seed;
@@ -54,11 +56,21 @@ class _SettingsPageState extends State<SettingsPage> {
       await widget.controller.changeNode(_node.text);
       setState(() => _nodeNote = Copy.nodeSaved);
     } on NodeAddressException {
-      setState(() => _nodeError = Copy.nodeInvalid);
+      setState(() => _nodeError = Copy.nodeInvalid(widget.controller.network));
     } on WalletException catch (error) {
       setState(() => _nodeError = failureText(error));
     } finally {
       if (mounted) setState(() => _savingNode = false);
+    }
+  }
+
+  /// Locks this wallet and moves the app to the wallet of another network. The settings page closes with it.
+  Future<void> _switchNetwork(MoneroNetwork network) async {
+    setState(() => _switchingNetwork = true);
+    try {
+      await widget.controller.switchNetwork(network);
+    } finally {
+      if (mounted) setState(() => _switchingNetwork = false);
     }
   }
 
@@ -86,7 +98,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return PageFrame(
       title: Copy.settingsTitle,
       lead: Copy.settingsLead,
-      chips: [StatusChip(label: AppConfig.network.label)],
+      chips: [StatusChip(label: widget.controller.network.label)],
       children: [
         Align(
           alignment: Alignment.topLeft,
@@ -123,7 +135,17 @@ class _SettingsPageState extends State<SettingsPage> {
                     children: [
                       const CardTitle(Copy.networkTitle),
                       const SizedBox(height: 4),
-                      Text(Copy.networkNote(AppConfig.network), style: soft),
+                      Text(Copy.networkLead, style: soft),
+                      const SizedBox(height: Metrics.gap),
+                      NetworkChoice(
+                        network: widget.controller.network,
+                        onSelect: _switchingNetwork ? null : _switchNetwork,
+                      ),
+                      const SizedBox(height: Metrics.gapSmall),
+                      Text(
+                        Copy.networkNote(widget.controller.network),
+                        style: KranoxType.small.copyWith(color: palette.inkFaint),
+                      ),
                     ],
                   ),
                 ),

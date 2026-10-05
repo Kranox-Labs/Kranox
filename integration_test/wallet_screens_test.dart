@@ -1,5 +1,6 @@
-// Runs the app on macOS with the real Monero library and a stagenet node, and drives its screens: it makes a wallet,
-// opens it, checks the pages, shows the seed, locks the wallet, and opens it again. The wallet lives in a temporary
+// Runs the app on macOS with the real Monero library and a stagenet node, and drives its screens: it moves from
+// mainnet to stagenet, makes a wallet, opens it, checks the pages, shows the seed, locks the wallet, opens it again,
+// and moves to testnet and back. The wallet lives in a temporary
 // folder, and the test writes a picture of each screen beside it. The test does not wait until the wallet has caught
 // up with the node: wallet_engine_test.dart checks that without a window.
 //
@@ -59,7 +60,7 @@ const String _mainnetAddress =
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('makes, opens, locks, and unlocks a stagenet wallet', (tester) async {
+  testWidgets('makes, opens, locks, and unlocks a stagenet wallet, and moves between networks', (tester) async {
     final root = Directory.systemTemp.createTempSync('kranox-flow');
     final shots = Directory('${root.path}/shots')..createSync();
     debugPrint('Pictures of the screens: ${shots.path}');
@@ -133,8 +134,15 @@ void main() {
         child: KranoxApp(controller: controller),
       ),
     );
+    // The app starts on mainnet. The test wallet belongs on stagenet, and the welcome card moves it there.
     await waitFor(find.text(Copy.createWallet));
+    expect(controller.network, MoneroNetwork.mainnet);
+    expect(find.text(Copy.networkNote(MoneroNetwork.mainnet, lineBreak: true)), findsOneWidget);
     await shoot('01-welcome');
+    await tapText(MoneroNetwork.stagenet.label.toUpperCase());
+    await waitFor(find.text(Copy.networkNote(MoneroNetwork.stagenet, lineBreak: true)));
+    expect(controller.network, MoneroNetwork.stagenet);
+    await shoot('01-welcome-stagenet');
 
     // Make the wallet: a password, then the seed.
     await tapText(Copy.createWallet);
@@ -185,6 +193,8 @@ void main() {
     await tapText(Copy.navSettings);
     await waitFor(find.text(Copy.settingsLead));
     await shoot('08-settings');
+    await tester.ensureVisible(find.text(Copy.networkLead));
+    await shoot('08-settings-network');
     await enter(1, 'wrong-password');
     await tapText(Copy.showSeed);
     await waitFor(find.text(Copy.wrongPassword));
@@ -207,6 +217,20 @@ void main() {
     await tapText(Copy.unlockAction);
     await waitFor(find.text(Copy.balance.toUpperCase()));
     expect(controller.phase, WalletPhase.open);
+
+    // Testnet has no wallet yet, so the settings page leads to the welcome card; back on stagenet, the app asks for
+    // the password of the stagenet wallet.
+    await tapText(Copy.navSettings);
+    await waitFor(find.text(Copy.networkLead));
+    await tapText(MoneroNetwork.testnet.label.toUpperCase());
+    await waitFor(find.text(Copy.createWallet));
+    expect(controller.network, MoneroNetwork.testnet);
+    expect(controller.phase, WalletPhase.noWallet);
+    await shoot('11-welcome-testnet');
+    await tapText(MoneroNetwork.stagenet.label.toUpperCase());
+    await waitFor(find.text(Copy.unlockTitle));
+    expect(controller.network, MoneroNetwork.stagenet);
+    await shoot('12-unlock-stagenet');
 
     await controller.shutdown();
   });

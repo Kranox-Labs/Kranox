@@ -14,7 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kranox_wallet/app.dart';
-import 'package:kranox_wallet/config/app_config.dart';
+import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/ui/copy.dart';
 import 'package:kranox_wallet/ui/theme/palette.dart';
@@ -23,6 +23,7 @@ import 'package:kranox_wallet/ui/widgets/sidebar.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
 import 'package:kranox_wallet/wallet/models.dart';
 import 'package:kranox_wallet/wallet/requests.dart';
+import 'package:kranox_wallet/wallet/settings.dart';
 import 'package:kranox_wallet/wallet/storage.dart';
 import 'package:kranox_wallet/wallet/worker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -58,6 +59,10 @@ const String _sampleAddress =
     '7BNzVRGC5eFgRd1oQzSiTN3bpUQyH8MELWpBLU8TDHZaCswUbfDnZKnUaKVC6F4SWcNCbLtC8s9FctBAqKwg2ygJCL4H5h';
 
 XmrAmount _xmr(String text) => XmrAmount.parse(text);
+
+/// The sample addresses belong to stagenet, so the pictures show the app on stagenet.
+const MoneroNetwork _network = MoneroNetwork.stagenet;
+const AppSettings _settings = AppSettings(network: _network);
 
 /// The answers of a wallet that holds a large balance and has paid and been paid a few times.
 final class _SampleBackend implements WalletBackend {
@@ -215,8 +220,9 @@ void main() {
     // The open wallet. A keys file makes the app find a wallet, so it asks for the password and opens the sample.
     final root = Directory.systemTemp.createTempSync('kranox-showcase');
     final storage = AppStorage(root.path);
-    await storage.prepareWalletFolder();
-    File('${storage.walletPath}.keys').createSync();
+    await storage.writeSettings(_settings);
+    await storage.prepareWalletFolder(_network);
+    File('${storage.walletPath(_network)}.keys').createSync();
     final controller = WalletController(worker: _SampleBackend(DateTime.now()), storage: storage);
     await controller.start();
     await controller.unlock('sample');
@@ -252,7 +258,9 @@ void main() {
 
     // A device without a wallet: the welcome and the restore.
     final emptyRoot = Directory.systemTemp.createTempSync('kranox-showcase-empty');
-    final newcomer = WalletController(worker: _SampleBackend(DateTime.now()), storage: AppStorage(emptyRoot.path));
+    final emptyStorage = AppStorage(emptyRoot.path);
+    await emptyStorage.writeSettings(_settings);
+    final newcomer = WalletController(worker: _SampleBackend(DateTime.now()), storage: emptyStorage);
     await newcomer.start();
     await show(newcomer);
     await waitFor(find.text(Copy.createWallet));
@@ -292,7 +300,7 @@ void main() {
     );
     await shoot('qr');
 
-    debugPrint('Pictures of the screens (${AppConfig.network.label}): ${out.path}');
+    debugPrint('Pictures of the screens (${_network.label}): ${out.path}');
     newcomer.dispose();
     root.deleteSync(recursive: true);
     emptyRoot.deleteSync(recursive: true);

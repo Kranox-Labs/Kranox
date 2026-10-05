@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../config/app_config.dart';
 import '../../core/address.dart';
 import '../../core/amount.dart';
 import '../../wallet/controller.dart';
@@ -51,9 +50,9 @@ class _SendPageState extends State<SendPage> {
       _error = null;
     });
     try {
-      checkAddress(_address.text, AppConfig.network);
+      checkAddress(_address.text, widget.controller.network);
     } on AddressException catch (error) {
-      setState(() => _addressError = addressProblemText(error));
+      setState(() => _addressError = addressProblemText(error, widget.controller.network));
     }
     XmrAmount? amount;
     try {
@@ -121,7 +120,7 @@ class _SendPageState extends State<SendPage> {
     return PageFrame(
       title: Copy.sendTitle,
       lead: Copy.sendLead,
-      chips: [StatusChip(label: AppConfig.network.label)],
+      chips: [StatusChip(label: widget.controller.network.label)],
       children: [
         Align(
           alignment: Alignment.topLeft,
@@ -141,7 +140,7 @@ class _SendPageState extends State<SendPage> {
         LabeledField(
           label: Copy.recipient,
           controller: _address,
-          hint: Copy.recipientHint(AppConfig.network),
+          hint: Copy.recipientHint(widget.controller.network),
           error: _addressError,
           lines: 2,
         ),

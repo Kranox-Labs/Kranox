@@ -1,4 +1,5 @@
 import '../config/app_config.dart';
+import '../config/network.dart';
 import '../core/address.dart';
 import '../core/amount.dart';
 import '../core/seed.dart';
@@ -39,12 +40,13 @@ String failureText(WalletException error) => switch (error.failure) {
   WalletFailure.native => Copy.walletReported(error.detail),
 };
 
-String addressProblemText(AddressException error) => switch (error.problem) {
+/// Says what is wrong with an address for a wallet on [network].
+String addressProblemText(AddressException error, MoneroNetwork network) => switch (error.problem) {
   AddressProblem.empty => Copy.addressEmpty,
   AddressProblem.wrongLength => Copy.addressLength,
   AddressProblem.notBase58 => Copy.addressNotBase58,
   AddressProblem.badChecksum => Copy.addressChecksum,
-  AddressProblem.otherNetwork => Copy.addressOtherNetwork(error.network ?? AppConfig.network, AppConfig.network),
+  AddressProblem.otherNetwork => Copy.addressOtherNetwork(error.network ?? network, network),
   AddressProblem.unknownPrefix => Copy.addressUnknown,
 };
 

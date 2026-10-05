@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-import '../../config/app_config.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
 import '../copy.dart';
@@ -50,7 +49,7 @@ class _ReceivePageState extends State<ReceivePage> {
     return PageFrame(
       title: Copy.receiveTitle,
       lead: Copy.receiveLead,
-      chips: [StatusChip(label: AppConfig.network.label)],
+      chips: [StatusChip(label: widget.controller.network.label)],
       children: [
         Surface(
           padding: const EdgeInsets.all(Metrics.heroPadding),

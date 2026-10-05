@@ -2,16 +2,26 @@ import 'network.dart';
 
 /// The settings of this build of the app. Each value that can change has its one definition here.
 abstract final class AppConfig {
-  /// The first build runs on stagenet, by decision of the owner on 4 Oct 2026. Mainnet follows when send and
-  /// receive have proven safe.
-  static const MoneroNetwork network = MoneroNetwork.stagenet;
+  /// The network of the app until the user chooses another one. The owner chose mainnet on 5 Oct 2026, with a choice
+  /// of stagenet and testnet in the app. Each network keeps its own wallet and its own node.
+  static const MoneroNetwork defaultNetwork = MoneroNetwork.mainnet;
 
-  /// The node that a new wallet uses until the user chooses another one. The user can point the app at any node.
-  /// CHECKED 4 Oct 2026: of five public stagenet nodes that answered, this one let a new wallet catch up fastest,
-  /// at 8,800 to 32,000 blocks a second against 2,800 to 11,200 for the others.
-  static const Map<MoneroNetwork, String> defaultNodes = {MoneroNetwork.stagenet: 'node3.monerodevs.org:38089'};
+  /// The node of each network until the user chooses another one. The user can point the app at any node.
+  static String defaultNode(MoneroNetwork network) => switch (network) {
+    // CHECKED 5 Oct 2026: a new mainnet wallet caught up in 9 seconds on this node and in 11 on
+    // nodes.hashvault.pro:18081; node and node2.monerodevs.org:18089 took 70 to 76 seconds, and node3.monerodevs.org
+    // and monero.stackwallet.com had not caught up after 4 minutes.
+    MoneroNetwork.mainnet => 'xmr-node.cakewallet.com:18081',
+    // CHECKED 5 Oct 2026: a new stagenet wallet caught up in 183 seconds on this node; on node, node2, and
+    // node3.monerodevs.org:38089 it had not caught up after 4 minutes. On 4 Oct 2026 node3 had been the fastest.
+    MoneroNetwork.stagenet => 'stagenet.xmr-tw.org:38081',
+    // CHECKED 5 Oct 2026: a new testnet wallet caught up in 74 seconds on this node; on node, node2, and
+    // node3.monerodevs.org:28089 it had not caught up after 4 minutes. All four run the hard fork version 16.
+    MoneroNetwork.testnet => 'testnet.xmr-tw.org:28081',
+  };
 
-  /// The app keeps one wallet in this version. wallet2 writes the file `main` and the key file `main.keys`.
+  /// The app keeps one wallet for each network. wallet2 writes the file `main` and the key file `main.keys` in the
+  /// folder of the network.
   static const String walletFileName = 'main';
   static const String walletsFolderName = 'wallets';
   static const String settingsFileName = 'settings.json';
@@ -44,13 +54,4 @@ abstract final class AppConfig {
   /// wallet2 derives the key of the wallet file with this many rounds of its key function. 1 is the default of
   /// wallet2, which opens and creates wallets with it.
   static const int kdfRounds = 1;
-
-  /// The node that the app uses for the network of this build.
-  static String get defaultNode {
-    final node = defaultNodes[network];
-    if (node == null) {
-      throw StateError('AppConfig names no default node for ${network.label}.');
-    }
-    return node;
-  }
 }
