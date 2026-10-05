@@ -17,6 +17,7 @@ import '../widgets/field.dart';
 import '../widgets/choice_pill.dart';
 import '../widgets/page_frame.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/swap_steps.dart';
 
 /// An address on Robinhood Chain, an EVM chain: 0x and 40 hex digits.
 final RegExp _evmAddress = RegExp(r'^0x[0-9a-fA-F]{40}$');
@@ -85,7 +86,7 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     listenable: widget.bridge,
     builder: (context, _) {
       final bridge = widget.bridge;
-      final shown = bridge.shownSwap;
+      final shown = bridge.shownSwapOf(SwapDirection.receive);
       return Align(
         alignment: Alignment.topLeft,
         child: ConstrainedBox(
@@ -115,7 +116,20 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
                 ] else
                   _form(context, bridge),
               ],
-              if (bridge.swaps.isNotEmpty) ...[const SizedBox(height: Metrics.gap), _History(swaps: bridge.swaps)],
+              if (bridge.swapsOf(SwapDirection.receive) case final swaps when swaps.isNotEmpty) ...[
+                const SizedBox(height: Metrics.gap),
+                SwapHistory(
+                  title: Copy.bridgeSwapsTitle,
+                  swaps: swaps,
+                  line: (swap) => Copy.bridgeSwapLine(formatDecimal(swap.amount, decimals: 8), swap.asset),
+                  // A failed or refunded swap brought no XMR, so it shows no amount of XMR.
+                  trailing: (swap) => switch (swap.amountOut ?? swap.xmrAmount) {
+                    final xmr? when swap.stage != SwapStage.failed && swap.stage != SwapStage.refunded =>
+                      Copy.bridgeOut(formatDecimal(xmr)),
+                    _ => null,
+                  },
+                ),
+              ],
             ],
           ),
         ),
@@ -213,18 +227,6 @@ class _QuoteLine extends StatelessWidget {
   }
 }
 
-/// How a step of a swap stands, for its mark.
-enum _Mark { done, active, pending, failed, held, refunded }
-
-/// One step of a swap: its mark, its title, and its facts.
-final class _Step {
-  const _Step(this.mark, this.title, [this.facts = const []]);
-
-  final _Mark mark;
-  final String title;
-  final List<Widget> facts;
-}
-
 /// The swap that the page follows: its steps from the deposit to the XMR in this wallet, each with what ChangeNOW
 /// reports about it. A failure, a check, or a refund says what happened and what to do, and the card stays until the
 /// user closes it.
@@ -264,7 +266,7 @@ class _SwapCard extends StatelessWidget {
           ),
           const SizedBox(height: Metrics.gap),
           for (var index = 0; index < steps.length; index++)
-            _StepRow(
+            SwapStepRow(
               step: steps[index],
               last: index == steps.length - 1,
               nextMark: index + 1 < steps.length ? steps[index + 1].mark : null,
@@ -273,7 +275,7 @@ class _SwapCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _CopyLine(label: Copy.bridgeSwapId, value: swap.id, shorten: false),
+                child: SwapCopyLine(label: Copy.bridgeSwapId, value: swap.id, shorten: false),
               ),
               if (onAnother != null) PillButton(label: Copy.bridgeAnother, tone: PillTone.quiet, onPressed: onAnother),
               if (onClose != null) PillButton(label: Copy.bridgeClose, tone: PillTone.solid, onPressed: onClose),
@@ -286,228 +288,67 @@ class _SwapCard extends StatelessWidget {
 
   /// The steps as the swap stands: the steps of a good swap up to the furthest one it reached, then either the rest
   /// of the way, or the check, the failure, or the refund in place of the step where it stopped.
-  List<_Step> _steps(BuildContext context) {
+  List<SwapStep> _steps(BuildContext context) {
     final asset = swap.asset;
     final amount = formatDecimal(swap.amount, decimals: 8);
-    final estimate = swap.estimatedXmr;
+    final estimate = swap.xmrAmount;
     final xmr = swap.amountOut ?? estimate;
     final xmrText = xmr == null ? '…' : formatDecimal(xmr);
     final depositHash = swap.depositHash;
     final payoutHash = swap.payoutHash;
-    final stage = swap.stage;
 
     // Each step of the way, with its facts once done and while it runs.
-    _Step step(SwapStage of, _Mark mark) => switch (of) {
-      SwapStage.waiting => _Step(mark, mark == _Mark.done ? Copy.bridgeStepDeposited : Copy.bridgeStepWaiting, [
-        if (mark == _Mark.active) _Deposit(swap: swap),
-        if (mark == _Mark.done) _Fact(Copy.bridgeStepReceived(amount, asset)),
-        if (mark == _Mark.done && depositHash != null) _CopyLine(label: Copy.bridgeDepositHash, value: depositHash),
+    SwapStep step(SwapStage of, SwapMark mark) => switch (of) {
+      SwapStage.waiting => SwapStep(mark, mark == SwapMark.done ? Copy.bridgeStepDeposited : Copy.bridgeStepWaiting, [
+        if (mark == SwapMark.active) _Deposit(swap: swap),
+        if (mark == SwapMark.done) SwapFact(Copy.bridgeStepReceived(amount, asset)),
+        if (mark == SwapMark.done && depositHash != null)
+          SwapCopyLine(label: Copy.bridgeDepositHash, value: depositHash),
       ]),
-      SwapStage.confirming => _Step(mark, Copy.bridgeStepConfirming, [
-        if (mark == _Mark.active) const _Fact(Copy.bridgeStepConfirmingNote),
+      SwapStage.confirming => SwapStep(mark, Copy.bridgeStepConfirming, [
+        if (mark == SwapMark.active) const SwapFact(Copy.bridgeStepConfirmingNote),
       ]),
-      SwapStage.exchanging => _Step(mark, Copy.bridgeStepExchanging(asset), [
-        if (mark == _Mark.active && estimate != null) _Fact(Copy.bridgeStepRate(formatDecimal(estimate))),
-        if (mark == _Mark.done) _Fact(Copy.bridgeStepExchanged(xmrText)),
+      SwapStage.exchanging => SwapStep(mark, Copy.bridgeStepExchanging(asset), [
+        if (mark == SwapMark.active && estimate != null) SwapFact(Copy.bridgeStepRate(formatDecimal(estimate))),
+        if (mark == SwapMark.done) SwapFact(Copy.bridgeStepExchanged(xmrText)),
       ]),
-      SwapStage.sending => _Step(mark, Copy.bridgeStepSending(swap.subaddressIndex), [
-        if (mark == _Mark.active) _Fact(Copy.bridgeStepSendingNote(xmrText)),
-        if (mark != _Mark.pending && payoutHash != null) _CopyLine(label: Copy.bridgePayoutHash, value: payoutHash),
+      SwapStage.sending => SwapStep(mark, Copy.bridgeStepSending(swap.subaddressIndex), [
+        if (mark == SwapMark.active) SwapFact(Copy.bridgeStepSendingNote(xmrText)),
+        if (mark != SwapMark.pending && payoutHash != null)
+          SwapCopyLine(label: Copy.bridgePayoutHash, value: payoutHash),
       ]),
-      _ => _Step(mark, Copy.bridgeStepDone, [if (mark == _Mark.done) _Fact(Copy.bridgeStepDoneNote(xmrText))]),
+      _ => SwapStep(mark, Copy.bridgeStepDone, [if (mark == SwapMark.done) SwapFact(Copy.bridgeStepDoneNote(xmrText))]),
     };
 
-    final path = SwapStage.path;
-    final reached = path.indexOf(swap.reached);
-    if (!stage.isOffPath) {
-      final current = path.indexOf(stage);
-      return [
-        for (var index = 0; index < path.length; index++)
-          step(
-            path[index],
-            index < current || stage == SwapStage.finished
-                ? _Mark.done
-                : index == current
-                ? _Mark.active
-                : _Mark.pending,
-          ),
-      ];
-    }
-    final before = [for (var index = 0; index < reached; index++) step(path[index], _Mark.done)];
     final refundAddress = swap.refundAddress;
     final refundHash = swap.refundHash;
-    return switch (stage) {
-      // ChangeNOW checks a swap after the deposit, so the steps up to the furthest one show as done.
-      SwapStage.verifying => [
-        ...before,
-        step(path[reached], _Mark.done),
-        const _Step(_Mark.held, Copy.bridgeStepHeld, [_Fact(Copy.bridgeHeld)]),
-        for (var index = reached + 1; index < path.length; index++) step(path[index], _Mark.pending),
-      ],
-      SwapStage.refunded => [
-        ...before,
-        _Step(_Mark.refunded, Copy.bridgeStepRefunded, [
-          _Fact(
-            refundAddress == null
-                ? Copy.bridgeRefundedNoAddress(formatDecimal(swap.refundAmount ?? swap.amount, decimals: 8), asset)
-                : Copy.bridgeRefundedTo(
-                    formatDecimal(swap.refundAmount ?? swap.amount, decimals: 8),
-                    asset,
-                    shortText(refundAddress),
-                  ),
-          ),
-          if (refundHash != null) _CopyLine(label: Copy.bridgeRefundHash, value: refundHash),
-        ]),
-      ],
-      _ => [
-        ...before,
-        _Step(_Mark.failed, Copy.bridgeStepFailed, [
-          _Fact(
-            depositHash == null && swap.reached == SwapStage.waiting
-                ? Copy.bridgeFailedNoDeposit(asset)
-                : refundAddress == null
-                ? Copy.bridgeFailedNoRefundAddress(amount, asset)
-                : Copy.bridgeFailedRefunding(amount, asset, shortText(refundAddress)),
-          ),
-          // The step of the deposit shows its hash once it is done; before that, the failure shows it.
-          if (depositHash != null && reached == 0) _CopyLine(label: Copy.bridgeDepositHash, value: depositHash),
-        ]),
-      ],
-    };
-  }
-}
-
-/// A step: its mark on a line that joins the marks, beside its title and its facts.
-class _StepRow extends StatelessWidget {
-  const _StepRow({required this.step, required this.last, required this.nextMark});
-
-  final _Step step;
-  final bool last;
-  final _Mark? nextMark;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final reachedNext = nextMark == _Mark.done || nextMark == _Mark.active;
-    final titleColor = switch (step.mark) {
-      _Mark.pending => palette.inkFaint,
-      _Mark.failed => palette.danger,
-      _ => palette.ink,
-    };
-    // The line to the next mark hangs beside the row, so that it reaches as far down as the facts of the step go.
-    return Stack(
-      children: [
-        if (!last)
-          Positioned(
-            left: (Metrics.stepMark - Metrics.stepLine) / 2,
-            top: Metrics.stepMark,
-            bottom: 0,
-            child: Container(width: Metrics.stepLine, color: reachedNext ? palette.accent : palette.line),
-          ),
-        Padding(
-          padding: EdgeInsets.only(bottom: last ? 0 : Metrics.gap),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _StepMark(mark: step.mark),
-              const SizedBox(width: Metrics.gapSmall + 4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      height: Metrics.stepMark,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(step.title, style: KranoxType.body.copyWith(color: titleColor)),
-                      ),
-                    ),
-                    for (final fact in step.facts) ...[const SizedBox(height: Metrics.gapTiny), fact],
-                  ],
+    return swapSteps(
+      swap,
+      step: step,
+      refunded: SwapStep(SwapMark.refunded, Copy.bridgeStepRefunded, [
+        SwapFact(
+          refundAddress == null
+              ? Copy.bridgeRefundedNoAddress(formatDecimal(swap.refundAmount ?? swap.amount, decimals: 8), asset)
+              : Copy.bridgeRefundedTo(
+                  formatDecimal(swap.refundAmount ?? swap.amount, decimals: 8),
+                  asset,
+                  shortText(refundAddress),
                 ),
-              ),
-            ],
-          ),
         ),
-      ],
-    );
-  }
-}
-
-/// The mark of a step: a check when done, a spinner while it runs, an empty ring before it, and a sign for a
-/// failure, a check, and a refund.
-class _StepMark extends StatelessWidget {
-  const _StepMark({required this.mark});
-
-  final _Mark mark;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    Widget filled(Color color, IconData icon, Color ink) => DecoratedBox(
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: Center(child: Icon(icon, size: 15, color: ink)),
-    );
-    Widget ring(Color color, {Widget? child}) => DecoratedBox(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: color, width: 2),
-      ),
-      child: child == null ? null : Center(child: child),
-    );
-    return SizedBox.square(
-      dimension: Metrics.stepMark,
-      child: switch (mark) {
-        _Mark.done => filled(palette.accent, Icons.check_rounded, palette.onAccent),
-        _Mark.failed => filled(palette.danger, Icons.close_rounded, palette.onAccent),
-        _Mark.active => Padding(
-          padding: const EdgeInsets.all(2),
-          child: CircularProgressIndicator(strokeWidth: 2.4, color: palette.accent, backgroundColor: palette.line),
+        if (refundHash != null) SwapCopyLine(label: Copy.bridgeRefundHash, value: refundHash),
+      ]),
+      failed: SwapStep(SwapMark.failed, Copy.bridgeStepFailed, [
+        SwapFact(
+          depositHash == null && swap.reached == SwapStage.waiting
+              ? Copy.bridgeFailedNoDeposit(asset)
+              : refundAddress == null
+              ? Copy.bridgeFailedNoRefundAddress(amount, asset)
+              : Copy.bridgeFailedRefunding(amount, asset, shortText(refundAddress)),
         ),
-        _Mark.held => ring(palette.accent, child: Icon(Icons.pause_rounded, size: 14, color: palette.accent)),
-        _Mark.refunded => ring(palette.accent, child: Icon(Icons.undo_rounded, size: 14, color: palette.accent)),
-        _Mark.pending => ring(palette.line),
-      },
-    );
-  }
-}
-
-/// A sentence about a step.
-class _Fact extends StatelessWidget {
-  const _Fact(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) =>
-      Text(text, style: KranoxType.small.copyWith(color: context.palette.inkSoft, height: 1.45));
-}
-
-/// A value of a step that the user may need elsewhere, such as a transaction hash, with a button that copies it.
-class _CopyLine extends StatelessWidget {
-  const _CopyLine({required this.label, required this.value, this.shorten = true});
-
-  final String label;
-  final String value;
-  final bool shorten;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('${label.toUpperCase()}  ', style: KranoxType.label.copyWith(color: palette.inkSoft)),
-        Text(shorten ? shortText(value) : value, style: KranoxType.mono.copyWith(color: palette.ink)),
-        const SizedBox(width: 4),
-        IconButton(
-          onPressed: () => copyToClipboard(context, value),
-          tooltip: Copy.copied,
-          visualDensity: VisualDensity.compact,
-          iconSize: 16,
-          icon: Icon(Icons.copy_rounded, color: palette.inkSoft),
-        ),
-      ],
+        // The step of the deposit shows its hash once it is done; before that, the failure shows it.
+        if (depositHash != null && swap.reached == SwapStage.waiting)
+          SwapCopyLine(label: Copy.bridgeDepositHash, value: depositHash),
+      ]),
     );
   }
 }
@@ -573,57 +414,6 @@ class _Deposit extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-/// Every swap of this device, the newest first, with its state.
-class _History extends StatelessWidget {
-  const _History({required this.swaps});
-
-  final List<BridgeSwap> swaps;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final now = DateTime.now();
-    return Surface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const CardTitle(Copy.bridgeSwapsTitle),
-          const SizedBox(height: Metrics.gapSmall),
-          for (final swap in swaps)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          Copy.bridgeSwapLine(formatDecimal(swap.amount, decimals: 8), swap.asset),
-                          style: KranoxType.body.copyWith(color: palette.ink),
-                        ),
-                        Text(
-                          '${formatTime(swap.createdAt, now)} · ${Copy.bridgeStage(swap.stage)}',
-                          style: KranoxType.small.copyWith(
-                            color: swap.stage == SwapStage.failed ? palette.danger : palette.inkSoft,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // A failed or refunded swap brought no XMR, so it shows no amount of XMR.
-                  if (swap.stage != SwapStage.failed && swap.stage != SwapStage.refunded)
-                    if ((swap.amountOut ?? swap.estimatedXmr) case final xmr?)
-                      Text(Copy.bridgeOut(formatDecimal(xmr)), style: KranoxType.body.copyWith(color: palette.ink)),
-                ],
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

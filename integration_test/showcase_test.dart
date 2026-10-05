@@ -78,6 +78,7 @@ final class _SampleBackend implements WalletBackend {
   _SampleBackend(this._now);
 
   final DateTime _now;
+  PreparedSend? _prepared;
 
   // The height of mainnet: CHECKED 5 Oct 2026, source get_info of xmr-node.cakewallet.com:18081.
   static const int _height = 3777437;
@@ -122,11 +123,12 @@ final class _SampleBackend implements WalletBackend {
     final Object? answer = switch (request) {
       OpenWallet() || ConnectNode() || StoreWallet() || CloseWallet() => null,
       ReadReceiveAddress() => const ReceiveAddress(address: _sampleAddress, index: 4),
-      PrepareSend(:final address, :final amountUnits) => PreparedSend(
+      PrepareSend(:final address, :final amountUnits) => _prepared = PreparedSend(
         address: address,
         amount: XmrAmount(amountUnits),
         fee: _xmr('0.0000312'),
       ),
+      ConfirmSend() => SentPayment(transactionId: _samplePayinHash, amount: _prepared!.amount, fee: _prepared!.fee),
       CancelSend() => null,
       ReadHistory() => _history,
       ReadStatus() => WalletStatus(
@@ -158,6 +160,18 @@ const String _samplePayoutHash = 'c4f27a91e05b3d6f8a2c71e94d0b5f3a6e8c2d17b94f0a
 const String _sampleRefundHash = '0x2b7e91c4d05f3a6e8c2d17b94f0a3e5c6d81b2a7f94e03c4f27a91e05b3d6f8a';
 const String _sampleRefundAddress = '0x57f31ad4b64095347F87eDB1675566DAfF5EC886';
 
+/// The recipient of the sample payment to Robinhood Chain: the first example of EIP-55, in its mixed case.
+const String _payRecipient = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+
+/// Sample hashes of the payment to Robinhood Chain: the XMR that the wallet sends, and the coin at the recipient. They
+/// belong to no known transaction.
+const String _samplePayinHash = '7d0e94b1c3a52f68e0d9b4a17c3e5f2a9b8c6d4e1f0a3b5c7d9e2f4a6b8c0d1e3';
+const String _sampleChainHash = '0x5c8e2a7b9d14f03e6a2c8b5d7e9f1a3c5e7b9d0f2a4c6e8b1d3f5a7c9e0b2d4f';
+
+/// The XMR for one coin of a payment at a fixed rate. CHECKED 5 Oct 2026, the fixed-rate estimates of ChangeNOW: 80
+/// USDG for 0.15366631 XMR, and 0.03 ETH for 0.15475806 XMR.
+const Map<BridgeAsset, double> _payXmrPerCoin = {BridgeAsset.usdg: 0.15366631 / 80, BridgeAsset.eth: 0.15475806 / 0.03};
+
 /// The answers of the exchanger for the pictures: a quote at the prices of 5 Oct 2026, and swaps whose state the test
 /// sets step by step.
 final class _SampleBridge implements BridgeClient {
@@ -185,6 +199,35 @@ final class _SampleBridge implements BridgeClient {
     amount: double.parse(amount),
     estimatedXmr: double.parse(amount) * _xmrPerEth,
     depositAddress: _sampleDeposit,
+    payoutAddress: address,
+  );
+
+  @override
+  Future<PayQuote> payQuote(BridgeAsset asset, String amount) async => PayQuote(
+    asset: asset,
+    amount: amount,
+    xmrAmount: double.parse(amount) * _payXmrPerCoin[asset]!,
+    rateId: 'sample-rate',
+    validUntil: null,
+    warning: null,
+    limit: null,
+    minXmr: null,
+    maxXmr: null,
+  );
+
+  // The sample deposit address of the exchanger is the mainnet address of the throwaway wallet.
+  @override
+  Future<CreatedPay> createPay({
+    required BridgeAsset asset,
+    required String amount,
+    required String address,
+    required String refundAddress,
+    required String rateId,
+  }) async => CreatedPay(
+    id: '7b2d91e04c5fa${++_swaps}',
+    amount: double.parse(amount),
+    xmrAmount: double.parse(amount) * _payXmrPerCoin[asset]!,
+    depositAddress: _recipientAddress,
     payoutAddress: address,
   );
 
@@ -407,6 +450,41 @@ void main() {
       ),
       'receive-chain-refunded',
     );
+    // Pay to Robinhood Chain: a quote for 80 USDG at a fixed rate, the review, and the payment on its way and at its
+    // end.
+    await openPage(Copy.navSend);
+    await tester.tap(find.text(Copy.sendChainTab.toUpperCase()));
+    await waitFor(find.text(Copy.payTheyReceive.toUpperCase()));
+    await tester.enterText(find.byType(TextField).at(0), _payRecipient);
+    await tester.enterText(find.byType(TextField).at(1), '80');
+    await waitFor(find.textContaining('You pay'));
+    await shoot('send-chain-quote');
+    sampleBridge.state = SwapState(
+      stage: SwapStage.waiting,
+      validUntil: DateTime.now().add(const Duration(minutes: 10)),
+    );
+    await tester.tap(find.text(Copy.review));
+    await waitFor(find.text(Copy.payNow));
+    await shoot('send-chain-review');
+    await tester.tap(find.text(Copy.payNow));
+    await waitFor(find.text(Copy.payStepWaiting));
+    await tester.pump(_frame);
+    await shoot('send-chain-waiting');
+    await swapAt(
+      const SwapState(stage: SwapStage.exchanging, expectedOut: 80, depositHash: _samplePayinHash),
+      'send-chain-exchanging',
+    );
+    await swapAt(
+      const SwapState(
+        stage: SwapStage.finished,
+        expectedOut: 80,
+        amountOut: 80,
+        depositHash: _samplePayinHash,
+        payoutHash: _sampleChainHash,
+      ),
+      'send-chain-done',
+    );
+
     await tester.pumpWidget(const SizedBox.shrink());
     mainnetBridge.dispose();
     await mainnet.shutdown();

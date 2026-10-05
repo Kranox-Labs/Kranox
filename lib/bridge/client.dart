@@ -14,6 +14,9 @@ enum BridgeFailure {
 
   /// The exchanger failed or answered in a form that the app does not read.
   failed,
+
+  /// The fixed rate of a payment ran out before the payment left, so the user reviews the payment again.
+  rateExpired,
 }
 
 final class BridgeException implements Exception {
@@ -38,6 +41,20 @@ abstract interface class BridgeClient {
     required String amount,
     required String address,
     String? refundAddress,
+  });
+
+  /// Asks the exchanger what a payment of [amount] of [asset] on Robinhood Chain takes in XMR at a fixed rate.
+  Future<PayQuote> payQuote(BridgeAsset asset, String amount);
+
+  /// Asks the exchanger for a payment of exactly [amount] of [asset] to [address] on Robinhood Chain, at the fixed
+  /// rate of [rateId], with a refund of the XMR to [refundAddress] of this wallet. The answer carries the Monero
+  /// address of the deposit and the XMR that it takes.
+  Future<CreatedPay> createPay({
+    required BridgeAsset asset,
+    required String amount,
+    required String address,
+    required String refundAddress,
+    required String rateId,
   });
 
   Future<SwapState> readSwap(String id);
@@ -81,6 +98,45 @@ final class CreatedSwap {
   }
 }
 
+/// The answer of the relay to a new payment.
+final class CreatedPay {
+  const CreatedPay({
+    required this.id,
+    required this.amount,
+    required this.xmrAmount,
+    required this.depositAddress,
+    required this.payoutAddress,
+  });
+
+  final String id;
+
+  /// The amount that the recipient gets.
+  final double amount;
+
+  /// The XMR that the deposit takes at the fixed rate.
+  final double xmrAmount;
+  final String depositAddress;
+  final String payoutAddress;
+
+  factory CreatedPay.fromJson(Map<String, Object?> data) {
+    final id = data['id'];
+    final amount = data['amount'];
+    final xmr = data['xmrAmount'];
+    final deposit = data['depositAddress'];
+    final payout = data['payoutAddress'];
+    if (id is! String || amount is! num || xmr is! num || deposit is! String || payout is! String) {
+      throw const FormatException('The relay answered a new payment without its id, amounts, or addresses.');
+    }
+    return CreatedPay(
+      id: id,
+      amount: amount.toDouble(),
+      xmrAmount: xmr.toDouble(),
+      depositAddress: deposit,
+      payoutAddress: payout,
+    );
+  }
+}
+
 /// The bridge through the relay of Kranox, over HTTP.
 final class RelayBridgeClient implements BridgeClient {
   RelayBridgeClient({String baseUrl = AppConfig.bridgeRelay}) : _base = Uri.parse(baseUrl);
@@ -103,6 +159,31 @@ final class RelayBridgeClient implements BridgeClient {
       'POST',
       '/v1/receive/swaps',
       body: {'asset': asset.code, 'amount': amount, 'address': address, 'refundAddress': ?refundAddress},
+    ),
+  );
+
+  @override
+  Future<PayQuote> payQuote(BridgeAsset asset, String amount) async =>
+      PayQuote.fromJson(await _call('GET', '/v1/pay/quote', query: {'asset': asset.code, 'amount': amount}));
+
+  @override
+  Future<CreatedPay> createPay({
+    required BridgeAsset asset,
+    required String amount,
+    required String address,
+    required String refundAddress,
+    required String rateId,
+  }) async => CreatedPay.fromJson(
+    await _call(
+      'POST',
+      '/v1/pay/swaps',
+      body: {
+        'asset': asset.code,
+        'amount': amount,
+        'address': address,
+        'refundAddress': refundAddress,
+        'rateId': rateId,
+      },
     ),
   );
 

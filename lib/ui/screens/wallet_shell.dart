@@ -50,7 +50,7 @@ class _WalletShellState extends State<WalletShell> {
             Expanded(
               child: switch (_page) {
                 WalletPage.home => HomePage(controller: controller, onNavigate: _go),
-                WalletPage.send => SendPage(controller: controller),
+                WalletPage.send => SendPage(controller: controller, bridge: widget.bridge),
                 WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
                 WalletPage.activity => ActivityPage(controller: controller),
                 WalletPage.settings => SettingsPage(controller: controller, bridge: widget.bridge, onLock: _lock),

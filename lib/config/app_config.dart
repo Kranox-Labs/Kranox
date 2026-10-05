@@ -69,6 +69,14 @@ abstract final class AppConfig {
   /// An amount in the bridge form has at most this many decimals.
   static const int bridgeAmountDecimals = 8;
 
+  /// Pay sends its XMR only while the fixed rate holds at least this much longer, so that the deposit reaches the
+  /// exchanger in time. CHECKED 5 Oct 2026: ChangeNOW holds a fixed rate for 10 minutes after it makes a payment.
+  static const Duration payRateMargin = Duration(minutes: 1);
+
+  /// The amount of a payment that the exchanger makes may differ from the amount of the form by this much, which is
+  /// the rounding of a number, not a change of the amount.
+  static const double payAmountTolerance = 1e-9;
+
   /// The file of the support folder that keeps the swaps of the bridge.
   static const String bridgeFileName = 'bridge.json';
 

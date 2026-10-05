@@ -3,6 +3,7 @@ import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/address.dart';
 import '../core/amount.dart';
+import '../core/evm_address.dart';
 import '../core/seed.dart';
 import '../wallet/failure.dart';
 import 'copy.dart';
@@ -82,4 +83,10 @@ String bridgeFailureText(BridgeException error) => switch (error.failure) {
   BridgeFailure.relayDown => Copy.bridgeRelayDown,
   BridgeFailure.refused => Copy.bridgeRefused(error.detail),
   BridgeFailure.failed => Copy.bridgeFailed(error.detail),
+  BridgeFailure.rateExpired => Copy.payRateExpired,
+};
+
+String evmAddressProblemText(EvmAddressProblem problem) => switch (problem) {
+  EvmAddressProblem.empty || EvmAddressProblem.wrongForm => Copy.payRecipientWrongForm,
+  EvmAddressProblem.badChecksum => Copy.payRecipientBadChecksum,
 };

@@ -1,4 +1,13 @@
-/// The coins on Robinhood Chain that the bridge takes in and turns into XMR. [code] is their name at the relay.
+import '../config/app_config.dart';
+
+/// An amount of a form of the bridge: digits, and a point with at most [AppConfig.bridgeAmountDecimals] decimals.
+final RegExp _amountPattern = RegExp('^\\d{1,9}(\\.\\d{1,${AppConfig.bridgeAmountDecimals}})?\$');
+
+/// Whether [text] is an amount above zero that a form of the bridge takes.
+bool isBridgeAmount(String text) => _amountPattern.hasMatch(text) && double.parse(text) > 0;
+
+/// The coins on Robinhood Chain that the bridge takes in for XMR and pays out from XMR. [code] is their name at the
+/// relay.
 enum BridgeAsset {
   eth(code: 'eth', label: 'ETH'),
   usdg(code: 'usdg', label: 'USDG');
@@ -45,6 +54,54 @@ final class BridgeQuote {
   );
 }
 
+/// Where an amount of a payment stands outside the range of the fixed rate.
+enum PayLimit { below, above }
+
+/// What the exchanger asks for a payment of [amount] of [asset] at a fixed rate: the XMR that it takes, with the id
+/// of the rate and the time until which the estimate holds. Outside the range of the fixed rate it gives that range in
+/// XMR instead, with [limit] on the side where the amount stands.
+final class PayQuote {
+  const PayQuote({
+    required this.asset,
+    required this.amount,
+    required this.xmrAmount,
+    required this.rateId,
+    required this.validUntil,
+    required this.warning,
+    required this.limit,
+    required this.minXmr,
+    required this.maxXmr,
+  });
+
+  final BridgeAsset asset;
+
+  /// The amount that the recipient gets, as the form holds it.
+  final String amount;
+  final double? xmrAmount;
+  final String? rateId;
+  final DateTime? validUntil;
+  final String? warning;
+  final PayLimit? limit;
+  final double? minXmr;
+  final double? maxXmr;
+
+  factory PayQuote.fromJson(Map<String, Object?> data) {
+    final valid = _stringOrNull(data, 'validUntil');
+    final limit = _stringOrNull(data, 'limit');
+    return PayQuote(
+      asset: BridgeAsset.fromCode(_string(data, 'asset')),
+      amount: _string(data, 'amount'),
+      xmrAmount: _numberOrNull(data, 'xmrAmount'),
+      rateId: _stringOrNull(data, 'rateId'),
+      validUntil: valid == null ? null : DateTime.tryParse(valid),
+      warning: _stringOrNull(data, 'warning'),
+      limit: limit == null ? null : PayLimit.values.byName(limit),
+      minXmr: _numberOrNull(data, 'minXmr'),
+      maxXmr: _numberOrNull(data, 'maxXmr'),
+    );
+  }
+}
+
 /// The steps of a swap at the exchanger, from its status names: new, waiting, confirming, exchanging, sending,
 /// finished, failed, refunded, and verifying.
 enum SwapStage {
@@ -79,14 +136,21 @@ enum SwapStage {
   bool get isOffPath => !path.contains(this);
 }
 
-/// One swap into XMR: the user sends [amount] of [asset] on Robinhood Chain to [depositAddress], and the exchanger
-/// sends XMR to the subaddress [subaddressIndex] of the wallet.
+/// Which way a swap goes: a coin on Robinhood Chain into XMR for this wallet, or XMR of this wallet out to an address
+/// on Robinhood Chain.
+enum SwapDirection { receive, pay }
+
+/// One swap of the bridge. For receive, the user sends [amount] of [asset] on Robinhood Chain to [depositAddress],
+/// and the exchanger sends XMR to the subaddress [subaddressIndex] of the wallet. For pay, the wallet sends
+/// [xmrAmount] to [depositAddress], a Monero address of the exchanger, and the exchanger sends exactly [amount] of
+/// [asset] to [payoutAddress] on Robinhood Chain; a refund goes back to the subaddress [subaddressIndex].
 final class BridgeSwap {
   const BridgeSwap({
+    this.direction = SwapDirection.receive,
     required this.id,
     required this.asset,
     required this.amount,
-    required this.estimatedXmr,
+    required this.xmrAmount,
     required this.depositAddress,
     required this.payoutAddress,
     required this.subaddressIndex,
@@ -100,15 +164,20 @@ final class BridgeSwap {
     this.refundHash,
     this.refundAmount,
     this.updatedAt,
+    this.validUntil,
     this.closed = false,
   }) : reached = reached ?? stage;
 
+  final SwapDirection direction;
   final String id;
   final BridgeAsset asset;
+
+  /// The amount of [asset]: what the user sends in for receive, and what the recipient gets for pay.
   final double amount;
 
-  /// The XMR that the exchanger expects to send, at the rate of the moment.
-  final double? estimatedXmr;
+  /// The XMR of the swap: for receive, what the exchanger expects to send at the rate of the moment; for pay, what
+  /// this wallet sends at the fixed rate.
+  final double? xmrAmount;
   final String depositAddress;
   final String payoutAddress;
   final int subaddressIndex;
@@ -119,32 +188,38 @@ final class BridgeSwap {
   /// shows where it stopped.
   final SwapStage reached;
 
-  /// The XMR that the exchanger sent, once it knows the amount.
+  /// What the exchanger sent, once it knows the amount: XMR for receive, [asset] for pay.
   final double? amountOut;
 
-  /// The transaction of the deposit on Robinhood Chain.
+  /// The transaction of the deposit: on Robinhood Chain for receive, the Monero payment of this wallet for pay.
   final String? depositHash;
 
-  /// The transaction of the XMR to this wallet.
+  /// The transaction of the payout: the XMR to this wallet for receive, [asset] to the recipient for pay.
   final String? payoutHash;
 
-  /// The address on Robinhood Chain to which the exchanger returns the deposit of a swap that fails.
+  /// Where the exchanger returns the deposit of a swap that fails: an optional address on Robinhood Chain for
+  /// receive, a subaddress of this wallet for pay.
   final String? refundAddress;
   final String? refundHash;
+
+  /// The refund, in the coin of the deposit.
   final double? refundAmount;
   final DateTime? updatedAt;
+
+  /// For pay, the time until which the fixed rate waits for the deposit.
+  final DateTime? validUntil;
 
   /// Whether the user closed the card of the ended swap. An ended swap shows until the user closes it.
   final bool closed;
 
-  /// The swap with the state that the exchanger reported.
+  /// The swap with the state that the exchanger reported. The XMR of a payment stays as the wallet sent it.
   BridgeSwap withState(SwapState state) {
     final reachedIndex = SwapStage.path.indexOf(reached);
     final stageIndex = SwapStage.path.indexOf(state.stage);
     return _copy(
       stage: state.stage,
       reached: stageIndex > reachedIndex ? state.stage : reached,
-      estimatedXmr: state.expectedOut ?? estimatedXmr,
+      xmrAmount: direction == SwapDirection.receive ? state.expectedOut ?? xmrAmount : xmrAmount,
       amountOut: state.amountOut ?? amountOut,
       depositHash: state.depositHash ?? depositHash,
       payoutHash: state.payoutHash ?? payoutHash,
@@ -152,6 +227,7 @@ final class BridgeSwap {
       refundHash: state.refundHash ?? refundHash,
       refundAmount: state.refundAmount ?? refundAmount,
       updatedAt: state.updatedAt ?? updatedAt,
+      validUntil: state.validUntil ?? validUntil,
     );
   }
 
@@ -168,7 +244,7 @@ final class BridgeSwap {
   BridgeSwap _copy({
     SwapStage? stage,
     SwapStage? reached,
-    double? estimatedXmr,
+    double? xmrAmount,
     double? amountOut,
     String? depositHash,
     String? payoutHash,
@@ -176,12 +252,14 @@ final class BridgeSwap {
     String? refundHash,
     double? refundAmount,
     DateTime? updatedAt,
+    DateTime? validUntil,
     bool? closed,
   }) => BridgeSwap(
+    direction: direction,
     id: id,
     asset: asset,
     amount: amount,
-    estimatedXmr: estimatedXmr ?? this.estimatedXmr,
+    xmrAmount: xmrAmount ?? this.xmrAmount,
     depositAddress: depositAddress,
     payoutAddress: payoutAddress,
     subaddressIndex: subaddressIndex,
@@ -195,14 +273,16 @@ final class BridgeSwap {
     refundHash: refundHash ?? this.refundHash,
     refundAmount: refundAmount ?? this.refundAmount,
     updatedAt: updatedAt ?? this.updatedAt,
+    validUntil: validUntil ?? this.validUntil,
     closed: closed ?? this.closed,
   );
 
   Map<String, Object?> toJson() => {
+    'direction': direction.name,
     'id': id,
     'asset': asset.code,
     'amount': amount,
-    'estimatedXmr': estimatedXmr,
+    'xmrAmount': xmrAmount,
     'depositAddress': depositAddress,
     'payoutAddress': payoutAddress,
     'subaddressIndex': subaddressIndex,
@@ -216,19 +296,24 @@ final class BridgeSwap {
     'refundHash': refundHash,
     'refundAmount': refundAmount,
     'updatedAt': updatedAt?.toUtc().toIso8601String(),
+    'validUntil': validUntil?.toUtc().toIso8601String(),
     'closed': closed,
   };
 
-  /// Reads a saved swap. A swap saved before a field existed reads without it.
+  /// Reads a saved swap. A swap saved before a field existed reads without it: a swap of the release 0.1.0 is a
+  /// receive with its XMR under the name "estimatedXmr".
   factory BridgeSwap.fromJson(Map<String, Object?> data) {
     final stage = _stageNamed(_string(data, 'stage'));
     final reached = _stringOrNull(data, 'reached');
     final updated = _stringOrNull(data, 'updatedAt');
+    final valid = _stringOrNull(data, 'validUntil');
+    final direction = _stringOrNull(data, 'direction');
     return BridgeSwap(
+      direction: direction == null ? SwapDirection.receive : SwapDirection.values.byName(direction),
       id: _string(data, 'id'),
       asset: BridgeAsset.fromCode(_string(data, 'asset')),
       amount: _number(data, 'amount'),
-      estimatedXmr: _numberOrNull(data, 'estimatedXmr'),
+      xmrAmount: _numberOrNull(data, 'xmrAmount') ?? _numberOrNull(data, 'estimatedXmr'),
       depositAddress: _string(data, 'depositAddress'),
       payoutAddress: _string(data, 'payoutAddress'),
       subaddressIndex: _number(data, 'subaddressIndex').toInt(),
@@ -242,6 +327,7 @@ final class BridgeSwap {
       refundHash: _stringOrNull(data, 'refundHash'),
       refundAmount: _numberOrNull(data, 'refundAmount'),
       updatedAt: updated == null ? null : DateTime.parse(updated),
+      validUntil: valid == null ? null : DateTime.parse(valid),
       closed: data['closed'] == true,
     );
   }
@@ -264,6 +350,7 @@ final class SwapState {
     this.refundHash,
     this.refundAmount,
     this.updatedAt,
+    this.validUntil,
   });
 
   final SwapStage stage;
@@ -275,9 +362,11 @@ final class SwapState {
   final String? refundHash;
   final double? refundAmount;
   final DateTime? updatedAt;
+  final DateTime? validUntil;
 
   factory SwapState.fromJson(Map<String, Object?> data) {
     final updated = _stringOrNull(data, 'updatedAt');
+    final valid = _stringOrNull(data, 'validUntil');
     return SwapState(
       stage: SwapStage.fromStatus(_string(data, 'status')),
       expectedOut: _numberOrNull(data, 'expectedOut'),
@@ -288,6 +377,7 @@ final class SwapState {
       refundHash: _stringOrNull(data, 'refundHash'),
       refundAmount: _numberOrNull(data, 'refundAmount'),
       updatedAt: updated == null ? null : DateTime.tryParse(updated),
+      validUntil: valid == null ? null : DateTime.tryParse(valid),
     );
   }
 }

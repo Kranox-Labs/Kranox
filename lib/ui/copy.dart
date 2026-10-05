@@ -250,6 +250,62 @@ abstract final class Copy {
   static String bridgeRefused(String detail) => 'ChangeNOW refused: $detail';
   static String bridgeFailed(String detail) => 'The bridge failed: $detail';
 
+  // Pay, from XMR to an address on Robinhood Chain, through ChangeNOW at a fixed rate. On 5 Oct 2026 the owner chose
+  // it as the next main feature: a choice on the send page beside Monero, where the user enters the amount that the
+  // recipient gets.
+  static const String sendMoneroTab = 'Monero';
+  static const String sendChainTab = 'To Robinhood Chain';
+  static const String payLead = 'Pay any address on Robinhood Chain from your XMR. ChangeNOW handles the exchange.';
+  static const String payMainnetOnly =
+      'Paying to Robinhood Chain works on the Monero mainnet only. Switch the network in Settings to use it.';
+  static const String payRecipient = 'Recipient on Robinhood Chain';
+  static const String payRecipientHint = 'An address on Robinhood Chain, 0x…';
+  static const String payRecipientValid = 'Robinhood Chain address';
+  static const String payRecipientNoChecksum =
+      'Robinhood Chain address in lowercase, without a checksum. Check it character by character.';
+  static const String payRecipientWrongForm = 'Enter a Robinhood Chain address: 0x and 40 hex digits.';
+  static const String payRecipientBadChecksum = 'This address has a typo: its checksum does not match.';
+  static const String payTheyReceive = 'They receive';
+  static const String payQuoting = 'Asking ChangeNOW for a fixed rate…';
+  static String payYouPay(String xmr) => 'You pay $xmr XMR, plus the network fee.';
+  static String payRange(String min, String max) => 'One payment takes from $min to $max XMR at a fixed rate.';
+  static String payBelowRange(String min) => 'One payment takes at least $min XMR at a fixed rate.';
+  static String payAboveRange(String max) => 'One payment takes at most $max XMR at a fixed rate.';
+  static const String payPreparing = 'Asking ChangeNOW…';
+  static const String payTo = 'To, on Robinhood Chain';
+  static const String payYouSend = 'You pay';
+  static const String payRateHolds = 'Rate holds until';
+  static const String payRefundLabel = 'Refund';
+  static String payRefund(int index) => 'Back to subaddress #$index if the swap fails';
+  static const String paySeenBy =
+      'The recipient sees a transfer from an address of ChangeNOW, not from your wallet. ChangeNOW sees the amount, '
+      'the time, and the recipient, never your keys.';
+  static const String payNow = 'Pay now';
+  static const String paying = 'Paying…';
+  static const String payRateExpired =
+      'The fixed rate ran out before the payment left. Review it again for a new rate.';
+  static String paySwapTitle(String amount, BridgeAsset asset, String recipient) =>
+      '$amount ${asset.label} to $recipient';
+  static const String payStepWaiting = 'XMR on its way to ChangeNOW';
+  static const String payStepDeposited = 'XMR sent to ChangeNOW';
+  static String payStepSentNote(String xmr) => '$xmr XMR left this wallet.';
+  static const String payStepConfirming = 'Confirming the XMR';
+  static const String payStepConfirmingNote = 'ChangeNOW waits until Monero confirms your payment.';
+  static String payStepExchanging(BridgeAsset asset) => 'Exchanging XMR for ${asset.label}';
+  static String payStepSendingOut(BridgeAsset asset, String recipient) => 'Sending ${asset.label} to $recipient';
+  static const String payStepDone = 'Paid';
+  static String payStepDoneNote(String amount, BridgeAsset asset, String recipient) =>
+      '$amount ${asset.label} arrived at $recipient on Robinhood Chain.';
+  static String payFailed(int index) =>
+      'ChangeNOW sends your XMR back to subaddress #$index of this wallet. If it does not come, write to '
+      '$exchangerSupport with the swap ID.';
+  static String payRefunded(String xmr, int index) => 'ChangeNOW sent $xmr XMR back to subaddress #$index.';
+  static const String payMoneroHash = 'Monero transaction';
+  static const String payChainHash = 'Robinhood Chain transaction';
+  static String payOut(String xmr) => '-$xmr XMR';
+  static const String payAnother = 'Make another payment';
+  static const String paymentsTitle = 'Payments';
+
   // Settings.
   static const String settingsTitle = 'Settings';
   static const String settingsLead = 'Your node, the relay, your network, your seed, and the lock of this wallet.';
