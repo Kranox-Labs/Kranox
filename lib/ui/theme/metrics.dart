@@ -79,6 +79,20 @@ abstract final class Metrics {
   static const int syncDotsPerRow = 24;
   static const double syncDotGap = 3;
 
+  /// The bar of the balance card that splits the unlocked part from the locked part: its height, the room between
+  /// the two parts, and the least width of a part, so that a small part still shows.
+  static const double splitBarHeight = 6;
+  static const double splitBarGap = 3;
+  static const double splitBarMinPart = 8;
+
+  /// The dots of the card of a locked balance, one for each confirmation of the wait.
+  static const double unlockDot = 10;
+  static const double unlockDotGap = 6;
+
+  /// The ring around the icon of a transaction whose coins still unlock: its stroke, and its room from the icon.
+  static const double unlockRing = 2.5;
+  static const double unlockRingGap = 3;
+
   /// The share of the window over which the balance card and the side cards share one row.
   static const int heroFlex = 155;
   static const int sideFlex = 100;
