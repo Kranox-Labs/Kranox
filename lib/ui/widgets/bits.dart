@@ -45,12 +45,22 @@ class StatusChip extends StatelessWidget {
 
 /// A large thin figure with its unit, such as a balance.
 class AmountFigure extends StatelessWidget {
-  const AmountFigure({super.key, required this.value, required this.style, required this.unitStyle, this.color});
+  const AmountFigure({
+    super.key,
+    required this.value,
+    required this.style,
+    required this.unitStyle,
+    this.color,
+    this.unit = Copy.currency,
+  });
 
   final String value;
   final TextStyle style;
   final TextStyle unitStyle;
   final Color? color;
+
+  /// The coin of the amount: XMR, or a coin on Robinhood Chain for pay.
+  final String unit;
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +73,7 @@ class AmountFigure extends StatelessWidget {
             style: style.copyWith(color: ink),
           ),
           TextSpan(
-            text: ' ${Copy.currency}',
+            text: ' $unit',
             style: unitStyle.copyWith(color: ink),
           ),
         ],

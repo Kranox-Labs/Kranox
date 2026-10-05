@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../bridge/controller.dart';
+import '../../bridge/models.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
 import '../copy.dart';
@@ -34,7 +35,9 @@ class ReceivePage extends StatefulWidget {
 
 class _ReceivePageState extends State<ReceivePage> {
   // A swap on its way brings the user back to its deposit address.
-  late _ReceiveWay _way = widget.bridge.activeSwap == null ? _ReceiveWay.monero : _ReceiveWay.robinhood;
+  late _ReceiveWay _way = widget.bridge.activeSwapOf(SwapDirection.receive) == null
+      ? _ReceiveWay.monero
+      : _ReceiveWay.robinhood;
   bool _busy = false;
   String? _error;
 

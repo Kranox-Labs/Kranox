@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../bridge/controller.dart';
+import '../../bridge/models.dart';
 import '../../core/address.dart';
 import '../../core/amount.dart';
 import '../../wallet/controller.dart';
@@ -13,15 +15,24 @@ import '../theme/metrics.dart';
 import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
+import '../widgets/choice_pill.dart';
 import '../widgets/field.dart';
 import '../widgets/page_frame.dart';
+import '../widgets/review_line.dart';
 import '../widgets/surfaces.dart';
+import 'send_to_chain.dart';
 
-/// The send page in three steps: the form, the review with the fee, and the receipt.
+/// The ways to send: XMR to a Monero address, or pay, XMR that ChangeNOW turns into a coin for an address on Robinhood
+/// Chain.
+enum _SendWay { monero, robinhood }
+
+/// The send page: a payment in XMR in three steps, the form, the review with the fee, and the receipt; or pay to
+/// Robinhood Chain.
 class SendPage extends StatefulWidget {
-  const SendPage({super.key, required this.controller});
+  const SendPage({super.key, required this.controller, required this.bridge});
 
   final WalletController controller;
+  final BridgeController bridge;
 
   @override
   State<SendPage> createState() => _SendPageState();
@@ -31,6 +42,10 @@ class SendPage extends StatefulWidget {
 const int _shortestAddress = 95;
 
 class _SendPageState extends State<SendPage> {
+  // A payment on its way or under review brings the user back to pay.
+  late _SendWay _way = widget.bridge.activeSwapOf(SwapDirection.pay) == null && widget.bridge.pay.review == null
+      ? _SendWay.monero
+      : _SendWay.robinhood;
   final _address = TextEditingController();
   final _amount = TextEditingController();
   String? _addressError;
@@ -174,6 +189,42 @@ class _SendPageState extends State<SendPage> {
 
   @override
   Widget build(BuildContext context) {
+    final toChain = _way == _SendWay.robinhood;
+    // The choice waits while a payment is under review, so that a review never stays open behind the other way.
+    final choosing = _prepared == null && widget.bridge.pay.review == null && !_busy;
+    final ways = Wrap(
+      alignment: WrapAlignment.center,
+      spacing: Metrics.gapTiny,
+      runSpacing: Metrics.gapTiny,
+      children: [
+        ChoicePill(
+          label: Copy.sendMoneroTab,
+          active: !toChain,
+          onTap: toChain && choosing ? () => setState(() => _way = _SendWay.monero) : null,
+        ),
+        ChoicePill(
+          label: Copy.sendChainTab,
+          active: toChain,
+          onTap: !toChain && choosing ? () => setState(() => _way = _SendWay.robinhood) : null,
+        ),
+      ],
+    );
+    if (toChain) {
+      return PageFrame(
+        title: Copy.sendTitle,
+        lead: Copy.payLead,
+        chips: [
+          StatusChip(label: widget.controller.network.label),
+          const StatusChip(label: Copy.exchanger),
+        ],
+        centered: true,
+        children: [
+          ways,
+          const SizedBox(height: Metrics.gap),
+          SendToChain(bridge: widget.bridge, wallet: widget.controller),
+        ],
+      );
+    }
     final step = switch ((_prepared, _sent)) {
       (_, final SentPayment sent) => _Receipt(sent: sent, onDone: _restart),
       (final PreparedSend prepared, _) => _Review(
@@ -190,7 +241,11 @@ class _SendPageState extends State<SendPage> {
       lead: Copy.sendLead,
       chips: [StatusChip(label: widget.controller.network.label)],
       centered: true,
-      children: [step],
+      children: [
+        ways,
+        const SizedBox(height: Metrics.gap),
+        step,
+      ],
     );
   }
 
@@ -367,48 +422,14 @@ class _Review extends StatelessWidget {
             ),
           ),
           const SizedBox(height: Metrics.gapSmall),
-          _Line(label: Copy.fee, value: '${prepared.fee.toExact()} ${Copy.currency}'),
+          ReviewLine(label: Copy.fee, value: '${prepared.fee.toExact()} ${Copy.currency}'),
           Divider(height: 1, color: palette.line),
-          _Line(label: Copy.total, value: '${prepared.total.toExact()} ${Copy.currency}', strong: true),
+          ReviewLine(label: Copy.total, value: '${prepared.total.toExact()} ${Copy.currency}', strong: true),
           ErrorLine(error),
           const SizedBox(height: Metrics.gap),
           PillButton(label: Copy.sendNow, busy: busy, busyLabel: Copy.sending, expand: true, onPressed: onConfirm),
           const SizedBox(height: Metrics.gapSmall),
           PillButton(label: Copy.cancel, tone: PillTone.quiet, expand: true, onPressed: busy ? null : onCancel),
-        ],
-      ),
-    );
-  }
-}
-
-class _Line extends StatelessWidget {
-  const _Line({required this.label, this.value, this.child, this.strong = false});
-
-  final String label;
-  final String? value;
-  final Widget? child;
-  final bool strong;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(label, style: KranoxType.small.copyWith(color: palette.inkSoft)),
-          ),
-          Expanded(
-            child:
-                child ??
-                Text(
-                  value ?? '',
-                  style: (strong ? KranoxType.cardTitle : KranoxType.body).copyWith(color: palette.ink),
-                ),
-          ),
         ],
       ),
     );
@@ -450,9 +471,9 @@ class _Receipt extends StatelessWidget {
             style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft),
           ),
           const SizedBox(height: Metrics.gap),
-          _Line(label: Copy.amount, value: '${sent.amount.toExact()} ${Copy.currency}'),
-          _Line(label: Copy.fee, value: '${sent.fee.toExact()} ${Copy.currency}'),
-          _Line(
+          ReviewLine(label: Copy.amount, value: '${sent.amount.toExact()} ${Copy.currency}'),
+          ReviewLine(label: Copy.fee, value: '${sent.fee.toExact()} ${Copy.currency}'),
+          ReviewLine(
             label: Copy.transactionId,
             child: Row(
               children: [
