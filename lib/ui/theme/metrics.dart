@@ -38,6 +38,13 @@ abstract final class Metrics {
   /// The seed needs room for five words in a row.
   static const double onboardingWideWidth = 700;
   static const double formWidth = 640;
+
+  /// The column in the middle of a page with its content in the center, after the home of Vizor.
+  static const double centerColumnWidth = 540;
+
+  /// A page in the center starts below the strip of the window buttons, with room above its title. The owner found
+  /// the title of the send page too close to the top on 5 Oct 2026.
+  static const EdgeInsets centeredPagePadding = EdgeInsets.fromLTRB(pagePaddingX, 64, pagePaddingX, pagePaddingY);
   static const double transferIcon = 40;
   static const double roundButton = 46;
   static const double smallRound = 30;
@@ -50,7 +57,10 @@ abstract final class Metrics {
   static const double stepMark = 24;
   static const double stepLine = 2;
   static const double avatar = 34;
-  static const double logoHeight = 22;
+
+  /// The helmet alone at the top of the sidebar, in its middle. The owner asked on 5 Oct 2026 for the logo without the
+  /// name, larger, with more room around it.
+  static const double sidebarLogoHeight = 40;
 
   static const double radiusHero = 30;
 

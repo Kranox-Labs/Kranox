@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/address.dart';
 import '../../core/amount.dart';
@@ -26,11 +27,18 @@ class SendPage extends StatefulWidget {
   State<SendPage> createState() => _SendPageState();
 }
 
+/// The live check of the address waits until the text is as long as the shortest address: 95 characters.
+const int _shortestAddress = 95;
+
 class _SendPageState extends State<SendPage> {
   final _address = TextEditingController();
   final _amount = TextEditingController();
   String? _addressError;
   String? _amountError;
+
+  // What the live check found: the kind of a complete, valid address, and an amount that the wallet can send.
+  AddressKind? _addressKind;
+  XmrAmount? _validAmount;
   String? _error;
   bool _busy = false;
   PreparedSend? _prepared;
@@ -42,6 +50,62 @@ class _SendPageState extends State<SendPage> {
     _amount.dispose();
     super.dispose();
   }
+
+  /// Checks the address while the user types. A partial address shows no error yet; a complete one shows its kind
+  /// or what is wrong with it.
+  void _onAddressChanged(String text) {
+    final network = widget.controller.network;
+    final value = text.trim();
+    AddressKind? kind;
+    String? error;
+    if (value.length >= _shortestAddress) {
+      try {
+        kind = checkAddress(value, network);
+      } on AddressException catch (problem) {
+        error = addressProblemText(problem, network);
+      }
+    }
+    setState(() {
+      _addressKind = kind;
+      _addressError = error;
+    });
+  }
+
+  /// Checks the amount while the user types: its form, and the unlocked balance once the wallet has caught up.
+  void _onAmountChanged(String text) {
+    XmrAmount? amount;
+    String? error;
+    if (text.trim().isNotEmpty) {
+      try {
+        amount = XmrAmount.parse(text);
+        final status = widget.controller.status;
+        // The fee comes out of the unlocked balance too, so the amount must stay below it.
+        if (!status.isLoading && amount > status.unlocked) {
+          error = Copy.amountAboveUnlocked;
+          amount = null;
+        } else if (!status.isLoading && amount == status.unlocked) {
+          error = Copy.amountLeavesNoFee;
+          amount = null;
+        }
+      } on AmountFormatException catch (problem) {
+        error = amountProblemText(problem.problem);
+      }
+    }
+    setState(() {
+      _validAmount = amount;
+      _amountError = error;
+    });
+  }
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim();
+    if (text == null || text.isEmpty) return;
+    _address.text = text;
+    _onAddressChanged(text);
+  }
+
+  bool get _canReview => _addressKind != null && _validAmount != null && !_busy;
 
   Future<void> _review() async {
     setState(() {
@@ -86,7 +150,11 @@ class _SendPageState extends State<SendPage> {
   void _restart() {
     _address.clear();
     _amount.clear();
-    setState(() => _sent = null);
+    setState(() {
+      _sent = null;
+      _addressKind = null;
+      _validAmount = null;
+    });
   }
 
   /// Runs a call to the wallet while the buttons show that it works, and shows a failure under the buttons.
@@ -121,48 +189,108 @@ class _SendPageState extends State<SendPage> {
       title: Copy.sendTitle,
       lead: Copy.sendLead,
       chips: [StatusChip(label: widget.controller.network.label)],
-      children: [
-        Align(
-          alignment: Alignment.topLeft,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: Metrics.formWidth),
-            child: step,
-          ),
-        ),
-      ],
+      centered: true,
+      children: [step],
     );
   }
 
-  Widget _form(BuildContext context) => Surface(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        LabeledField(
-          label: Copy.recipient,
-          controller: _address,
-          hint: Copy.recipientHint(widget.controller.network),
-          error: _addressError,
-          lines: 2,
-        ),
-        const SizedBox(height: Metrics.gap),
-        LabeledField(
-          label: Copy.amount,
-          controller: _amount,
-          hint: '0.0',
-          suffix: Copy.currency,
-          error: _amountError,
-          note: widget.controller.status.isLoading
-              ? Copy.availableUpdating
-              : Copy.available(widget.controller.status.unlocked.toExact()),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          onSubmitted: (_) => _review(),
-        ),
-        ErrorLine(_error),
-        const SizedBox(height: Metrics.gap),
-        PillButton(label: Copy.review, busy: _busy, busyLabel: Copy.preparing, onPressed: _review),
-      ],
-    ),
-  );
+  Widget _form(BuildContext context) {
+    final palette = context.palette;
+    final network = widget.controller.network;
+    final status = widget.controller.status;
+    final kind = _addressKind;
+    return Surface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LabeledField(
+            label: Copy.recipient,
+            controller: _address,
+            hint: Copy.recipientHint(network),
+            error: _addressError,
+            note: kind == null ? null : Copy.addressValid(kind, network),
+            good: kind != null,
+            lines: 2,
+            mono: true,
+            onChanged: _onAddressChanged,
+            action: TextButton(
+              onPressed: _paste,
+              style: TextButton.styleFrom(
+                foregroundColor: palette.ink,
+                backgroundColor: palette.surface,
+                shape: const StadiumBorder(),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                textStyle: KranoxType.smallStrong,
+              ),
+              child: const Text(Copy.paste),
+            ),
+          ),
+          const SizedBox(height: Metrics.gap + 4),
+          Text(
+            Copy.amount.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: KranoxType.label.copyWith(color: palette.inkSoft),
+          ),
+          const SizedBox(height: Metrics.gapTiny),
+          // The amount stands large in the middle, like a balance, with its unit below it.
+          TextField(
+            controller: _amount,
+            onChanged: _onAmountChanged,
+            onSubmitted: (_) => _canReview ? _review() : null,
+            textAlign: TextAlign.center,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: KranoxType.sendFigure.copyWith(color: palette.ink),
+            cursorColor: palette.accent,
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              hintText: Copy.amountHint,
+              hintStyle: KranoxType.sendFigure.copyWith(color: palette.inkFaint),
+              isDense: true,
+            ),
+          ),
+          Text(
+            Copy.currency,
+            textAlign: TextAlign.center,
+            style: KranoxType.smallStrong.copyWith(color: palette.inkSoft),
+          ),
+          const SizedBox(height: Metrics.gapSmall),
+          if (_amountError case final error?)
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: KranoxType.small.copyWith(color: palette.danger),
+            )
+          else if (status.isLoading)
+            const Center(child: IntrinsicWidth(child: LoadingLine(Copy.availableUpdating)))
+          else ...[
+            Text(
+              Copy.available(status.unlocked.toExact()),
+              textAlign: TextAlign.center,
+              style: KranoxType.small.copyWith(color: palette.inkSoft),
+            ),
+            // Coins that arrived or came back as change a few blocks ago are in the balance but not yet spendable.
+            if (status.locked.units > 0) ...[
+              const SizedBox(height: 2),
+              Text(
+                Copy.lockedPart(status.locked.toExact()),
+                textAlign: TextAlign.center,
+                style: KranoxType.small.copyWith(color: palette.inkFaint),
+              ),
+            ],
+          ],
+          ErrorLine(_error),
+          const SizedBox(height: Metrics.gap + 4),
+          PillButton(
+            label: Copy.review,
+            busy: _busy,
+            busyLabel: Copy.preparing,
+            expand: true,
+            onPressed: _canReview ? _review : null,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Review extends StatelessWidget {
@@ -185,28 +313,65 @@ class _Review extends StatelessWidget {
     final palette = context.palette;
     return Surface(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const CardTitle(Copy.reviewTitle),
-          const SizedBox(height: 4),
-          Text(Copy.reviewLead, style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft)),
-          const SizedBox(height: Metrics.gap),
-          _Line(
-            label: Copy.to,
-            child: SelectableText(prepared.address, style: KranoxType.mono.copyWith(color: palette.ink)),
+          Text(
+            Copy.reviewTitle,
+            textAlign: TextAlign.center,
+            style: KranoxType.cardTitle.copyWith(color: palette.ink),
           ),
-          _Line(label: Copy.amount, value: '${prepared.amount.toExact()} ${Copy.currency}'),
+          const SizedBox(height: 4),
+          Text(
+            Copy.reviewLead,
+            textAlign: TextAlign.center,
+            style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft),
+          ),
+          const SizedBox(height: Metrics.gap + 4),
+          Text(
+            Copy.youSend.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: KranoxType.label.copyWith(color: palette.inkSoft),
+          ),
+          const SizedBox(height: Metrics.gapTiny),
+          Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: AmountFigure(
+                value: prepared.amount.toExact(),
+                style: KranoxType.sendFigure,
+                unitStyle: KranoxType.smallStrong,
+              ),
+            ),
+          ),
+          const SizedBox(height: Metrics.gap),
+          // The whole address, so that the user can check it character by character before the payment leaves.
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: palette.field,
+              borderRadius: BorderRadius.circular(Metrics.radiusField),
+              border: Border.all(color: palette.line),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(Copy.to.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
+                  const SizedBox(height: Metrics.gapTiny),
+                  SelectableText(prepared.address, style: KranoxType.mono.copyWith(color: palette.ink)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: Metrics.gapSmall),
           _Line(label: Copy.fee, value: '${prepared.fee.toExact()} ${Copy.currency}'),
+          Divider(height: 1, color: palette.line),
           _Line(label: Copy.total, value: '${prepared.total.toExact()} ${Copy.currency}', strong: true),
           ErrorLine(error),
           const SizedBox(height: Metrics.gap),
-          Row(
-            children: [
-              PillButton(label: Copy.sendNow, busy: busy, busyLabel: Copy.sending, onPressed: onConfirm),
-              const SizedBox(width: Metrics.gapSmall),
-              PillButton(label: Copy.cancel, tone: PillTone.quiet, onPressed: busy ? null : onCancel),
-            ],
-          ),
+          PillButton(label: Copy.sendNow, busy: busy, busyLabel: Copy.sending, expand: true, onPressed: onConfirm),
+          const SizedBox(height: Metrics.gapSmall),
+          PillButton(label: Copy.cancel, tone: PillTone.quiet, expand: true, onPressed: busy ? null : onCancel),
         ],
       ),
     );
@@ -258,19 +423,29 @@ class _Receipt extends StatelessWidget {
     final palette = context.palette;
     return Surface(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          DecoratedBox(
-            decoration: BoxDecoration(color: palette.accent, shape: BoxShape.circle),
-            child: SizedBox.square(
-              dimension: Metrics.roundButton,
-              child: Icon(Icons.check_rounded, color: palette.onAccent),
+          Center(
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: palette.accent, shape: BoxShape.circle),
+              child: SizedBox.square(
+                dimension: Metrics.roundButton,
+                child: Icon(Icons.check_rounded, color: palette.onAccent),
+              ),
             ),
           ),
           const SizedBox(height: Metrics.gap),
-          Text(Copy.sentTitle, style: KranoxType.pageTitle.copyWith(color: palette.ink)),
+          Text(
+            Copy.sentTitle,
+            textAlign: TextAlign.center,
+            style: KranoxType.pageTitle.copyWith(color: palette.ink),
+          ),
           const SizedBox(height: 4),
-          Text(Copy.sentLead, style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft)),
+          Text(
+            Copy.sentLead,
+            textAlign: TextAlign.center,
+            style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft),
+          ),
           const SizedBox(height: Metrics.gap),
           _Line(label: Copy.amount, value: '${sent.amount.toExact()} ${Copy.currency}'),
           _Line(label: Copy.fee, value: '${sent.fee.toExact()} ${Copy.currency}'),
@@ -291,7 +466,7 @@ class _Receipt extends StatelessWidget {
             ),
           ),
           const SizedBox(height: Metrics.gap),
-          PillButton(label: Copy.done, tone: PillTone.solid, onPressed: onDone),
+          PillButton(label: Copy.done, tone: PillTone.solid, expand: true, onPressed: onDone),
         ],
       ),
     );
