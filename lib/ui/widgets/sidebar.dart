@@ -71,7 +71,7 @@ class Sidebar extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const _Brand(),
-                    const SizedBox(height: Metrics.gap - 4),
+                    const SizedBox(height: Metrics.gap + 8),
                     _WalletRow(network: network),
                     const SizedBox(height: Metrics.gap),
                     for (final (item, icon) in _pages)
@@ -105,19 +105,15 @@ class Sidebar extends StatelessWidget {
   };
 }
 
-/// The helmet of Kranox and its name.
+/// The helmet of Kranox alone, in the middle of the sidebar. Its alternative text names the app.
 class _Brand extends StatelessWidget {
   const _Brand();
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 6),
-    child: Row(
-      children: [
-        Image.asset('assets/images/logo.png', height: Metrics.logoHeight),
-        const SizedBox(width: 8),
-        Text(Copy.appName, style: KranoxType.brand.copyWith(color: context.palette.ink)),
-      ],
+    padding: const EdgeInsets.only(top: Metrics.gapSmall),
+    child: Center(
+      child: Image.asset('assets/images/logo.png', height: Metrics.sidebarLogoHeight, semanticLabel: Copy.appName),
     ),
   );
 }

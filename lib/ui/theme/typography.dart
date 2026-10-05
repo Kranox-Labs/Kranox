@@ -25,6 +25,9 @@ abstract final class KranoxType {
   static final TextStyle cardFigure = _style(34, 300, tracking: -0.03, height: 1.1);
   static final TextStyle rowFigure = _style(20, 300, tracking: -0.02, height: 1.1);
 
+  /// The amount on the send page, large in the middle of the form.
+  static final TextStyle sendFigure = _style(48, 250, tracking: -0.03, height: 1.15);
+
   static final TextStyle pageTitle = _style(26, 500, tracking: -0.02, height: 1.15);
   static final TextStyle onboardingTitle = _style(34, 500, tracking: -0.025, height: 1.1);
   static final TextStyle cardTitle = _style(15, 600);
@@ -37,7 +40,6 @@ abstract final class KranoxType {
   static final TextStyle label = _style(12, 600, tracking: 0.08);
   static final TextStyle unitLabel = _style(11, 600, tracking: 0.06);
 
-  static final TextStyle brand = _style(17, 600, tracking: -0.01);
   static final TextStyle button = _style(14, 600);
   static final TextStyle mono = _style(13, 500, tracking: 0.01, height: 1.5);
 }

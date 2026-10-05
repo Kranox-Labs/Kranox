@@ -22,6 +22,7 @@ import 'package:kranox_wallet/bridge/client.dart';
 import 'package:kranox_wallet/bridge/controller.dart';
 import 'package:kranox_wallet/bridge/store.dart';
 import 'package:kranox_wallet/config/network.dart';
+import 'package:kranox_wallet/core/address.dart';
 import 'package:kranox_wallet/ui/copy.dart';
 import 'package:kranox_wallet/ui/theme/typography.dart';
 import 'package:kranox_wallet/ui/widgets/seed_grid.dart';
@@ -181,19 +182,22 @@ void main() {
     await tapText(Copy.newAddress);
     await waitUntil(() => controller.receiveAddress!.address != firstAddress, 'a new subaddress');
 
-    // The send form checks the address and the amount before it asks the wallet.
+    // The send form checks the address and the amount while the user types, and offers the review only for an
+    // address and an amount that pass.
     await tapText(Copy.navSend);
     await waitFor(find.text(Copy.sendTitle));
     await enter(0, _mainnetAddress);
-    await enter(1, '1.5');
-    await tapText(Copy.review);
     await waitFor(find.text(Copy.addressOtherNetwork(MoneroNetwork.mainnet, MoneroNetwork.stagenet)));
-    expect(find.text(Copy.amountAboveUnlocked), findsOneWidget);
+    await enter(1, '0.0000000000001');
+    await waitFor(find.text(Copy.amountTooManyDecimals));
     await shoot('06-send-checks');
     await enter(0, _stagenetAddress);
-    await enter(1, '0.0000000000001');
-    await tapText(Copy.review);
-    await waitFor(find.text(Copy.amountTooManyDecimals));
+    await waitFor(find.text(Copy.addressValid(AddressKind.standard, MoneroNetwork.stagenet)));
+    final review = find.widgetWithText(FilledButton, Copy.review);
+    expect(tester.widget<FilledButton>(review).onPressed, isNull, reason: 'the amount does not pass yet');
+    await enter(1, '0.5');
+    await tester.pump(_frame);
+    await shoot('06-send-valid');
 
     await tapText(Copy.navActivity);
     await waitFor(find.text(Copy.activityLead));

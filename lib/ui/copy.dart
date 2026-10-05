@@ -1,5 +1,6 @@
 import '../bridge/models.dart';
 import '../config/network.dart';
+import '../core/address.dart';
 
 /// All text of the app. The screens take their words from here.
 abstract final class Copy {
@@ -96,6 +97,14 @@ abstract final class Copy {
   static const String sendLead = 'Payments in Monero are final. Check the address before you send.';
   static const String recipient = 'Address';
   static String recipientHint(MoneroNetwork network) => 'A Monero address on ${network.label}';
+  static const String paste = 'Paste';
+  static String addressValid(AddressKind kind, MoneroNetwork network) => switch (kind) {
+    AddressKind.standard => '${network.label} address',
+    AddressKind.subaddress => '${network.label} subaddress',
+    AddressKind.integrated => '${network.label} integrated address',
+  };
+  static const String amountHint = '0.00';
+  static const String youSend = 'You send';
   static const String amount = 'Amount';
   static String available(String amount) => 'Unlocked: $amount XMR';
   static const String availableUpdating = 'Unlocked: updating while the wallet catches up.';
@@ -277,6 +286,10 @@ abstract final class Copy {
   static const String amountTooLarge = 'This amount is too large.';
   static const String amountZero = 'Enter an amount above zero.';
   static const String amountAboveUnlocked = 'This is more than your unlocked balance.';
+  static const String amountLeavesNoFee =
+      'Keep a little of your unlocked balance for the network fee: send less than all of it.';
+  static String lockedPart(String amount) =>
+      'Locked: $amount XMR. New coins and change unlock after 10 confirmations, about 20 minutes.';
 
   // Failures of the wallet.
   static const String wrongPassword = 'This password does not open the wallet.';

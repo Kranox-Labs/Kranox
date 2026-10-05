@@ -4,18 +4,60 @@ import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
 import '../theme/typography.dart';
 
-/// A page of the open wallet: a title, a short line below it, chips at the right, and the content below.
+/// A page of the open wallet: a title, a short line below it, chips at the right, and the content below. A [centered]
+/// page puts all of it in one narrow column in the middle, with the chips under the line, after the home of Vizor; the
+/// owner asked for it on the send page on 5 Oct 2026.
 class PageFrame extends StatelessWidget {
-  const PageFrame({super.key, required this.title, required this.lead, required this.children, this.chips = const []});
+  const PageFrame({
+    super.key,
+    required this.title,
+    required this.lead,
+    required this.children,
+    this.chips = const [],
+    this.centered = false,
+  });
 
   final String title;
   final String lead;
   final List<Widget> chips;
   final List<Widget> children;
+  final bool centered;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (centered) {
+      return SingleChildScrollView(
+        padding: Metrics.centeredPagePadding,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: Metrics.centerColumnWidth),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: KranoxType.pageTitle.copyWith(color: palette.ink),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  lead,
+                  textAlign: TextAlign.center,
+                  style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft),
+                ),
+                if (chips.isNotEmpty) ...[
+                  const SizedBox(height: Metrics.gapSmall),
+                  Wrap(alignment: WrapAlignment.center, spacing: 8, children: chips),
+                ],
+                const SizedBox(height: Metrics.gap + 10),
+                ...children,
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return SingleChildScrollView(
       padding: Metrics.pagePadding,
       child: Column(
