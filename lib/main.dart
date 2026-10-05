@@ -1,6 +1,9 @@
 import 'package:flutter/widgets.dart';
 
 import 'app.dart';
+import 'bridge/client.dart';
+import 'bridge/controller.dart';
+import 'bridge/store.dart';
 import 'wallet/controller.dart';
 import 'wallet/storage.dart';
 import 'wallet/worker.dart';
@@ -11,5 +14,11 @@ Future<void> main() async {
   final worker = await WalletWorker.start(libraryPath: moneroLibraryPath());
   final controller = WalletController(worker: worker, storage: storage);
   await controller.start();
-  runApp(KranoxApp(controller: controller));
+  final bridge = BridgeController(
+    client: RelayBridgeClient(),
+    store: BridgeStore(storage.bridgePath),
+    wallet: controller,
+  );
+  await bridge.start();
+  runApp(KranoxApp(controller: controller, bridge: bridge));
 }

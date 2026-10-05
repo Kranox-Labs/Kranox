@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../bridge/controller.dart';
+import '../../config/app_config.dart';
 import '../../config/network.dart';
 import '../../core/node_address.dart';
 import '../../wallet/controller.dart';
@@ -17,11 +19,13 @@ import '../widgets/page_frame.dart';
 import '../widgets/seed_grid.dart';
 import '../widgets/surfaces.dart';
 
-/// The settings of the wallet: the node, the network, the seed behind the password, the file, and the lock.
+/// The settings of the wallet: the node, the relay of the bridge, the network, the seed behind the password, the file,
+/// and the lock.
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.controller, required this.onLock});
+  const SettingsPage({super.key, required this.controller, required this.bridge, required this.onLock});
 
   final WalletController controller;
+  final BridgeController bridge;
   final VoidCallback onLock;
 
   @override
@@ -38,6 +42,12 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _seedError;
   bool _readingSeed = false;
   List<String>? _seed;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.bridge.checkRelay();
+  }
 
   @override
   void dispose() {
@@ -128,6 +138,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     ],
                   ),
                 ),
+                const SizedBox(height: Metrics.gap),
+                _RelayCard(bridge: widget.bridge),
                 const SizedBox(height: Metrics.gap),
                 Surface(
                   child: Column(
@@ -224,4 +236,50 @@ class _SettingsPageState extends State<SettingsPage> {
       ],
     );
   }
+}
+
+/// The relay of the bridge: its address and whether it answers. The app does not let the user change it: another
+/// relay would need its own key of ChangeNOW. The address is fixed in [AppConfig.bridgeRelay].
+class _RelayCard extends StatelessWidget {
+  const _RelayCard({required this.bridge});
+
+  final BridgeController bridge;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: bridge,
+    builder: (context, _) {
+      final palette = context.palette;
+      final online = bridge.relayOnline;
+      final chip = bridge.checkingRelay || online == null
+          ? StatusChip(label: Copy.relayChecking, dot: palette.dotOff)
+          : online
+          ? StatusChip(label: Copy.relayOnline, dot: palette.accent)
+          : StatusChip(label: Copy.relayOffline, dot: palette.danger);
+      return Surface(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CardTitle(Copy.relayTitle, trailing: chip),
+            const SizedBox(height: 4),
+            Text(Copy.relayLead, style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft)),
+            const SizedBox(height: Metrics.gap),
+            Row(
+              children: [
+                Expanded(
+                  child: SelectableText(AppConfig.bridgeRelay, style: KranoxType.mono.copyWith(color: palette.ink)),
+                ),
+                PillButton(
+                  label: Copy.relayCheck,
+                  tone: PillTone.quiet,
+                  busy: bridge.checkingRelay,
+                  onPressed: bridge.checkRelay,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }

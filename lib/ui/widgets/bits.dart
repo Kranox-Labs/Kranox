@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -125,4 +126,47 @@ Future<void> copyToClipboard(BuildContext context, String text) async {
   final messenger = ScaffoldMessenger.of(context);
   await Clipboard.setData(ClipboardData(text: text));
   messenger.showSnackBar(const SnackBar(content: Text(Copy.copied), duration: Duration(seconds: 2)));
+}
+
+/// The spinner of Apple in place of an amount while the wallet catches up with the chain, as high as the line of
+/// [style], so that the amount takes its place without a jump. The owner asked for it on 5 Oct 2026.
+class LoadingFigure extends StatelessWidget {
+  const LoadingFigure({super.key, required this.style, this.color});
+
+  final TextStyle style;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final fontSize = style.fontSize ?? 14;
+    return SizedBox(
+      height: fontSize * (style.height ?? 1.2),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: CupertinoActivityIndicator(radius: fontSize / 4, color: color ?? context.palette.inkSoft),
+      ),
+    );
+  }
+}
+
+/// A small spinner of Apple beside a short text, such as above a list while the wallet catches up.
+class LoadingLine extends StatelessWidget {
+  const LoadingLine(this.text, {super.key, this.color});
+
+  final String text;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = color ?? context.palette.inkSoft;
+    return Row(
+      children: [
+        CupertinoActivityIndicator(radius: 7, color: ink),
+        const SizedBox(width: Metrics.gapSmall),
+        Expanded(
+          child: Text(text, style: KranoxType.small.copyWith(color: ink)),
+        ),
+      ],
+    );
+  }
 }

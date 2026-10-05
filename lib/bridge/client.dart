@@ -1,0 +1,163 @@
+import 'dart:convert';
+import 'dart:io';
+
+import '../config/app_config.dart';
+import 'models.dart';
+
+/// The ways in which a call of the bridge can fail. The screens show a sentence for each one.
+enum BridgeFailure {
+  /// The relay of Kranox does not answer.
+  relayDown,
+
+  /// The relay or the exchanger refused the request, such as an amount below the minimum. The detail says why.
+  refused,
+
+  /// The exchanger failed or answered in a form that the app does not read.
+  failed,
+}
+
+final class BridgeException implements Exception {
+  const BridgeException(this.failure, this.detail);
+
+  final BridgeFailure failure;
+  final String detail;
+
+  @override
+  String toString() => 'BridgeException(${failure.name}): $detail';
+}
+
+/// What the app needs from the bridge. The app talks to the relay of Kranox, which holds the API key of the exchanger;
+/// a test answers with samples.
+abstract interface class BridgeClient {
+  Future<BridgeQuote> quote(BridgeAsset asset, String amount);
+
+  /// Asks the exchanger for a swap of [amount] of [asset] into XMR for [address]. The answer carries the deposit
+  /// address on Robinhood Chain.
+  Future<CreatedSwap> createSwap({
+    required BridgeAsset asset,
+    required String amount,
+    required String address,
+    String? refundAddress,
+  });
+
+  Future<SwapState> readSwap(String id);
+
+  /// Whether the relay answers. A relay that does not answer gives false, not an error.
+  Future<bool> isOnline();
+}
+
+/// The answer of the relay to a new swap.
+final class CreatedSwap {
+  const CreatedSwap({
+    required this.id,
+    required this.amount,
+    required this.estimatedXmr,
+    required this.depositAddress,
+    required this.payoutAddress,
+  });
+
+  final String id;
+  final double amount;
+  final double? estimatedXmr;
+  final String depositAddress;
+  final String payoutAddress;
+
+  factory CreatedSwap.fromJson(Map<String, Object?> data) {
+    final id = data['id'];
+    final amount = data['amount'];
+    final estimate = data['estimatedXmr'];
+    final deposit = data['depositAddress'];
+    final payout = data['payoutAddress'];
+    if (id is! String || amount is! num || deposit is! String || payout is! String) {
+      throw const FormatException('The relay answered a new swap without its id, amount, or addresses.');
+    }
+    return CreatedSwap(
+      id: id,
+      amount: amount.toDouble(),
+      estimatedXmr: estimate is num ? estimate.toDouble() : null,
+      depositAddress: deposit,
+      payoutAddress: payout,
+    );
+  }
+}
+
+/// The bridge through the relay of Kranox, over HTTP.
+final class RelayBridgeClient implements BridgeClient {
+  RelayBridgeClient({String baseUrl = AppConfig.bridgeRelay}) : _base = Uri.parse(baseUrl);
+
+  final Uri _base;
+  final HttpClient _http = HttpClient()..connectionTimeout = AppConfig.bridgeRequestTimeout;
+
+  @override
+  Future<BridgeQuote> quote(BridgeAsset asset, String amount) async =>
+      BridgeQuote.fromJson(await _call('GET', '/v1/receive/quote', query: {'asset': asset.code, 'amount': amount}));
+
+  @override
+  Future<CreatedSwap> createSwap({
+    required BridgeAsset asset,
+    required String amount,
+    required String address,
+    String? refundAddress,
+  }) async => CreatedSwap.fromJson(
+    await _call(
+      'POST',
+      '/v1/receive/swaps',
+      body: {'asset': asset.code, 'amount': amount, 'address': address, 'refundAddress': ?refundAddress},
+    ),
+  );
+
+  @override
+  Future<SwapState> readSwap(String id) async =>
+      SwapState.fromJson(await _call('GET', '/v1/swaps/${Uri.encodeComponent(id)}'));
+
+  @override
+  Future<bool> isOnline() async {
+    try {
+      return (await _call('GET', '/health'))['ok'] == true;
+    } on BridgeException {
+      return false;
+    }
+  }
+
+  Future<Map<String, Object?>> _call(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, Object?>? body,
+  }) async {
+    // The relay may sit under a path of its address, so the path of the call follows it.
+    final basePath = _base.path.endsWith('/') ? _base.path.substring(0, _base.path.length - 1) : _base.path;
+    final uri = _base.replace(path: '$basePath$path', queryParameters: query);
+    final HttpClientResponse response;
+    final String text;
+    try {
+      final request = await _http.openUrl(method, uri).timeout(AppConfig.bridgeRequestTimeout);
+      if (body != null) {
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
+      }
+      response = await request.close().timeout(AppConfig.bridgeRequestTimeout);
+      text = await response.transform(utf8.decoder).join().timeout(AppConfig.bridgeRequestTimeout);
+    } on SocketException catch (error) {
+      throw BridgeException(BridgeFailure.relayDown, error.message);
+    } on Object catch (error) {
+      throw BridgeException(BridgeFailure.relayDown, '$error');
+    }
+    final Object? data;
+    try {
+      data = jsonDecode(text);
+    } on FormatException {
+      throw BridgeException(BridgeFailure.failed, 'The relay answered ${response.statusCode} without JSON.');
+    }
+    if (data is! Map<String, Object?>) {
+      throw const BridgeException(BridgeFailure.failed, 'The relay answered without an object.');
+    }
+    if (response.statusCode >= 400) {
+      final message = data['error'];
+      final detail = message is String ? message : 'HTTP ${response.statusCode}';
+      final refused = response.statusCode == HttpStatus.badRequest || response.statusCode == 422;
+      throw BridgeException(refused ? BridgeFailure.refused : BridgeFailure.failed, detail);
+    }
+    return data;
+  }
+}

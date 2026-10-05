@@ -1,3 +1,4 @@
+import '../bridge/models.dart';
 import '../config/network.dart';
 
 /// All text of the app. The screens take their words from here.
@@ -21,6 +22,7 @@ abstract final class Copy {
   static const String createWallet = 'Create a new wallet';
   static const String restoreWallet = 'Restore from your seed';
   static const String back = 'Back';
+  static const String backToMainnet = 'Back to mainnet';
 
   // Create.
   static const String createTitle = 'Create your wallet';
@@ -83,6 +85,8 @@ abstract final class Copy {
   static const String allActivity = 'All activity';
   static const String noActivity = 'No transactions yet. Receive XMR to see them here.';
   static const String activityAfterSync = 'The list fills in when the wallet has caught up with the chain.';
+  static const String activityUpdating = 'Syncing. New payments show when the wallet has caught up.';
+  static const String balanceUpdating = 'Updating while the wallet catches up with the chain.';
   static const String nodeOnline = 'Node online';
   static const String nodeOffline = 'Node offline';
   static const String nodeWrongVersion = 'Node too old';
@@ -94,6 +98,7 @@ abstract final class Copy {
   static String recipientHint(MoneroNetwork network) => 'A Monero address on ${network.label}';
   static const String amount = 'Amount';
   static String available(String amount) => 'Unlocked: $amount XMR';
+  static const String availableUpdating = 'Unlocked: updating while the wallet catches up.';
   static const String review = 'Review payment';
   static const String preparing = 'Building the payment…';
   static const String reviewTitle = 'Check the payment';
@@ -116,6 +121,11 @@ abstract final class Copy {
   static const String copyAddress = 'Copy address';
   static const String copied = 'Copied';
   static const String newAddress = 'New address';
+  // The two ways to receive. On 5 Oct 2026 the owner asked for receive from Robinhood Chain inside the receive page,
+  // not as a page "Bridge" of its own.
+  static const String receiveMoneroTab = 'Monero';
+  static const String receiveChainTab = 'From Robinhood Chain';
+  static const String receiveChainLead = 'Pay in from Robinhood Chain. ChangeNOW handles the exchange.';
 
   // Activity.
   static const String activityTitle = 'Activity';
@@ -128,15 +138,113 @@ abstract final class Copy {
   static String feeOf(String amount) => 'Fee $amount XMR';
   static const String copyId = 'Copy ID';
 
+  // Receive from Robinhood Chain, through ChangeNOW. On 5 Oct 2026 the owner asked for it in the app: a coin on
+  // Robinhood Chain in, XMR out. Pay, from XMR to Robinhood Chain, follows on the send page.
+  static const String exchanger = 'ChangeNOW';
+  static const String bridgeMainnetOnly =
+      'Receiving from Robinhood Chain works on the Monero mainnet only. Switch the network in Settings to use it.';
+  static const String bridgeFormTitle = 'Get XMR with a coin on Robinhood Chain';
+  static const String bridgeFormLead =
+      'Send ETH or USDG from your Robinhood Chain wallet. ChangeNOW turns it into XMR and sends it to a new '
+      'subaddress of this wallet.';
+  static const String bridgeAssetLabel = 'You send, on Robinhood Chain';
+  static String bridgeAmountHint(BridgeAsset asset) => 'Amount of ${asset.label}';
+  static const String bridgeQuoting = 'Asking ChangeNOW for a quote…';
+  static String bridgeEstimate(String xmr) => 'You get about $xmr XMR';
+  static String bridgeMinimum(String amount, BridgeAsset asset) => 'The least amount is $amount ${asset.label}.';
+  static String bridgeSpeed(String minutes) => 'Usually $minutes minutes.';
+  static const String bridgeRefundField = 'Refund address (optional)';
+  static const String bridgeRefundHint = 'Your Robinhood Chain address, 0x…';
+  static const String bridgeRefundNote =
+      'ChangeNOW sends your coins back here if the swap fails. Without it, a failed swap waits for its support.';
+  static const String bridgeRefundInvalid = 'Enter a Robinhood Chain address: 0x and 40 hex digits.';
+  static const String bridgeCreate = 'Get a deposit address';
+  static const String bridgeCreating = 'Asking ChangeNOW…';
+  static const String bridgeSeenBy =
+      'ChangeNOW sees the amount, the time, the deposit, and the subaddress of this swap. It never sees your keys.';
+  static String bridgeSwapTitle(String amount, BridgeAsset asset) => '$amount ${asset.label} into XMR';
+  static String bridgeSwapTimes(String started, String? updated) =>
+      updated == null ? 'Started $started' : 'Started $started · last change $updated';
+  static String bridgeDepositLead(String amount, BridgeAsset asset) =>
+      'Send exactly $amount ${asset.label} on Robinhood Chain to this address.';
+  static String bridgeOnlyAsset(BridgeAsset asset) =>
+      'Send only ${asset.label} on Robinhood Chain. Another coin or another chain does not arrive.';
+  static const String bridgeSwapId = 'Swap ID';
+  static const String bridgeRefresh = 'Check now';
+  static const String bridgeAnother = 'Start another swap';
+  static const String bridgeSwapsTitle = 'Swaps';
+  static String bridgeSwapLine(String amount, BridgeAsset asset) => '$amount ${asset.label} into XMR';
+  static String bridgeOut(String xmr) => '$xmr XMR';
+  static String bridgeStage(SwapStage stage) => switch (stage) {
+    SwapStage.waiting => 'Waiting for your deposit',
+    SwapStage.confirming => 'Confirming the deposit',
+    SwapStage.exchanging => 'Exchanging',
+    SwapStage.sending => 'Sending XMR',
+    SwapStage.finished => 'Done',
+    SwapStage.failed => 'Failed',
+    SwapStage.refunded => 'Refunded',
+    SwapStage.verifying => 'Held for a check',
+  };
+
+  // The steps of a swap, each with its facts. The support of ChangeNOW answers at this address: CHECKED 5 Oct 2026,
+  // sources changenow.io/press and its API documentation.
+  static const String exchangerSupport = 'support@changenow.io';
+  static const String bridgeStepWaiting = 'Waiting for your deposit';
+  static const String bridgeStepDeposited = 'Deposit received';
+  static String bridgeStepReceived(String amount, BridgeAsset asset) => '$amount ${asset.label} received.';
+  static const String bridgeStepConfirming = 'Confirming the deposit on Robinhood Chain';
+  static const String bridgeStepConfirmingNote = 'ChangeNOW waits until Robinhood Chain confirms your deposit.';
+  static String bridgeStepExchanging(BridgeAsset asset) => 'Exchanging ${asset.label} for XMR';
+  static String bridgeStepRate(String xmr) => 'About $xmr XMR at the current rate.';
+  static String bridgeStepExchanged(String xmr) => 'Exchanged for $xmr XMR.';
+  static String bridgeStepSending(int subaddress) => 'Sending XMR to subaddress #$subaddress';
+  static String bridgeStepSendingNote(String xmr) => 'ChangeNOW sends $xmr XMR to this wallet.';
+  static const String bridgeStepDone = 'XMR arrived';
+  static String bridgeStepDoneNote(String xmr) =>
+      '$xmr XMR is in this wallet. You can spend it after 10 confirmations, about 20 minutes.';
+  static const String bridgeStepHeld = 'Held for a check';
+  static const String bridgeHeld =
+      'ChangeNOW stopped this swap to check it. Write to $exchangerSupport with the swap ID; Kranox cannot release '
+      'it. After the check the swap goes on, or ChangeNOW refunds it.';
+  static const String bridgeStepFailed = 'The swap failed';
+  static String bridgeFailedNoDeposit(BridgeAsset asset) =>
+      'ChangeNOW saw no deposit, so nothing left your wallet. If you sent ${asset.label} after all, write to '
+      '$exchangerSupport with the swap ID.';
+  static String bridgeFailedRefunding(String amount, BridgeAsset asset, String refundAddress) =>
+      'Your $amount ${asset.label} goes back to $refundAddress. This card shows the refund as soon as ChangeNOW '
+      'sends it. If it does not come, write to $exchangerSupport with the swap ID.';
+  static String bridgeFailedNoRefundAddress(String amount, BridgeAsset asset) =>
+      'Your $amount ${asset.label} is with ChangeNOW. Write to $exchangerSupport with the swap ID to get it back.';
+  static const String bridgeStepRefunded = 'Refunded';
+  static String bridgeRefundedTo(String amount, BridgeAsset asset, String refundAddress) =>
+      'ChangeNOW sent $amount ${asset.label} back to $refundAddress on Robinhood Chain.';
+  static String bridgeRefundedNoAddress(String amount, BridgeAsset asset) =>
+      'ChangeNOW sent $amount ${asset.label} back to the address that you gave its support.';
+  static const String bridgeDepositHash = 'Deposit';
+  static const String bridgePayoutHash = 'XMR transaction';
+  static const String bridgeRefundHash = 'Refund';
+  static const String bridgeClose = 'Close';
+  static const String bridgeRelayDown = 'The bridge service does not answer. Try again in a moment.';
+  static String bridgeRefused(String detail) => 'ChangeNOW refused: $detail';
+  static String bridgeFailed(String detail) => 'The bridge failed: $detail';
+
   // Settings.
   static const String settingsTitle = 'Settings';
-  static const String settingsLead = 'Your node, your network, your seed, and the lock of this wallet.';
+  static const String settingsLead = 'Your node, the relay, your network, your seed, and the lock of this wallet.';
   static const String nodeTitle = 'Node';
   static const String nodeLead = 'The node that your wallet talks to. Run your own node for the most privacy.';
   static const String nodeField = 'Node address';
   static const String nodeHint = 'host:port';
   static const String saveNode = 'Save node';
   static const String nodeSaved = 'The wallet uses the new node.';
+  static const String relayTitle = 'Relay';
+  static const String relayLead =
+      'The service of Kranox that talks to ChangeNOW when you receive from Robinhood Chain. It never sees your keys '
+      'and keeps no record of a swap.';
+  static const String relayOnline = 'Relay online';
+  static const String relayOffline = 'Relay offline';
+  static const String relayChecking = 'Checking';
+  static const String relayCheck = 'Check';
   static const String networkTitle = 'Network';
   static const String networkLead =
       'Each network keeps its own wallet and its own node. A switch locks this wallet and opens the wallet of the '

@@ -21,6 +21,7 @@ class ActivityPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final transfers = controller.transfers;
+    final loading = controller.status.isLoading;
     return PageFrame(
       title: Copy.activityTitle,
       lead: Copy.activityLead,
@@ -31,16 +32,24 @@ class ActivityPage extends StatelessWidget {
           child: transfers.isEmpty
               ? Padding(
                   padding: const EdgeInsets.symmetric(vertical: 18),
-                  child: Text(
-                    controller.status.synchronized ? Copy.noActivity : Copy.activityAfterSync,
-                    style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft),
-                  ),
+                  child: loading
+                      ? const LoadingLine(Copy.activityAfterSync)
+                      : Text(
+                          controller.status.synchronized ? Copy.noActivity : Copy.activityAfterSync,
+                          style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft),
+                        ),
                 )
               : Column(
                   children: [
+                    if (loading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: LoadingLine(Copy.activityUpdating),
+                      ),
                     for (final (index, transfer) in transfers.indexed) ...[
-                      if (index > 0) Divider(height: 1, color: palette.line),
+                      if (index > 0 || loading) Divider(height: 1, color: palette.line),
                       TransferRow(
+                        loading: loading,
                         transfer: transfer,
                         trailing: RoundButton(
                           icon: Icons.copy_rounded,

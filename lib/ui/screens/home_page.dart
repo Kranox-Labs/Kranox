@@ -69,6 +69,7 @@ class HomePage extends StatelessWidget {
         _RecentActivity(
           transfers: controller.transfers,
           synchronized: status.synchronized,
+          loading: status.isLoading,
           onShowAll: () => onNavigate(WalletPage.activity),
         ),
       ],
@@ -108,19 +109,26 @@ class _BalanceCard extends StatelessWidget {
         children: [
           Text(Copy.balance.toUpperCase(), style: KranoxType.label.copyWith(color: soft)),
           const SizedBox(height: Metrics.gap),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: AmountFigure(
-              value: formatAmount(status.balance),
-              style: KranoxType.figure,
-              unitStyle: KranoxType.figureUnit,
-              color: palette.heroInk,
+          if (status.isLoading)
+            LoadingFigure(style: KranoxType.figure, color: palette.heroInk)
+          else
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: AmountFigure(
+                value: formatAmount(status.balance),
+                style: KranoxType.figure,
+                unitStyle: KranoxType.figureUnit,
+                color: palette.heroInk,
+              ),
             ),
-          ),
           const SizedBox(height: Metrics.gapSmall),
           Text(
-            status.locked.units > 0 ? Copy.lockedNote(formatAmount(status.locked)) : Copy.allUnlocked,
+            status.isLoading
+                ? Copy.balanceUpdating
+                : status.locked.units > 0
+                ? Copy.lockedNote(formatAmount(status.locked))
+                : Copy.allUnlocked,
             style: KranoxType.bodyRegular.copyWith(color: soft),
           ),
           const Spacer(),
@@ -173,15 +181,18 @@ class _UnlockedCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: AmountFigure(
-              value: formatAmount(status.unlocked),
-              style: KranoxType.cardFigure,
-              unitStyle: KranoxType.smallStrong,
+          if (status.isLoading)
+            LoadingFigure(style: KranoxType.cardFigure)
+          else
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: AmountFigure(
+                value: formatAmount(status.unlocked),
+                style: KranoxType.cardFigure,
+                unitStyle: KranoxType.smallStrong,
+              ),
             ),
-          ),
           const SizedBox(height: Metrics.gapTiny),
           Text(Copy.unlockedNote, style: KranoxType.small.copyWith(color: palette.inkSoft)),
         ],
@@ -229,10 +240,18 @@ class _ReceiveCard extends StatelessWidget {
 }
 
 class _RecentActivity extends StatelessWidget {
-  const _RecentActivity({required this.transfers, required this.synchronized, required this.onShowAll});
+  const _RecentActivity({
+    required this.transfers,
+    required this.synchronized,
+    required this.loading,
+    required this.onShowAll,
+  });
 
   final List<WalletTransfer> transfers;
   final bool synchronized;
+
+  /// Whether the wallet catches up with the chain, so that the list may still change.
+  final bool loading;
   final VoidCallback onShowAll;
 
   @override
@@ -252,7 +271,12 @@ class _RecentActivity extends StatelessWidget {
               child: const Text(Copy.allActivity),
             ),
           ),
-          if (latest.isEmpty)
+          if (loading) ...[
+            const SizedBox(height: Metrics.gapTiny),
+            LoadingLine(latest.isEmpty ? Copy.activityAfterSync : Copy.activityUpdating),
+            const SizedBox(height: Metrics.gapTiny),
+          ],
+          if (latest.isEmpty && !loading)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 18),
               child: Text(
@@ -263,7 +287,7 @@ class _RecentActivity extends StatelessWidget {
           else
             for (final (index, transfer) in latest.indexed) ...[
               if (index > 0) Divider(height: 1, color: palette.line),
-              TransferRow(transfer: transfer),
+              TransferRow(transfer: transfer, loading: loading),
             ],
         ],
       ),

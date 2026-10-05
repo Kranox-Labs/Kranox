@@ -1,3 +1,4 @@
+import '../bridge/client.dart';
 import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/address.dart';
@@ -69,3 +70,16 @@ String? passwordProblem(String password, String repeated) {
   if (password != repeated) return Copy.passwordMismatch;
   return null;
 }
+
+/// Writes an amount of the bridge with at most [decimals] decimals and no zeros at the end, such as 0.0271.
+String formatDecimal(double value, {int decimals = 6}) {
+  final fixed = value.toStringAsFixed(decimals);
+  if (!fixed.contains('.')) return fixed;
+  return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+}
+
+String bridgeFailureText(BridgeException error) => switch (error.failure) {
+  BridgeFailure.relayDown => Copy.bridgeRelayDown,
+  BridgeFailure.refused => Copy.bridgeRefused(error.detail),
+  BridgeFailure.failed => Copy.bridgeFailed(error.detail),
+};

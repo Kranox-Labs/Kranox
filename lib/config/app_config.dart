@@ -51,6 +51,27 @@ abstract final class AppConfig {
   /// The seed of a new wallet has words of this language.
   static const String seedLanguage = 'English';
 
+  /// The relay of Kranox for the bridge. It holds the API key of the exchanger, so that the key never sits in the
+  /// app; apps/relay holds its code. From 5 Oct 2026 it runs on the server of the site, apart from the site, at its
+  /// own name. A build for development can point at a relay on the machine:
+  /// fvm flutter run -d macos --dart-define=BRIDGE_RELAY=http://127.0.0.1:8787
+  static const String bridgeRelay = String.fromEnvironment('BRIDGE_RELAY', defaultValue: 'https://relay.kranox.cash');
+
+  /// A call to the relay that takes longer than this fails.
+  static const Duration bridgeRequestTimeout = Duration(seconds: 30);
+
+  /// The bridge form asks for a quote this long after the last change of the amount.
+  static const Duration bridgeQuoteDelay = Duration(milliseconds: 600);
+
+  /// The app asks for the state of an open swap this often.
+  static const Duration bridgeStatusInterval = Duration(seconds: 15);
+
+  /// An amount in the bridge form has at most this many decimals.
+  static const int bridgeAmountDecimals = 8;
+
+  /// The file of the support folder that keeps the swaps of the bridge.
+  static const String bridgeFileName = 'bridge.json';
+
   /// wallet2 derives the key of the wallet file with this many rounds of its key function. 1 is the default of
   /// wallet2, which opens and creates wallets with it.
   static const int kdfRounds = 1;
