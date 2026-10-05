@@ -151,7 +151,9 @@ class _SendPageState extends State<SendPage> {
           hint: '0.0',
           suffix: Copy.currency,
           error: _amountError,
-          note: Copy.available(widget.controller.status.unlocked.toExact()),
+          note: widget.controller.status.isLoading
+              ? Copy.availableUpdating
+              : Copy.available(widget.controller.status.unlocked.toExact()),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           onSubmitted: (_) => _review(),
         ),

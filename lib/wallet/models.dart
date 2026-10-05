@@ -36,6 +36,11 @@ final class WalletStatus {
 
   XmrAmount get locked => balance - unlocked;
 
+  /// Whether the amounts may still change: the app has no state of the wallet yet, or the wallet scans the chain of a
+  /// node that answers. The screens show a spinner in place of an amount then, so that an amount of the last scan
+  /// does not look like a fault. With a node that does not answer, the amounts of the last scan show.
+  bool get isLoading => identical(this, unknown) || (connection == NodeConnection.connected && !synchronized);
+
   /// The share of the chain that the wallet has scanned, from 0 to 1.
   double get syncShare {
     if (synchronized) return 1;

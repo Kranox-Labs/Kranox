@@ -6,13 +6,16 @@ import '../format.dart';
 import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
 import '../theme/typography.dart';
+import 'bits.dart';
 
-/// One transaction in a list: a round arrow, what happened and when, and the amount.
+/// One transaction in a list: a round arrow, what happened and when, and the amount. While the wallet catches up with
+/// the chain, a spinner stands in place of the amount.
 class TransferRow extends StatelessWidget {
-  const TransferRow({super.key, required this.transfer, this.trailing});
+  const TransferRow({super.key, required this.transfer, this.trailing, this.loading = false});
 
   final WalletTransfer transfer;
   final Widget? trailing;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -53,13 +56,19 @@ class TransferRow extends StatelessWidget {
               ],
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('$sign${formatAmount(transfer.amount)}', style: KranoxType.rowFigure.copyWith(color: palette.ink)),
-              Text(Copy.currency, style: KranoxType.unitLabel.copyWith(color: palette.inkSoft)),
-            ],
-          ),
+          if (loading)
+            SizedBox(
+              width: Metrics.transferIcon,
+              child: LoadingFigure(style: KranoxType.rowFigure),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('$sign${formatAmount(transfer.amount)}', style: KranoxType.rowFigure.copyWith(color: palette.ink)),
+                Text(Copy.currency, style: KranoxType.unitLabel.copyWith(color: palette.inkSoft)),
+              ],
+            ),
           if (trailing != null) ...[const SizedBox(width: 12), trailing!],
         ],
       ),

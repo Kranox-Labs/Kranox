@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/network.dart';
@@ -239,6 +240,11 @@ class _SyncCard extends StatelessWidget {
           children: [
             Row(
               children: [
+                // The spinner of Apple while the wallet connects or catches up, as beside every amount.
+                if (!status.synchronized) ...[
+                  CupertinoActivityIndicator(radius: 6, color: palette.inkSoft),
+                  const SizedBox(width: 8),
+                ],
                 Expanded(
                   child: Text(label, style: KranoxType.smallStrong.copyWith(color: palette.ink)),
                 ),

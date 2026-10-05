@@ -29,6 +29,9 @@ final class AppStorage {
   String walletPath(MoneroNetwork network) => '${walletFolder(network)}/${AppConfig.walletFileName}';
   String get _settingsPath => '$root/${AppConfig.settingsFileName}';
 
+  /// The swaps of the bridge, which works on mainnet only.
+  String get bridgePath => '$root/${AppConfig.bridgeFileName}';
+
   Future<bool> walletExists(MoneroNetwork network) => File('${walletPath(network)}.keys').exists();
 
   Future<void> prepareWalletFolder(MoneroNetwork network) => Directory(walletFolder(network)).create(recursive: true);

@@ -28,7 +28,8 @@ abstract final class Metrics {
   static const double heroMinHeight = 252;
   static const double onboardingWidth = 520;
 
-  /// The welcome card in the middle of the window, its logo, and the blur of the picture behind it.
+  /// The welcome card in the middle of the window, its logo (also on the other screens before the wallet opens), and
+  /// the blur of the picture behind it.
   static const double welcomeCardWidth = 460;
   static const EdgeInsets welcomeCardPadding = EdgeInsets.fromLTRB(36, 40, 36, 32);
   static const double welcomeLogoHeight = 84;
@@ -41,6 +42,13 @@ abstract final class Metrics {
   static const double roundButton = 46;
   static const double smallRound = 30;
   static const double qrSize = 220;
+
+  /// The code of the deposit address of a swap of the bridge, beside its text.
+  static const double bridgeQrSize = 132;
+
+  /// The mark of a step of a swap: a check, a spinner, or a ring.
+  static const double stepMark = 24;
+  static const double stepLine = 2;
   static const double avatar = 34;
   static const double logoHeight = 22;
 

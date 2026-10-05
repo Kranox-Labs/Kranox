@@ -14,6 +14,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kranox_wallet/app.dart';
+import 'package:kranox_wallet/bridge/client.dart';
+import 'package:kranox_wallet/bridge/controller.dart';
+import 'package:kranox_wallet/bridge/models.dart';
+import 'package:kranox_wallet/bridge/store.dart';
 import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/ui/copy.dart';
@@ -136,6 +140,55 @@ final class _SampleBackend implements WalletBackend {
   void stop() {}
 }
 
+/// XMR for one ETH, from the prices of 5 Oct 2026 (CoinGecko: ETH 2,727.50 USD, XMR 547.88 USD), for the sample quote.
+const double _xmrPerEth = 4.978;
+
+/// A sample deposit address on Robinhood Chain for the picture of an open swap. It belongs to no known wallet.
+const String _sampleDeposit = '0x7a3fC0e1b9D24A6c58E0f3B1d9a7C4e2F6b8D015';
+
+/// Sample transaction hashes for the pictures of the steps of a swap. They belong to no known transaction.
+const String _sampleDepositHash = '0x946f9c2d7be41a0c58f3e1b9d24a6c58e0f3b1d9a7c4e2f6b8d015a3c78bdce6';
+const String _samplePayoutHash = 'c4f27a91e05b3d6f8a2c71e94d0b5f3a6e8c2d17b94f0a3e5c6d81b2a7f94e03';
+const String _sampleRefundHash = '0x2b7e91c4d05f3a6e8c2d17b94f0a3e5c6d81b2a7f94e03c4f27a91e05b3d6f8a';
+const String _sampleRefundAddress = '0x57f31ad4b64095347F87eDB1675566DAfF5EC886';
+
+/// The answers of the exchanger for the pictures: a quote at the prices of 5 Oct 2026, and swaps whose state the test
+/// sets step by step.
+final class _SampleBridge implements BridgeClient {
+  SwapState state = const SwapState(stage: SwapStage.waiting);
+  int _swaps = 0;
+
+  @override
+  Future<BridgeQuote> quote(BridgeAsset asset, String amount) async => BridgeQuote(
+    asset: asset,
+    amount: amount,
+    minAmount: 0.0041715,
+    estimatedXmr: double.parse(amount) * _xmrPerEth,
+    speedMinutes: '10-60',
+    warning: null,
+  );
+
+  @override
+  Future<CreatedSwap> createSwap({
+    required BridgeAsset asset,
+    required String amount,
+    required String address,
+    String? refundAddress,
+  }) async => CreatedSwap(
+    id: '9f4e2c71b03ad${++_swaps}',
+    amount: double.parse(amount),
+    estimatedXmr: double.parse(amount) * _xmrPerEth,
+    depositAddress: _sampleDeposit,
+    payoutAddress: address,
+  );
+
+  @override
+  Future<SwapState> readSwap(String id) async => state;
+
+  @override
+  Future<bool> isOnline() async => true;
+}
+
 /// The three window buttons at the top left of the window.
 class _WindowButtons extends StatelessWidget {
   const _WindowButtons();
@@ -168,7 +221,7 @@ void main() {
     final out = Directory('${Directory.current.path}/build/showcase')..createSync(recursive: true);
     final frame = GlobalKey();
 
-    Future<void> show(WalletController controller) => tester.pumpWidget(
+    Future<void> show(WalletController controller, BridgeController bridge) => tester.pumpWidget(
       RepaintBoundary(
         key: frame,
         child: ClipRRect(
@@ -176,7 +229,7 @@ void main() {
           child: Stack(
             textDirection: TextDirection.ltr,
             children: [
-              KranoxApp(controller: controller),
+              KranoxApp(controller: controller, bridge: bridge),
               const Positioned(left: _buttonInset, top: _buttonInset, child: _WindowButtons()),
               Positioned.fill(
                 child: IgnorePointer(
@@ -227,7 +280,13 @@ void main() {
     await controller.start();
     await controller.unlock('sample');
     expect(controller.phase, WalletPhase.open);
-    await show(controller);
+    final bridge = BridgeController(
+      client: _SampleBridge(),
+      store: BridgeStore(storage.bridgePath),
+      wallet: controller,
+    );
+    await bridge.start();
+    await show(controller, bridge);
     await waitFor(find.text(Copy.balance.toUpperCase()));
     await shoot('home');
 
@@ -262,12 +321,90 @@ void main() {
     await emptyStorage.writeSettings(_settings);
     final newcomer = WalletController(worker: _SampleBackend(DateTime.now()), storage: emptyStorage);
     await newcomer.start();
-    await show(newcomer);
+    final newcomerBridge = BridgeController(
+      client: _SampleBridge(),
+      store: BridgeStore(emptyStorage.bridgePath),
+      wallet: newcomer,
+    );
+    await show(newcomer, newcomerBridge);
     await waitFor(find.text(Copy.createWallet));
     await shoot('welcome');
     await tester.tap(find.text(Copy.restoreWallet));
     await tester.pump(_frame);
     await shoot('restore');
+
+    // Receive from Robinhood Chain on mainnet, where the exchanger works: a quote for 0.0055 ETH, then the open swap.
+    final mainnetRoot = Directory.systemTemp.createTempSync('kranox-showcase-mainnet');
+    final mainnetStorage = AppStorage(mainnetRoot.path);
+    await mainnetStorage.prepareWalletFolder(MoneroNetwork.mainnet);
+    File('${mainnetStorage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
+    final mainnet = WalletController(worker: _SampleBackend(DateTime.now()), storage: mainnetStorage);
+    await mainnet.start();
+    await mainnet.unlock('sample');
+    final sampleBridge = _SampleBridge();
+    final mainnetBridge = BridgeController(
+      client: sampleBridge,
+      store: BridgeStore(mainnetStorage.bridgePath),
+      wallet: mainnet,
+    );
+    await mainnetBridge.start();
+    await show(mainnet, mainnetBridge);
+    await waitFor(find.text(Copy.balance.toUpperCase()));
+    await openPage(Copy.navReceive);
+    await tester.tap(find.text(Copy.receiveChainTab.toUpperCase()));
+    await waitFor(find.text(Copy.bridgeFormTitle));
+    Future<void> swapAt(SwapState state, String name) async {
+      sampleBridge.state = state;
+      await mainnetBridge.refresh();
+      await tester.pump(_frame);
+      await shoot(name);
+    }
+
+    await tester.enterText(find.byType(TextField).first, '0.006');
+    await waitFor(find.textContaining('You get about'));
+    await shoot('receive-chain-quote');
+    await tester.tap(find.text(Copy.bridgeCreate));
+    await waitFor(find.text(Copy.bridgeStepWaiting));
+    await tester.pump(_frame);
+    expect(find.text(Copy.bridgeFormTitle), findsNothing);
+    await shoot('receive-chain-waiting');
+    await swapAt(
+      const SwapState(stage: SwapStage.confirming, expectedOut: 0.0205789, depositHash: _sampleDepositHash),
+      'receive-chain-confirming',
+    );
+    await swapAt(
+      const SwapState(
+        stage: SwapStage.finished,
+        amountOut: 0.0205214,
+        depositHash: _sampleDepositHash,
+        payoutHash: _samplePayoutHash,
+      ),
+      'receive-chain-done',
+    );
+
+    // A swap that fails after the deposit, and its refund.
+    await tester.tap(find.text(Copy.bridgeClose));
+    await waitFor(find.text(Copy.bridgeFormTitle));
+    sampleBridge.state = const SwapState(stage: SwapStage.waiting);
+    await tester.enterText(find.byType(TextField).first, '0.006');
+    await waitFor(find.textContaining('You get about'));
+    await tester.tap(find.text(Copy.bridgeCreate));
+    await waitFor(find.text(Copy.bridgeStepWaiting));
+    await swapAt(const SwapState(stage: SwapStage.confirming, depositHash: _sampleDepositHash), 'receive-chain-step');
+    await swapAt(const SwapState(stage: SwapStage.failed, depositHash: _sampleDepositHash), 'receive-chain-failed');
+    await swapAt(
+      const SwapState(
+        stage: SwapStage.refunded,
+        refundAddress: _sampleRefundAddress,
+        refundHash: _sampleRefundHash,
+        refundAmount: 0.0058,
+      ),
+      'receive-chain-refunded',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    mainnetBridge.dispose();
+    await mainnet.shutdown();
+    mainnetRoot.deleteSync(recursive: true);
 
     // The QR code of the sample subaddress, on white, as the receive page draws it. Its label for assistive
     // technology needs a reading direction.
@@ -302,6 +439,8 @@ void main() {
 
     debugPrint('Pictures of the screens (${_network.label}): ${out.path}');
     newcomer.dispose();
+    bridge.dispose();
+    newcomerBridge.dispose();
     root.deleteSync(recursive: true);
     emptyRoot.deleteSync(recursive: true);
   });

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../bridge/controller.dart';
 import '../../wallet/controller.dart';
 import '../widgets/backdrop.dart';
 import '../widgets/sidebar.dart';
@@ -11,9 +12,10 @@ import 'settings_page.dart';
 
 /// The open wallet: the sidebar at the left and the chosen page at the right.
 class WalletShell extends StatefulWidget {
-  const WalletShell({super.key, required this.controller});
+  const WalletShell({super.key, required this.controller, required this.bridge});
 
   final WalletController controller;
+  final BridgeController bridge;
 
   @override
   State<WalletShell> createState() => _WalletShellState();
@@ -49,9 +51,9 @@ class _WalletShellState extends State<WalletShell> {
               child: switch (_page) {
                 WalletPage.home => HomePage(controller: controller, onNavigate: _go),
                 WalletPage.send => SendPage(controller: controller),
-                WalletPage.receive => ReceivePage(controller: controller),
+                WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
                 WalletPage.activity => ActivityPage(controller: controller),
-                WalletPage.settings => SettingsPage(controller: controller, onLock: _lock),
+                WalletPage.settings => SettingsPage(controller: controller, bridge: widget.bridge, onLock: _lock),
               },
             ),
           ],
