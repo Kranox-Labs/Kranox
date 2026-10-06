@@ -29,6 +29,24 @@ void main() {
     });
   });
 
+  group('ConfirmationWait', () {
+    test('counts the blocks and the minutes left to its own target', () {
+      final waiting = ConfirmationWait(3, target: 6);
+      expect(waiting.blocksLeft, 3);
+      expect(waiting.timeLeft, const Duration(minutes: 6));
+      expect(waiting.share, 0.5);
+      expect(waiting.isDone, isFalse);
+      expect(ConfirmationWait(0, target: 6).timeLeft, const Duration(minutes: 12));
+    });
+
+    test('holds the confirmations between none and its target', () {
+      expect(ConfirmationWait(-2, target: 6).confirmations, 0);
+      expect(ConfirmationWait(9, target: 6).confirmations, 6);
+      expect(ConfirmationWait(9, target: 6).isDone, isTrue);
+      expect(ConfirmationWait(9, target: 6).timeLeft, Duration.zero);
+    });
+  });
+
   group('UnlockProgress.slowest', () {
     List<UnlockProgress> of(List<int> confirmations) => confirmations.map(UnlockProgress.new).toList();
 

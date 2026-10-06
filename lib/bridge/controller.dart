@@ -31,6 +31,7 @@ final class BridgeController extends ChangeNotifier {
   List<BridgeSwap> _swaps = const [];
   bool? _relayOnline;
   bool _checkingRelay = false;
+  DateTime? _checkedAt;
   Timer? _poll;
   Future<void>? _pollInFlight;
 
@@ -59,6 +60,10 @@ final class BridgeController extends ChangeNotifier {
 
   /// Every swap, the newest first.
   List<BridgeSwap> get swaps => _swaps;
+
+  /// When the exchanger last answered for the swaps that run, so that their cards show that the app still follows
+  /// them; null before the first answer.
+  DateTime? get checkedAt => _checkedAt;
 
   /// The swaps of one way, the newest first.
   List<BridgeSwap> swapsOf(SwapDirection direction) => [
@@ -210,9 +215,11 @@ final class BridgeController extends ChangeNotifier {
 
   Future<void> _readStates() async {
     final next = <String, BridgeSwap>{};
+    var answered = false;
     for (final swap in _swaps.where((swap) => swap.watched).toList()) {
       try {
         final updated = swap.withState(await _client.readSwap(swap.id));
+        answered = true;
         if (jsonEncode(updated.toJson()) != jsonEncode(swap.toJson())) next[swap.id] = updated;
       } on BridgeException {
         // The relay or the exchanger did not answer this time; the next round asks again.
@@ -224,8 +231,9 @@ final class BridgeController extends ChangeNotifier {
       // A swap made while the states were on their way stays in the list.
       _swaps = [for (final swap in _swaps) next[swap.id] ?? swap];
       await _store.write(_swaps);
-      notifyListeners();
     }
+    if (answered) _checkedAt = DateTime.now();
+    if (next.isNotEmpty || answered) notifyListeners();
     if (activeSwap == null) {
       _poll?.cancel();
       _poll = null;

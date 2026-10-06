@@ -66,6 +66,12 @@ abstract final class AppConfig {
   /// The app asks for the state of an open swap this often.
   static const Duration bridgeStatusInterval = Duration(seconds: 15);
 
+  /// The confirmations of Monero after which ChangeNOW takes in the XMR of a payment, about. CHECKED 6 Oct 2026, two
+  /// payments on mainnet: ChangeNOW counted the first deposit 9 seconds after the time of its sixth block (3,778,198),
+  /// and the second one 52 seconds before the time of its sixth block (3,778,213), more than 3 minutes after its fifth.
+  /// A miner sets the time of a block, so the times are approximate.
+  static const int exchangerXmrConfirmations = 6;
+
   /// An amount in the bridge form has at most this many decimals.
   static const int bridgeAmountDecimals = 8;
 

@@ -35,6 +35,13 @@ final class AmountInputFormatter extends TextInputFormatter {
 
 String formatAmount(XmrAmount amount) => amount.toFixed(listDecimals);
 
+/// Writes the time of day with its seconds, such as when the app last checked a swap.
+String formatClock(DateTime time) {
+  final local = time.toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+}
+
 /// Writes the time of a transaction: the hour of today, or the day of another date.
 String formatTime(DateTime time, DateTime now) {
   final local = time.toLocal();

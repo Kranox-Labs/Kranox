@@ -114,6 +114,37 @@ class SyncDots extends StatelessWidget {
   }
 }
 
+/// One dot for each confirmation that a transfer waits for, like the dots of the sync bar: a reached dot has the
+/// accent color.
+class ConfirmationDots extends StatelessWidget {
+  const ConfirmationDots({super.key, required this.confirmations, required this.target});
+
+  final int confirmations;
+  final int target;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < target; index++) ...[
+          if (index > 0) const SizedBox(width: Metrics.unlockDotGap),
+          AnimatedContainer(
+            duration: Metrics.fade,
+            width: Metrics.unlockDot,
+            height: Metrics.unlockDot,
+            decoration: BoxDecoration(
+              color: index < confirmations ? palette.accent : palette.dotOff,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// A line of text in the color of a failure.
 class ErrorLine extends StatelessWidget {
   const ErrorLine(this.message, {super.key});

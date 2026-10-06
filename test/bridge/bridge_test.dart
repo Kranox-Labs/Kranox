@@ -375,6 +375,7 @@ void main() {
     });
 
     test('pays out to a new subaddress and follows the swap to its end', () async {
+      expect(bridge.checkedAt, isNull);
       bridge.setAmount('0.0055');
       await _quoteSettles();
       final swap = await bridge.createSwap();
@@ -386,8 +387,11 @@ void main() {
 
       // The first read of the new swap is on its way; the next one sees the end.
       await bridge.refresh();
+      final checked = bridge.checkedAt;
+      expect(checked, isNotNull, reason: 'the card shows when the exchanger last answered');
       exchanger.stage = SwapStage.finished;
       await bridge.refresh();
+      expect(bridge.checkedAt!.isBefore(checked!), isFalse);
       expect(bridge.activeSwap, isNull);
       expect(bridge.swaps.single.stage, SwapStage.finished);
       expect(bridge.swaps.single.amountOut, 0.0274);
