@@ -13,7 +13,6 @@ import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
-import '../widgets/page_frame.dart';
 import '../widgets/qr_card.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/swap_box.dart';
@@ -103,6 +102,7 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
             if (shown != null) ...[
               _SwapCard(
                 swap: shown,
+                checkedAt: bridge.checkedAt,
                 onRefresh: bridge.refresh,
                 onAnother: shown.stage.isFinal || _another ? null : () => setState(() => _another = true),
                 onClose: shown.stage.isFinal ? () => bridge.closeSwap(shown.id) : null,
@@ -274,9 +274,16 @@ class _QuoteNote extends StatelessWidget {
 /// reports about it. A failure, a check, or a refund says what happened and what to do, and the card stays until the
 /// user closes it.
 class _SwapCard extends StatelessWidget {
-  const _SwapCard({required this.swap, required this.onRefresh, required this.onAnother, required this.onClose});
+  const _SwapCard({
+    required this.swap,
+    required this.checkedAt,
+    required this.onRefresh,
+    required this.onAnother,
+    required this.onClose,
+  });
 
   final BridgeSwap swap;
+  final DateTime? checkedAt;
   final Future<void> Function() onRefresh;
 
   /// Shows the form for another swap; null when the form shows or the swap has ended.
@@ -287,25 +294,18 @@ class _SwapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final now = DateTime.now();
-    final updated = swap.updatedAt;
     final steps = _steps(context);
     return Surface(
       padding: const EdgeInsets.all(Metrics.heroPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CardTitle(
-            Copy.bridgeSwapTitle(formatDecimal(swap.amount, decimals: 8), swap.asset),
-            trailing: swap.stage.isFinal
-                ? null
-                : PillButton(label: Copy.bridgeRefresh, tone: PillTone.quiet, onPressed: onRefresh),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            Copy.bridgeSwapTimes(formatTime(swap.createdAt, now), updated == null ? null : formatTime(updated, now)),
-            style: KranoxType.small.copyWith(color: palette.inkSoft),
+          SwapCardHeader(
+            title: Copy.bridgeSwapTitle(formatDecimal(swap.amount, decimals: 8), swap.asset),
+            swap: swap,
+            checkedAt: checkedAt,
+            onRefresh: onRefresh,
+            notes: const [Copy.bridgeCanClose],
           ),
           const SizedBox(height: Metrics.gap),
           for (var index = 0; index < steps.length; index++)

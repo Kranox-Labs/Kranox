@@ -335,7 +335,7 @@ class _UnlockingCard extends StatelessWidget {
           else ...[
             Row(
               children: [
-                _ConfirmationDots(confirmations: progress.confirmations),
+                ConfirmationDots(confirmations: progress.confirmations, target: progress.target),
                 const Spacer(),
                 Text(
                   Copy.confirmationCount(progress.confirmations),
@@ -350,36 +350,6 @@ class _UnlockingCard extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-/// One dot for each confirmation that coins wait for, like the dots of the sync bar: a reached dot has the accent
-/// color.
-class _ConfirmationDots extends StatelessWidget {
-  const _ConfirmationDots({required this.confirmations});
-
-  final int confirmations;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var index = 0; index < spendableAge; index++) ...[
-          if (index > 0) const SizedBox(width: Metrics.unlockDotGap),
-          AnimatedContainer(
-            duration: Metrics.fade,
-            width: Metrics.unlockDot,
-            height: Metrics.unlockDot,
-            decoration: BoxDecoration(
-              color: index < confirmations ? palette.accent : palette.dotOff,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ],
-      ],
     );
   }
 }

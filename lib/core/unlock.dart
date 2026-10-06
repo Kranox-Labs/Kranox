@@ -9,13 +9,31 @@ const int spendableAge = 10;
 /// time only. CHECKED 5 Oct 2026: DIFFICULTY_TARGET_V2 in the same file, 120 seconds.
 const Duration blockTarget = Duration(seconds: 120);
 
-/// How far one transfer is on its way to coins that the wallet can spend.
-final class UnlockProgress {
+/// How far one transfer is on its way to [target] confirmations, the blocks on top of it.
+base class ConfirmationWait {
   /// [confirmations] counts the blocks on top of the transfer: 0 while it waits in the pool of the node.
-  UnlockProgress(int confirmations) : confirmations = math.max(0, math.min(confirmations, spendableAge));
+  ConfirmationWait(int confirmations, {required this.target})
+    : confirmations = math.max(0, math.min(confirmations, target));
 
-  /// The confirmations that count toward the unlock, from 0 to [spendableAge].
+  final int target;
+
+  /// The confirmations that count toward the target, from 0 to [target].
   final int confirmations;
+
+  int get blocksLeft => target - confirmations;
+
+  bool get isDone => blocksLeft == 0;
+
+  /// The time that the blocks left take on average.
+  Duration get timeLeft => blockTarget * blocksLeft;
+
+  /// The share of the wait that is behind the transfer, from 0 to 1.
+  double get share => confirmations / target;
+}
+
+/// How far one transfer is on its way to coins that the wallet can spend.
+final class UnlockProgress extends ConfirmationWait {
+  UnlockProgress(super.confirmations) : super(target: spendableAge);
 
   /// The progress of the transfer that unlocks last among [all], or null when every one has unlocked.
   static UnlockProgress? slowest(Iterable<UnlockProgress> all) {
@@ -27,13 +45,5 @@ final class UnlockProgress {
     return slowest;
   }
 
-  int get blocksLeft => spendableAge - confirmations;
-
-  bool get isUnlocked => blocksLeft == 0;
-
-  /// The time that the blocks left take on average.
-  Duration get timeLeft => blockTarget * blocksLeft;
-
-  /// The share of the wait that is behind the transfer, from 0 to 1.
-  double get share => confirmations / spendableAge;
+  bool get isUnlocked => isDone;
 }

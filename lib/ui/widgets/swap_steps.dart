@@ -8,6 +8,7 @@ import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
 import '../theme/typography.dart';
 import 'bits.dart';
+import 'buttons.dart';
 import 'page_frame.dart';
 import 'surfaces.dart';
 
@@ -116,6 +117,56 @@ class _StepMark extends StatelessWidget {
         SwapMark.refunded => ring(palette.accent, child: Icon(Icons.undo_rounded, size: 14, color: palette.accent)),
         SwapMark.pending => ring(palette.line),
       },
+    );
+  }
+}
+
+/// The head of the card of a swap: its title, with a button to check it now while it runs; when it started and last
+/// changed; while it runs, when the app last checked it with the exchanger, and [notes] that tell the user what to
+/// expect. The owner asked on 6 Oct 2026 for a card that keeps a user calm through a long wait.
+class SwapCardHeader extends StatelessWidget {
+  const SwapCardHeader({
+    super.key,
+    required this.title,
+    required this.swap,
+    required this.checkedAt,
+    required this.onRefresh,
+    this.notes = const [],
+  });
+
+  final String title;
+  final BridgeSwap swap;
+  final DateTime? checkedAt;
+  final Future<void> Function() onRefresh;
+  final List<String> notes;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final now = DateTime.now();
+    final updated = swap.updatedAt;
+    final checked = checkedAt;
+    final running = !swap.stage.isFinal;
+    final soft = KranoxType.small.copyWith(color: palette.inkSoft);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CardTitle(
+          title,
+          trailing: running ? PillButton(label: Copy.bridgeRefresh, tone: PillTone.quiet, onPressed: onRefresh) : null,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          Copy.bridgeSwapTimes(
+            formatTime(swap.createdAt, now),
+            updated == null ? null : formatTime(updated, now),
+            checked: running && checked != null ? formatClock(checked) : null,
+          ),
+          style: soft,
+        ),
+        if (running)
+          for (final note in notes) ...[const SizedBox(height: 2), Text(note, style: soft)],
+      ],
     );
   }
 }
@@ -231,7 +282,7 @@ class SwapHistory extends StatelessWidget {
                       children: [
                         Text(line(swap), style: KranoxType.body.copyWith(color: palette.ink)),
                         Text(
-                          '${formatTime(swap.createdAt, now)} · ${Copy.bridgeStage(swap.stage)}',
+                          '${formatTime(swap.createdAt, now)} · ${Copy.swapStage(swap.direction, swap.stage)}',
                           style: KranoxType.small.copyWith(
                             color: swap.stage == SwapStage.failed ? palette.danger : palette.inkSoft,
                           ),

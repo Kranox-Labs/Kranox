@@ -7,8 +7,10 @@ import '../../bridge/models.dart';
 import '../../bridge/pay_controller.dart';
 import '../../config/app_config.dart';
 import '../../core/evm_address.dart';
+import '../../core/unlock.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
+import '../../wallet/models.dart';
 import '../copy.dart';
 import '../format.dart';
 import '../theme/kranox_theme.dart';
@@ -17,7 +19,6 @@ import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
-import '../widgets/page_frame.dart';
 import '../widgets/review_line.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/swap_box.dart';
@@ -125,6 +126,8 @@ class _SendToChainState extends State<SendToChain> {
           else if (shown != null) ...[
             _PaymentCard(
               swap: shown,
+              transfer: _sentTransfer(shown),
+              checkedAt: widget.bridge.checkedAt,
               onRefresh: widget.bridge.refresh,
               onAnother: shown.stage.isFinal || _another ? null : () => setState(() => _another = true),
               onClose: shown.stage.isFinal ? () => widget.bridge.closeSwap(shown.id) : null,
@@ -151,6 +154,17 @@ class _SendToChainState extends State<SendToChain> {
       );
     },
   );
+
+  /// The transfer of this wallet that carried the XMR of [swap] to the exchanger, once the history of the wallet holds
+  /// it, for the confirmations that the card of the payment counts.
+  WalletTransfer? _sentTransfer(BridgeSwap swap) {
+    final hash = swap.depositHash;
+    if (hash == null) return null;
+    for (final transfer in widget.wallet.transfers) {
+      if (transfer.hash == hash) return transfer;
+    }
+    return null;
+  }
 
   Widget _form(BuildContext context) {
     final palette = context.palette;
@@ -564,9 +578,20 @@ class _Review extends StatelessWidget {
 /// with what ChangeNOW reports about it. A failure, a check, or a refund says what happened and what to do, and the
 /// card stays until the user closes it.
 class _PaymentCard extends StatelessWidget {
-  const _PaymentCard({required this.swap, required this.onRefresh, required this.onAnother, required this.onClose});
+  const _PaymentCard({
+    required this.swap,
+    required this.transfer,
+    required this.checkedAt,
+    required this.onRefresh,
+    required this.onAnother,
+    required this.onClose,
+  });
 
   final BridgeSwap swap;
+
+  /// The transfer of this wallet that carried the XMR, for its confirmations; null until the history holds it.
+  final WalletTransfer? transfer;
+  final DateTime? checkedAt;
   final Future<void> Function() onRefresh;
 
   /// Shows the form for another payment; null when the form shows or the payment has ended.
@@ -578,24 +603,22 @@ class _PaymentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final now = DateTime.now();
-    final updated = swap.updatedAt;
     final steps = _steps();
     return Surface(
       padding: const EdgeInsets.all(Metrics.heroPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CardTitle(
-            Copy.paySwapTitle(_paidAmount(swap), swap.asset, shortText(swap.payoutAddress)),
-            trailing: swap.stage.isFinal
-                ? null
-                : PillButton(label: Copy.bridgeRefresh, tone: PillTone.quiet, onPressed: onRefresh),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            Copy.bridgeSwapTimes(formatTime(swap.createdAt, now), updated == null ? null : formatTime(updated, now)),
-            style: KranoxType.small.copyWith(color: palette.inkSoft),
+          SwapCardHeader(
+            title: Copy.paySwapTitle(_paidAmount(swap), swap.asset, shortText(swap.payoutAddress)),
+            swap: swap,
+            checkedAt: checkedAt,
+            onRefresh: onRefresh,
+            notes: [
+              swap.fixedRate ? Copy.payRateFixedReview : Copy.payRateFloatingReview,
+              Copy.payUsualTime,
+              Copy.bridgeCanClose,
+            ],
           ),
           const SizedBox(height: Metrics.gap),
           for (var index = 0; index < steps.length; index++)
@@ -604,6 +627,10 @@ class _PaymentCard extends StatelessWidget {
               last: index == steps.length - 1,
               nextMark: index + 1 < steps.length ? steps[index + 1].mark : null,
             ),
+          if (!swap.stage.isFinal) ...[
+            const SizedBox(height: Metrics.gapSmall),
+            Text(Copy.payRefundNote(swap.subaddressIndex), style: KranoxType.small.copyWith(color: palette.inkSoft)),
+          ],
           const SizedBox(height: Metrics.gapSmall),
           Row(
             children: [
@@ -634,9 +661,10 @@ class _PaymentCard extends StatelessWidget {
       SwapStage.waiting => SwapStep(mark, mark == SwapMark.done ? Copy.payStepDeposited : Copy.payStepWaiting, [
         SwapFact(Copy.payStepSentNote(xmrText)),
         if (moneroHash != null) SwapCopyLine(label: Copy.payMoneroHash, value: moneroHash),
+        if (mark == SwapMark.active) _MoneroProgress(transfer: transfer),
       ]),
       SwapStage.confirming => SwapStep(mark, Copy.payStepConfirming, [
-        if (mark == SwapMark.active) const SwapFact(Copy.payStepConfirmingNote),
+        if (mark == SwapMark.active) _MoneroProgress(transfer: transfer),
       ]),
       SwapStage.exchanging => SwapStep(mark, Copy.payStepExchanging(asset)),
       SwapStage.sending => SwapStep(mark, Copy.payStepSendingOut(asset, recipient), [
@@ -656,6 +684,36 @@ class _PaymentCard extends StatelessWidget {
         if (refundHash != null) SwapCopyLine(label: Copy.payMoneroHash, value: refundHash),
       ]),
       failed: SwapStep(SwapMark.failed, Copy.bridgeStepFailed, [SwapFact(Copy.payFailed(swap.subaddressIndex))]),
+    );
+  }
+}
+
+/// How far the XMR of a payment is on its way to the confirmations that ChangeNOW waits for, from the history of this
+/// wallet: the wait for the first block, then a dot for each confirmation with the time left. Until the history holds
+/// the transfer, the step says what ChangeNOW waits for.
+class _MoneroProgress extends StatelessWidget {
+  const _MoneroProgress({required this.transfer});
+
+  final WalletTransfer? transfer;
+
+  @override
+  Widget build(BuildContext context) {
+    final sent = transfer;
+    if (sent == null) return const SwapFact(Copy.payStepConfirmingNote);
+    if (sent.isPending || sent.confirmations == 0) return SwapFact(Copy.payStepFirstBlock);
+    final wait = ConfirmationWait(sent.confirmations, target: AppConfig.exchangerXmrConfirmations);
+    if (wait.isDone) return const SwapFact(Copy.payStepConfirmed);
+    return Row(
+      children: [
+        ConfirmationDots(confirmations: wait.confirmations, target: wait.target),
+        const SizedBox(width: Metrics.gapSmall),
+        Expanded(
+          child: Text(
+            Copy.payStepConfirmations(wait.confirmations, wait.target, wait.timeLeft),
+            style: KranoxType.small.copyWith(color: context.palette.inkSoft),
+          ),
+        ),
+      ],
     );
   }
 }

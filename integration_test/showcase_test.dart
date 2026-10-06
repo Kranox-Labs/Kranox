@@ -85,6 +85,9 @@ final class _SampleBackend implements WalletBackend {
   // The height of mainnet: CHECKED 5 Oct 2026, source get_info of xmr-node.cakewallet.com:18081.
   static const int _height = 3777437;
 
+  // The confirmations of the sample payment to Robinhood Chain in the pictures of its card.
+  static const int _sentConfirmations = 3;
+
   // Four transfers: the home page shows them all without cutting the last one at the foot of the window.
   late final List<WalletTransfer> _history = [
     _transfer('9c41', TransferDirection.incoming, '11.5', const Duration(minutes: 25), confirmations: 4, subaddress: 3),
@@ -120,6 +123,27 @@ final class _SampleBackend implements WalletBackend {
     subaddressIndex: subaddress,
   );
 
+  /// Sends the prepared payment, which the history then holds with a few confirmations.
+  SentPayment _send() {
+    final prepared = _prepared!;
+    _history.insert(
+      0,
+      WalletTransfer(
+        hash: _samplePayinHash,
+        direction: TransferDirection.outgoing,
+        amount: prepared.amount,
+        fee: prepared.fee,
+        time: _now,
+        blockHeight: _height - _sentConfirmations + 1,
+        confirmations: _sentConfirmations,
+        isPending: false,
+        isFailed: false,
+        subaddressIndex: null,
+      ),
+    );
+    return SentPayment(transactionId: _samplePayinHash, amount: prepared.amount, fee: prepared.fee);
+  }
+
   @override
   Future<T> call<T>(WalletRequest request) async {
     final Object? answer = switch (request) {
@@ -130,7 +154,7 @@ final class _SampleBackend implements WalletBackend {
         amount: XmrAmount(amountUnits),
         fee: _xmr('0.0000312'),
       ),
-      ConfirmSend() => SentPayment(transactionId: _samplePayinHash, amount: _prepared!.amount, fee: _prepared!.fee),
+      ConfirmSend() => _send(),
       CancelSend() => null,
       ReadHistory() => _history,
       ReadStatus() => WalletStatus(
@@ -548,6 +572,7 @@ void main() {
     await waitFor(find.text(Copy.payStepWaiting));
     await tester.pump(_frame);
     await shoot('send-chain-waiting');
+    await swapAt(const SwapState(stage: SwapStage.confirming, depositHash: _samplePayinHash), 'send-chain-confirming');
     await swapAt(const SwapState(stage: SwapStage.exchanging, depositHash: _samplePayinHash), 'send-chain-exchanging');
     await swapAt(
       const SwapState(stage: SwapStage.finished, depositHash: _samplePayinHash, payoutHash: _sampleChainHash),

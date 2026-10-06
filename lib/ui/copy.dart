@@ -183,8 +183,16 @@ abstract final class Copy {
   static const String bridgeSeenBy =
       'ChangeNOW sees the amount, the time, the deposit, and the subaddress of this swap. It never sees your keys.';
   static String bridgeSwapTitle(String amount, BridgeAsset asset) => '$amount ${asset.label} into XMR';
-  static String bridgeSwapTimes(String started, String? updated) =>
-      updated == null ? 'Started $started' : 'Started $started · last change $updated';
+
+  /// When a swap started and last changed, and, while it runs, when the app last checked it with the exchanger.
+  static String bridgeSwapTimes(String started, String? updated, {String? checked}) => [
+    'Started $started',
+    if (updated != null) 'last change $updated',
+    if (checked != null) 'checked $checked',
+  ].join(' · ');
+  // The owner asked on 6 Oct 2026 what a card of a swap should say so that a user does not worry while it runs.
+  static const String bridgeCanClose =
+      'You can close Kranox: ChangeNOW carries on, and this card catches up when you open the app again.';
   static String bridgeDepositLead(String amount, BridgeAsset asset) =>
       'Send exactly $amount ${asset.label} on Robinhood Chain to this address.';
   static String bridgeOnlyAsset(BridgeAsset asset) =>
@@ -195,15 +203,21 @@ abstract final class Copy {
   static const String bridgeSwapsTitle = 'Swaps';
   static String bridgeSwapLine(String amount, BridgeAsset asset) => '$amount ${asset.label} into XMR';
   static String bridgeOut(String xmr) => '$xmr XMR';
-  static String bridgeStage(SwapStage stage) => switch (stage) {
-    SwapStage.waiting => 'Waiting for your deposit',
-    SwapStage.confirming => 'Confirming the deposit',
-    SwapStage.exchanging => 'Exchanging',
-    SwapStage.sending => 'Sending XMR',
-    SwapStage.finished => 'Done',
-    SwapStage.failed => 'Failed',
-    SwapStage.refunded => 'Refunded',
-    SwapStage.verifying => 'Held for a check',
+
+  /// The state of a swap in a list, in the words of its card.
+  static String swapStage(SwapDirection direction, SwapStage stage) => switch ((direction, stage)) {
+    (SwapDirection.pay, SwapStage.waiting) => payStepWaiting,
+    (SwapDirection.pay, SwapStage.confirming) => payStepConfirming,
+    (SwapDirection.pay, SwapStage.sending) => 'Sending to the recipient',
+    (SwapDirection.pay, SwapStage.finished) => payStepDone,
+    (_, SwapStage.waiting) => 'Waiting for your deposit',
+    (_, SwapStage.confirming) => 'Confirming the deposit',
+    (_, SwapStage.exchanging) => 'Exchanging',
+    (_, SwapStage.sending) => 'Sending XMR',
+    (_, SwapStage.finished) => 'Done',
+    (_, SwapStage.failed) => 'Failed',
+    (_, SwapStage.refunded) => 'Refunded',
+    (_, SwapStage.verifying) => 'Held for a check',
   };
 
   // The steps of a swap, each with its facts. The support of ChangeNOW answers at this address: CHECKED 5 Oct 2026,
@@ -309,6 +323,16 @@ abstract final class Copy {
   static String payStepSentNote(String xmr) => '$xmr XMR left this wallet.';
   static const String payStepConfirming = 'Confirming the XMR';
   static const String payStepConfirmingNote = 'ChangeNOW waits until Monero confirms your payment.';
+  // The wait of a payment in view. CHECKED 6 Oct 2026, the two first payments on mainnet: 27 and 16 minutes from the
+  // XMR that left the wallet to the coin at the recipient, with gaps of 15 and 9 minutes without a block of Monero.
+  static const String payUsualTime = 'Usually 15 to 30 minutes after the XMR leaves.';
+  static String get payStepFirstBlock =>
+      'Waiting for the first block. Monero adds one about every ${blockTarget.inMinutes} minutes; sometimes one takes '
+      '10 minutes or more.';
+  static String payStepConfirmations(int confirmations, int target, Duration left) =>
+      '$confirmations of about $target confirmations · about ${left.inMinutes} min left';
+  static const String payStepConfirmed = 'Confirmed on Monero. ChangeNOW takes the XMR in at any moment.';
+  static String payRefundNote(int index) => 'If the swap fails, ChangeNOW sends the XMR back to subaddress #$index.';
   static String payStepExchanging(BridgeAsset asset) => 'Exchanging XMR for ${asset.label}';
   static String payStepSendingOut(BridgeAsset asset, String recipient) => 'Sending ${asset.label} to $recipient';
   static const String payStepDone = 'Paid';
