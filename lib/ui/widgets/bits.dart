@@ -1,11 +1,11 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../copy.dart';
 import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
 import '../theme/typography.dart';
+import 'toast.dart';
 
 /// A small pill with a label in capitals, and a dot for a state, such as the network and the node.
 class StatusChip extends StatelessWidget {
@@ -131,11 +131,11 @@ class ErrorLine extends StatelessWidget {
   }
 }
 
-/// Puts a text on the clipboard and says so.
+/// Puts a text on the clipboard and says so in a toast at the foot of the page.
 Future<void> copyToClipboard(BuildContext context, String text) async {
-  final messenger = ScaffoldMessenger.of(context);
+  final toast = ToastHost.of(context);
   await Clipboard.setData(ClipboardData(text: text));
-  messenger.showSnackBar(const SnackBar(content: Text(Copy.copied), duration: Duration(seconds: 2)));
+  toast.show(Copy.copied);
 }
 
 /// The spinner of Apple in place of an amount while the wallet catches up with the chain, as high as the line of

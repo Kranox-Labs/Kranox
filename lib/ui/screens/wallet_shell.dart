@@ -4,6 +4,7 @@ import '../../bridge/controller.dart';
 import '../../wallet/controller.dart';
 import '../widgets/backdrop.dart';
 import '../widgets/sidebar.dart';
+import '../widgets/toast.dart';
 import 'activity_page.dart';
 import 'home_page.dart';
 import 'receive_page.dart';
@@ -48,13 +49,16 @@ class _WalletShellState extends State<WalletShell> {
               node: controller.node,
             ),
             Expanded(
-              child: switch (_page) {
-                WalletPage.home => HomePage(controller: controller, onNavigate: _go),
-                WalletPage.send => SendPage(controller: controller, bridge: widget.bridge),
-                WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
-                WalletPage.activity => ActivityPage(controller: controller),
-                WalletPage.settings => SettingsPage(controller: controller, bridge: widget.bridge, onLock: _lock),
-              },
+              // A toast such as "Copied" floats at the foot of the page, in the middle beside the sidebar.
+              child: ToastHost(
+                child: switch (_page) {
+                  WalletPage.home => HomePage(controller: controller, onNavigate: _go),
+                  WalletPage.send => SendPage(controller: controller, bridge: widget.bridge),
+                  WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
+                  WalletPage.activity => ActivityPage(controller: controller),
+                  WalletPage.settings => SettingsPage(controller: controller, bridge: widget.bridge, onLock: _lock),
+                },
+              ),
             ),
           ],
         ),

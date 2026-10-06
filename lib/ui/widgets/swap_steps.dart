@@ -150,7 +150,7 @@ class SwapCopyLine extends StatelessWidget {
         const SizedBox(width: 4),
         IconButton(
           onPressed: () => copyToClipboard(context, value),
-          tooltip: Copy.copied,
+          tooltip: Copy.copy,
           visualDensity: VisualDensity.compact,
           iconSize: 16,
           icon: Icon(Icons.copy_rounded, color: palette.inkSoft),

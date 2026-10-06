@@ -48,10 +48,15 @@ abstract final class Metrics {
   static const double transferIcon = 40;
   static const double roundButton = 46;
   static const double smallRound = 30;
-  static const double qrSize = 220;
 
-  /// The code of the deposit address of a swap of the bridge, beside its text.
+  /// The code of the receive page, its white margin, and the room around the whole subaddress below it.
+  static const double qrSize = 220;
+  static const double qrPadding = 14;
+  static const double addressBoxPadding = 14;
+
+  /// The code of the deposit address of a swap of the bridge, beside its text, and its white margin.
   static const double bridgeQrSize = 132;
+  static const double bridgeQrPadding = 10;
 
   /// The two sides of pay: the room inside each box, and the round arrow between them.
   static const double swapBoxPadding = 16;
@@ -60,10 +65,21 @@ abstract final class Metrics {
   /// The edge of a chosen card of a choice, such as the rate of pay.
   static const double choiceBorder = 1.6;
 
-  /// The menu of the coin of pay: its least width, its shadow, and the turn of its arrow.
+  /// The menu of the coin of a swap: its least width and the turn of its arrow.
   static const double coinMenuWidth = 220;
-  static const double menuElevation = 12;
   static const Duration menuTurn = Duration(milliseconds: 160);
+
+  /// The shadow of a part that lies over other parts, such as the menu of a coin or a toast.
+  static const double raisedElevation = 12;
+
+  /// A toast, the short note at the foot of a page such as "Copied": how far above the foot it floats, the share of
+  /// its height by which it rises as it shows, how long it stays, how long it fades in and out, and the room inside
+  /// it. The owner found the bar of Material, from edge to edge of the window, too long on 6 Oct 2026.
+  static const double toastBottom = 28;
+  static const double toastLift = 0.4;
+  static const Duration toastStay = Duration(milliseconds: 1500);
+  static const Duration toastFade = Duration(milliseconds: 180);
+  static const EdgeInsets toastPadding = EdgeInsets.symmetric(horizontal: 16, vertical: 10);
 
   /// The mark of a step of a swap: a check, a spinner, or a ring.
   static const double stepMark = 24;

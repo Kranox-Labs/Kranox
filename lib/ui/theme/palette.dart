@@ -78,6 +78,10 @@ final class Palette {
   final Color surface;
   final Color field;
 
+  /// A part that lies over other parts, such as the menu of a coin: the color of a card on the ground, without the
+  /// see-through.
+  Color get raised => Color.alphaBlend(surface, ground);
+
   /// A card of frosted glass over the picture of the ground, and its edge.
   final Color glass;
   final Color glassLine;
