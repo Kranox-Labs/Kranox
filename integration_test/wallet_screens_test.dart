@@ -207,7 +207,7 @@ void main() {
     await tapText(Copy.navReceive);
     await tapText(Copy.receiveChainTab.toUpperCase());
     await waitFor(find.text(Copy.bridgeMainnetOnly));
-    expect(find.text(Copy.bridgeFormTitle), findsNothing);
+    expect(find.text(Copy.bridgeCreate), findsNothing);
     await shoot('07-receive-chain-stagenet');
 
     // The seed shows behind the password, and it is the seed of the creation.

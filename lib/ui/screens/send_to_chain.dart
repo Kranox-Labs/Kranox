@@ -19,6 +19,7 @@ import '../widgets/field.dart';
 import '../widgets/page_frame.dart';
 import '../widgets/review_line.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/swap_box.dart';
 import '../widgets/swap_steps.dart';
 
 /// The length of an address on Robinhood Chain: 0x and 40 hex digits. The live check of the recipient waits for it.
@@ -170,52 +171,39 @@ class _SendToChainState extends State<SendToChain> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _AmountBox(
-            label: Copy.payYouSend,
-            amount: TextField(
-              controller: _xmr,
-              onSubmitted: (_) => pay.canReview ? _startReview() : null,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: KranoxType.swapFigure.copyWith(color: palette.ink),
-              cursorColor: palette.accent,
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: Copy.amountHint,
-                hintStyle: KranoxType.swapFigure.copyWith(color: palette.inkFaint),
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            coin: const _Coin(label: Copy.currency, network: Copy.payOnMonero),
-            footer: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _LimitLine(pay: pay),
-                if (pay.suggestsFloating) _FloatingHint(pay: pay),
-                _FundsLine(pay: pay, wallet: widget.wallet),
-              ],
-            ),
-          ),
-          // The arrow between the two sides sits over the upper edge of the second one, so that they read as one swap.
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: Metrics.gapSmall),
-                child: _AmountBox(
-                  label: pay.rate == PayRate.floating ? Copy.payTheyReceiveAbout : Copy.payTheyReceive,
-                  amount: _ReceivedFigure(pay: pay),
-                  coin: _CoinMenu(asset: pay.asset, enabled: !_busy, onSelect: pay.selectAsset),
-                  footer: _FeesLine(pay: pay),
+          SwapPair(
+            top: SwapAmountBox(
+              label: Copy.payYouSend,
+              amount: TextField(
+                controller: _xmr,
+                onSubmitted: (_) => pay.canReview ? _startReview() : null,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: KranoxType.swapFigure.copyWith(color: palette.ink),
+                cursorColor: palette.accent,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  hintText: Copy.amountHint,
+                  hintStyle: KranoxType.swapFigure.copyWith(color: palette.inkFaint),
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
                 ),
               ),
-              const Positioned(
-                top: (Metrics.gapSmall - Metrics.swapArrow) / 2,
-                left: 0,
-                right: 0,
-                child: Center(child: _Arrow()),
+              coin: const SwapCoin(label: Copy.currency, network: Copy.payOnMonero),
+              footer: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _LimitLine(pay: pay),
+                  if (pay.suggestsFloating) _FloatingHint(pay: pay),
+                  _FundsLine(pay: pay, wallet: widget.wallet),
+                ],
               ),
-            ],
+            ),
+            bottom: SwapAmountBox(
+              label: pay.rate == PayRate.floating ? Copy.payTheyReceiveAbout : Copy.payTheyReceive,
+              amount: _ReceivedFigure(pay: pay),
+              coin: CoinMenu(asset: pay.asset, enabled: !_busy, onSelect: pay.selectAsset),
+              footer: _FeesLine(pay: pay),
+            ),
           ),
           _QuoteNote(pay: pay),
           const SizedBox(height: Metrics.gap),
@@ -262,192 +250,6 @@ class _SendToChainState extends State<SendToChain> {
             onPressed: pay.canReview ? _startReview : null,
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// One side of the swap: its label, the amount at the left, and its coin at the right, with a line below it.
-class _AmountBox extends StatelessWidget {
-  const _AmountBox({required this.label, required this.amount, required this.coin, this.footer});
-
-  final String label;
-  final Widget amount;
-  final Widget coin;
-  final Widget? footer;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.field,
-        borderRadius: BorderRadius.circular(Metrics.radiusField),
-        border: Border.all(color: palette.line),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(Metrics.swapBoxPadding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(label.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
-            const SizedBox(height: Metrics.gapTiny),
-            Row(
-              children: [
-                Expanded(child: amount),
-                const SizedBox(width: Metrics.gapSmall),
-                coin,
-              ],
-            ),
-            if (footer case final footer?) ...[const SizedBox(height: Metrics.gapTiny), footer],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A coin of the swap with its network below it, and a sign at its right when it opens a choice.
-class _Coin extends StatelessWidget {
-  const _Coin({required this.label, required this.network, this.trailing});
-
-  final String label;
-  final String network;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(Metrics.radiusField),
-        border: Border.all(color: palette.line),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(label, style: KranoxType.cardTitle.copyWith(color: palette.ink)),
-                Text(network, style: KranoxType.small.copyWith(color: palette.inkSoft)),
-              ],
-            ),
-            if (trailing case final trailing?) ...[const SizedBox(width: Metrics.gapTiny), trailing],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The coin that the recipient gets, as a menu of the coins of Robinhood Chain that the bridge pays out. The menu opens
-/// below the coin on the solid ground of a card, each coin with its network, and the chosen one with a check. The
-/// owner turned down the plain menu of Material on 6 Oct 2026 ("ui dropdownya jangan gini").
-class _CoinMenu extends StatelessWidget {
-  const _CoinMenu({required this.asset, required this.enabled, required this.onSelect});
-
-  final BridgeAsset asset;
-  final bool enabled;
-  final ValueChanged<BridgeAsset> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final radius = BorderRadius.circular(Metrics.radiusField);
-    // A menu lies over other parts, so it takes the color of a card on the ground, without the see-through.
-    final ground = Color.alphaBlend(palette.surface, palette.ground);
-    // The menu hangs from the lower right corner of the coin, so that its right edge meets the edge of the coin and it
-    // stays inside the form.
-    return MenuAnchor(
-      alignmentOffset: const Offset(-Metrics.coinMenuWidth, Metrics.gapTiny),
-      style: MenuStyle(
-        alignment: AlignmentDirectional.bottomEnd,
-        backgroundColor: WidgetStatePropertyAll(ground),
-        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-        elevation: const WidgetStatePropertyAll(Metrics.menuElevation),
-        padding: const WidgetStatePropertyAll(EdgeInsets.all(Metrics.gapTiny)),
-        minimumSize: const WidgetStatePropertyAll(Size(Metrics.coinMenuWidth, 0)),
-        maximumSize: const WidgetStatePropertyAll(Size(Metrics.coinMenuWidth, double.infinity)),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: radius,
-            side: BorderSide(color: palette.line),
-          ),
-        ),
-      ),
-      menuChildren: [
-        for (final choice in BridgeAsset.values)
-          MenuItemButton(
-            onPressed: () => onSelect(choice),
-            trailingIcon: choice == asset
-                ? Icon(Icons.check_rounded, size: 18, color: palette.accent)
-                : const SizedBox(width: 18),
-            style: ButtonStyle(
-              minimumSize: const WidgetStatePropertyAll(Size(Metrics.coinMenuWidth - 2 * Metrics.gapTiny, 0)),
-              padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(horizontal: Metrics.gapSmall + 2, vertical: Metrics.gapSmall),
-              ),
-              shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(Metrics.radiusField - Metrics.gapTiny)),
-              ),
-              backgroundColor: WidgetStateProperty.resolveWith(
-                (states) => states.contains(WidgetState.hovered) || states.contains(WidgetState.focused)
-                    ? palette.field
-                    : Colors.transparent,
-              ),
-              overlayColor: WidgetStatePropertyAll(palette.field),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  choice.label,
-                  style: KranoxType.cardTitle.copyWith(color: choice == asset ? palette.accent : palette.ink),
-                ),
-                Text(Copy.payOnChain, style: KranoxType.small.copyWith(color: palette.inkSoft)),
-              ],
-            ),
-          ),
-      ],
-      builder: (context, controller, _) => InkWell(
-        onTap: enabled ? () => controller.isOpen ? controller.close() : controller.open() : null,
-        borderRadius: radius,
-        child: _Coin(
-          label: asset.label,
-          network: Copy.payOnChain,
-          trailing: AnimatedRotation(
-            turns: controller.isOpen ? 0.5 : 0,
-            duration: Metrics.menuTurn,
-            child: Icon(Icons.expand_more_rounded, size: 18, color: palette.inkSoft),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The round arrow between the two sides of the swap: the XMR above turns into the coin below.
-class _Arrow extends StatelessWidget {
-  const _Arrow();
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.field,
-        shape: BoxShape.circle,
-        border: Border.all(color: palette.line),
-      ),
-      child: SizedBox.square(
-        dimension: Metrics.swapArrow,
-        child: Icon(Icons.arrow_downward_rounded, size: 18, color: palette.ink),
       ),
     );
   }
@@ -642,25 +444,12 @@ class _QuoteNote extends StatelessWidget {
   final PayController pay;
 
   @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final quote = pay.quote;
-    final (String, Color)? note = switch ((pay.quoteError, quote)) {
-      _ when pay.quoting => null,
-      (final error?, _) => (bridgeFailureText(error), palette.danger),
-      (null, PayQuote(:final warning?)) => (warning, palette.inkSoft),
-      _ => null,
-    };
-    if (note == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: Metrics.gapSmall),
-      child: Text(
-        note.$1,
-        textAlign: TextAlign.center,
-        style: KranoxType.small.copyWith(color: note.$2),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => switch ((pay.quoteError, pay.quote)) {
+    _ when pay.quoting => const SwapNote(null),
+    (final error?, _) => SwapNote(bridgeFailureText(error), failure: true),
+    (null, PayQuote(:final warning?)) => SwapNote(warning),
+    _ => const SwapNote(null),
+  };
 }
 
 /// The review of a payment: what the recipient gets and where, the XMR that leaves with its fee, until when the rate

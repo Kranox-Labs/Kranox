@@ -25,8 +25,9 @@ final class BridgeController extends ChangeNotifier {
   String _amount = '';
   late final LiveQuote<(BridgeAsset, String), BridgeQuote> _quote = LiveQuote(
     fetch: (key) => _client.quote(key.$1, key.$2),
-    onChanged: notifyListeners,
+    onChanged: _quoteChanged,
   );
+  final Map<BridgeAsset, double> _minimums = {};
   List<BridgeSwap> _swaps = const [];
   bool? _relayOnline;
   bool _checkingRelay = false;
@@ -41,6 +42,16 @@ final class BridgeController extends ChangeNotifier {
   BridgeQuote? get quote => _quote.value;
   BridgeException? get quoteError => _quote.error;
   bool get quoting => _quote.pending;
+
+  /// The least amount of the coin of the form that the exchanger takes, from the latest quote of that coin; null
+  /// before the first one. It stays while the next quote is on its way, so that the form does not flicker.
+  double? get minimum => _minimums[_asset];
+
+  /// Whether the quote of the form says that its amount stands below the minimum, so that it buys no XMR.
+  bool get belowMinimum {
+    final quote = _quote.value;
+    return quote != null && quote.estimatedXmr == null && double.parse(quote.amount) < quote.minAmount;
+  }
 
   /// Whether the relay answered at the last check; null before the first check.
   bool? get relayOnline => _relayOnline;
@@ -135,6 +146,11 @@ final class BridgeController extends ChangeNotifier {
   }
 
   void _scheduleQuote() => _quote.follow(available && isBridgeAmount(_amount) ? (_asset, _amount) : null);
+
+  void _quoteChanged() {
+    if (_quote.value case final quote?) _minimums[quote.asset] = quote.minAmount;
+    notifyListeners();
+  }
 
   /// Makes a swap of the amount in the form into XMR. The XMR goes to a new subaddress of this wallet, so that the
   /// exchanger sees an address that no payer has seen. Throws a [BridgeException] or a wallet failure.

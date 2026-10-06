@@ -32,11 +32,6 @@ final class KranoxTheme extends ThemeExtension<KranoxTheme> {
         cursorColor: palette.accent,
         selectionColor: palette.accent.withValues(alpha: 0.35),
       ),
-      snackBarTheme: SnackBarThemeData(
-        backgroundColor: palette.ink,
-        contentTextStyle: KranoxType.body.copyWith(color: palette.ground),
-        behavior: SnackBarBehavior.floating,
-      ),
       extensions: [KranoxTheme(palette)],
     );
   }

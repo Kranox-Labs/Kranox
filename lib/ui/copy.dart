@@ -139,13 +139,15 @@ abstract final class Copy {
   static const String receiveLead =
       'Share this subaddress. Give each payer a new one, so that no two payments meet on the same address.';
   static const String copyAddress = 'Copy address';
+  static const String copy = 'Copy';
   static const String copied = 'Copied';
   static const String newAddress = 'New address';
   // The two ways to receive. On 5 Oct 2026 the owner asked for receive from Robinhood Chain inside the receive page,
   // not as a page "Bridge" of its own.
   static const String receiveMoneroTab = 'Monero';
   static const String receiveChainTab = 'From Robinhood Chain';
-  static const String receiveChainLead = 'Pay in from Robinhood Chain. ChangeNOW handles the exchange.';
+  static const String receiveChainLead =
+      'Turn ETH or USDG on Robinhood Chain into XMR for this wallet. ChangeNOW handles the exchange.';
 
   // Activity.
   static const String activityTitle = 'Activity';
@@ -165,15 +167,11 @@ abstract final class Copy {
   static const String exchanger = 'ChangeNOW';
   static const String bridgeMainnetOnly =
       'Receiving from Robinhood Chain works on the Monero mainnet only. Switch the network in Settings to use it.';
-  static const String bridgeFormTitle = 'Get XMR with a coin on Robinhood Chain';
-  static const String bridgeFormLead =
-      'Send ETH or USDG from your Robinhood Chain wallet. ChangeNOW turns it into XMR and sends it to a new '
-      'subaddress of this wallet.';
-  static const String bridgeAssetLabel = 'You send, on Robinhood Chain';
-  static String bridgeAmountHint(BridgeAsset asset) => 'Amount of ${asset.label}';
-  static const String bridgeQuoting = 'Asking ChangeNOW for a quote…';
-  static String bridgeEstimate(String xmr) => 'You get about $xmr XMR';
-  static String bridgeMinimum(String amount, BridgeAsset asset) => 'The least amount is $amount ${asset.label}.';
+  // The form of a swap, as on pay. On 6 Oct 2026 the owner asked for the receive page in the form of the send page.
+  static const String bridgeYouSend = 'You send';
+  static const String bridgeYouGet = 'You get about';
+  static String bridgeMinimum(String amount, BridgeAsset asset) => 'Minimum: $amount ${asset.label}';
+  static String bridgeBelowMinimum(String amount, BridgeAsset asset) => 'Below the minimum of $amount ${asset.label}.';
   static String bridgeSpeed(String minutes) => 'Usually $minutes minutes.';
   static const String bridgeRefundField = 'Refund address (optional)';
   static const String bridgeRefundHint = 'Your Robinhood Chain address, 0x…';

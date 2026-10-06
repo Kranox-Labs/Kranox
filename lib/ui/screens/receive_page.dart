@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
@@ -9,12 +8,12 @@ import '../copy.dart';
 import '../format.dart';
 import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
-import '../theme/palette.dart';
 import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/choice_pill.dart';
 import '../widgets/page_frame.dart';
+import '../widgets/qr_card.dart';
 import '../widgets/surfaces.dart';
 import 'receive_from_chain.dart';
 
@@ -22,7 +21,8 @@ import 'receive_from_chain.dart';
 enum _ReceiveWay { monero, robinhood }
 
 /// The receive page: the newest subaddress as a code to scan and as text, with a button for a new subaddress, or the
-/// receive from Robinhood Chain.
+/// receive from Robinhood Chain. Its content stands in a column in the middle, as on the send page; the owner asked for
+/// that on 6 Oct 2026 ("receive belum simple dan di tengah").
 class ReceivePage extends StatefulWidget {
   const ReceivePage({super.key, required this.controller, required this.bridge});
 
@@ -65,8 +65,10 @@ class _ReceivePageState extends State<ReceivePage> {
         StatusChip(label: widget.controller.network.label),
         if (fromChain) const StatusChip(label: Copy.exchanger),
       ],
+      centered: true,
       children: [
         Wrap(
+          alignment: WrapAlignment.center,
           spacing: Metrics.gapTiny,
           runSpacing: Metrics.gapTiny,
           children: [
@@ -93,60 +95,45 @@ class _ReceivePageState extends State<ReceivePage> {
     final address = widget.controller.receiveAddress;
     return Surface(
       padding: const EdgeInsets.all(Metrics.heroPadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // A code to scan needs dark modules on a light ground in every look.
+          Center(
+            child: QrCard(data: address?.address, size: Metrics.qrSize, padding: Metrics.qrPadding),
+          ),
+          const SizedBox(height: Metrics.gap + 4),
+          Text(
+            address == null ? '' : Copy.subaddress(address.index).toUpperCase(),
+            textAlign: TextAlign.center,
+            style: KranoxType.label.copyWith(color: palette.inkSoft),
+          ),
+          const SizedBox(height: Metrics.gapSmall),
+          // The whole subaddress, so that the payer can check it character by character.
           DecoratedBox(
             decoration: BoxDecoration(
-              color: BrandColors.white,
+              color: palette.field,
               borderRadius: BorderRadius.circular(Metrics.radiusField),
+              border: Border.all(color: palette.line),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: address == null
-                  ? const SizedBox.square(dimension: Metrics.qrSize)
-                  : QrImageView(
-                      data: address.address,
-                      size: Metrics.qrSize,
-                      padding: EdgeInsets.zero,
-                      backgroundColor: BrandColors.white,
-                      eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: BrandColors.coal),
-                      dataModuleStyle: const QrDataModuleStyle(
-                        dataModuleShape: QrDataModuleShape.square,
-                        color: BrandColors.coal,
-                      ),
-                    ),
+              padding: const EdgeInsets.all(Metrics.addressBoxPadding),
+              child: SelectableText(
+                address?.address ?? '…',
+                textAlign: TextAlign.center,
+                style: KranoxType.mono.copyWith(color: palette.ink),
+              ),
             ),
           ),
-          const SizedBox(width: Metrics.gap + 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  address == null ? '' : Copy.subaddress(address.index).toUpperCase(),
-                  style: KranoxType.label.copyWith(color: palette.inkSoft),
-                ),
-                const SizedBox(height: Metrics.gapSmall),
-                SelectableText(address?.address ?? '…', style: KranoxType.mono.copyWith(color: palette.ink)),
-                ErrorLine(_error),
-                const SizedBox(height: Metrics.gap),
-                Wrap(
-                  spacing: Metrics.gapSmall,
-                  runSpacing: Metrics.gapSmall,
-                  children: [
-                    PillButton(
-                      label: Copy.copyAddress,
-                      icon: Icons.copy_rounded,
-                      onPressed: address == null ? null : () => copyToClipboard(context, address.address),
-                    ),
-                    PillButton(label: Copy.newAddress, tone: PillTone.quiet, busy: _busy, onPressed: _newAddress),
-                  ],
-                ),
-              ],
-            ),
+          ErrorLine(_error),
+          const SizedBox(height: Metrics.gap),
+          PillButton(
+            label: Copy.copyAddress,
+            icon: Icons.copy_rounded,
+            expand: true,
+            onPressed: address == null ? null : () => copyToClipboard(context, address.address),
           ),
+          const SizedBox(height: Metrics.gapSmall),
+          PillButton(label: Copy.newAddress, tone: PillTone.quiet, busy: _busy, expand: true, onPressed: _newAddress),
         ],
       ),
     );

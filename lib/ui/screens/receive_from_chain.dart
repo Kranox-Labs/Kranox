@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../bridge/client.dart';
 import '../../bridge/controller.dart';
@@ -9,21 +8,22 @@ import '../copy.dart';
 import '../format.dart';
 import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
-import '../theme/palette.dart';
 import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
-import '../widgets/choice_pill.dart';
 import '../widgets/page_frame.dart';
+import '../widgets/qr_card.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/swap_box.dart';
 import '../widgets/swap_steps.dart';
 
 /// An address on Robinhood Chain, an EVM chain: 0x and 40 hex digits.
 final RegExp _evmAddress = RegExp(r'^0x[0-9a-fA-F]{40}$');
 
 /// Receive from Robinhood Chain: the user sends ETH or USDG there, and ChangeNOW turns it into XMR for a new
-/// subaddress of this wallet. The part of the receive page under the choice "From Robinhood Chain".
+/// subaddress of this wallet. The part of the receive page under the choice "From Robinhood Chain", in the form of a
+/// swap as pay on the send page: the coin that the user sends above, the XMR that it buys below.
 class ReceiveFromChain extends StatefulWidget {
   const ReceiveFromChain({super.key, required this.bridge});
 
@@ -87,90 +87,83 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     builder: (context, _) {
       final bridge = widget.bridge;
       final shown = bridge.shownSwapOf(SwapDirection.receive);
-      return Align(
-        alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: Metrics.formWidth),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (!bridge.available)
-                Surface(
-                  child: Text(
-                    Copy.bridgeMainnetOnly,
-                    style: KranoxType.bodyRegular.copyWith(color: context.palette.inkSoft),
-                  ),
-                )
-              else ...[
-                if (shown != null) ...[
-                  _SwapCard(
-                    swap: shown,
-                    onRefresh: bridge.refresh,
-                    onAnother: shown.stage.isFinal || _another ? null : () => setState(() => _another = true),
-                    onClose: shown.stage.isFinal ? () => bridge.closeSwap(shown.id) : null,
-                  ),
-                  if (_another && !shown.stage.isFinal) ...[
-                    const SizedBox(height: Metrics.gap),
-                    _form(context, bridge),
-                  ],
-                ] else
-                  _form(context, bridge),
-              ],
-              if (bridge.swapsOf(SwapDirection.receive) case final swaps when swaps.isNotEmpty) ...[
-                const SizedBox(height: Metrics.gap),
-                SwapHistory(
-                  title: Copy.bridgeSwapsTitle,
-                  swaps: swaps,
-                  line: (swap) => Copy.bridgeSwapLine(formatDecimal(swap.amount, decimals: 8), swap.asset),
-                  // A failed or refunded swap brought no XMR, so it shows no amount of XMR.
-                  trailing: (swap) => switch (swap.amountOut ?? swap.xmrAmount) {
-                    final xmr? when swap.stage != SwapStage.failed && swap.stage != SwapStage.refunded =>
-                      Copy.bridgeOut(formatDecimal(xmr)),
-                    _ => null,
-                  },
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (!bridge.available)
+            Surface(
+              child: Text(
+                Copy.bridgeMainnetOnly,
+                textAlign: TextAlign.center,
+                style: KranoxType.bodyRegular.copyWith(color: context.palette.inkSoft),
+              ),
+            )
+          else ...[
+            if (shown != null) ...[
+              _SwapCard(
+                swap: shown,
+                onRefresh: bridge.refresh,
+                onAnother: shown.stage.isFinal || _another ? null : () => setState(() => _another = true),
+                onClose: shown.stage.isFinal ? () => bridge.closeSwap(shown.id) : null,
+              ),
+              if (_another && !shown.stage.isFinal) ...[const SizedBox(height: Metrics.gap), _form(context, bridge)],
+            ] else
+              _form(context, bridge),
+          ],
+          if (bridge.swapsOf(SwapDirection.receive) case final swaps when swaps.isNotEmpty) ...[
+            const SizedBox(height: Metrics.gap),
+            SwapHistory(
+              title: Copy.bridgeSwapsTitle,
+              swaps: swaps,
+              line: (swap) => Copy.bridgeSwapLine(formatDecimal(swap.amount, decimals: 8), swap.asset),
+              // A failed or refunded swap brought no XMR, so it shows no amount of XMR.
+              trailing: (swap) => switch (swap.amountOut ?? swap.xmrAmount) {
+                final xmr? when swap.stage != SwapStage.failed && swap.stage != SwapStage.refunded => Copy.bridgeOut(
+                  formatDecimal(xmr),
                 ),
-              ],
-            ],
-          ),
-        ),
+                _ => null,
+              },
+            ),
+          ],
+        ],
       );
     },
   );
 
   Widget _form(BuildContext context, BridgeController bridge) {
     final palette = context.palette;
-    final soft = KranoxType.bodyRegular.copyWith(color: palette.inkSoft);
     return Surface(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const CardTitle(Copy.bridgeFormTitle),
-          const SizedBox(height: 4),
-          Text(Copy.bridgeFormLead, style: soft),
-          const SizedBox(height: Metrics.gap),
-          Text(Copy.bridgeAssetLabel.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
-          const SizedBox(height: Metrics.gapSmall),
-          Wrap(
-            spacing: Metrics.gapTiny,
-            children: [
-              for (final asset in BridgeAsset.values)
-                ChoicePill(
-                  label: asset.label,
-                  active: asset == bridge.asset,
-                  onTap: _creating ? null : () => bridge.selectAsset(asset),
+          SwapPair(
+            top: SwapAmountBox(
+              label: Copy.bridgeYouSend,
+              amount: TextField(
+                controller: _amount,
+                onSubmitted: (_) => bridge.canSwap ? _create() : null,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                style: KranoxType.swapFigure.copyWith(color: palette.ink),
+                cursorColor: palette.accent,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  hintText: Copy.amountHint,
+                  hintStyle: KranoxType.swapFigure.copyWith(color: palette.inkFaint),
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
                 ),
-            ],
+              ),
+              coin: CoinMenu(asset: bridge.asset, enabled: !_creating, onSelect: bridge.selectAsset),
+              footer: _MinimumLine(bridge: bridge),
+            ),
+            bottom: SwapAmountBox(
+              label: Copy.bridgeYouGet,
+              amount: _EstimateFigure(bridge: bridge),
+              coin: const SwapCoin(label: Copy.currency, network: Copy.payOnMonero),
+              footer: _SpeedLine(bridge: bridge),
+            ),
           ),
-          const SizedBox(height: Metrics.gap),
-          LabeledField(
-            label: Copy.amount,
-            controller: _amount,
-            hint: Copy.bridgeAmountHint(bridge.asset),
-            suffix: bridge.asset.label,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          ),
-          const SizedBox(height: Metrics.gapSmall),
-          _QuoteLine(bridge: bridge),
+          _QuoteNote(bridge: bridge),
           const SizedBox(height: Metrics.gap),
           LabeledField(
             label: Copy.bridgeRefundField,
@@ -178,53 +171,101 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
             hint: Copy.bridgeRefundHint,
             note: Copy.bridgeRefundNote,
             error: _refundError,
+            mono: true,
           ),
           ErrorLine(_error),
-          const SizedBox(height: Metrics.gap),
+          const SizedBox(height: Metrics.gap + 4),
           PillButton(
             label: Copy.bridgeCreate,
             busy: _creating,
             busyLabel: Copy.bridgeCreating,
+            expand: true,
             onPressed: bridge.canSwap ? _create : null,
           ),
           const SizedBox(height: Metrics.gapSmall),
-          Text(Copy.bridgeSeenBy, style: KranoxType.small.copyWith(color: palette.inkFaint)),
+          Text(
+            Copy.bridgeSeenBy,
+            textAlign: TextAlign.center,
+            style: KranoxType.small.copyWith(color: palette.inkFaint),
+          ),
         ],
       ),
     );
   }
 }
 
-/// The quote under the amount: the XMR that the amount buys, or the least amount, or why there is no quote.
-class _QuoteLine extends StatelessWidget {
-  const _QuoteLine({required this.bridge});
+/// The least amount of the coin of the form, once a quote has given it, in the color of a failure while the amount
+/// stands below it.
+class _MinimumLine extends StatelessWidget {
+  const _MinimumLine({required this.bridge});
 
   final BridgeController bridge;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final quote = bridge.quote;
-    final error = bridge.quoteError;
-    if (bridge.quoting) return const LoadingLine(Copy.bridgeQuoting);
-    if (error != null) return ErrorLine(bridgeFailureText(error));
-    if (quote == null) return const SizedBox.shrink();
-    final estimate = quote.estimatedXmr;
-    final minimum = Copy.bridgeMinimum(formatDecimal(quote.minAmount, decimals: 8), quote.asset);
-    if (estimate == null) return ErrorLine(minimum);
-    final speed = quote.speedMinutes;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(Copy.bridgeEstimate(formatDecimal(estimate)), style: KranoxType.cardTitle.copyWith(color: palette.ink)),
-        const SizedBox(height: 2),
-        Text(
-          [minimum, if (speed != null) Copy.bridgeSpeed(speed), ?quote.warning].join(' '),
-          style: KranoxType.small.copyWith(color: palette.inkSoft),
-        ),
-      ],
+    final minimum = bridge.minimum;
+    if (minimum == null) return const SizedBox.shrink();
+    final text = formatLimit(minimum, up: true);
+    final below = bridge.belowMinimum;
+    return Text(
+      below ? Copy.bridgeBelowMinimum(text, bridge.asset) : Copy.bridgeMinimum(text, bridge.asset),
+      style: KranoxType.smallStrong.copyWith(color: below ? palette.danger : palette.inkSoft),
     );
   }
+}
+
+/// The XMR that the amount buys: a spinner while the quote is on its way, then the estimate, which can still move.
+class _EstimateFigure extends StatelessWidget {
+  const _EstimateFigure({required this.bridge});
+
+  final BridgeController bridge;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final style = KranoxType.swapFigure;
+    if (bridge.quoting) return LoadingFigure(style: style);
+    final estimate = bridge.quote?.estimatedXmr;
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Text(
+        estimate == null ? Copy.amountHint : Copy.about(formatDecimal(estimate)),
+        style: style.copyWith(color: estimate == null ? palette.inkFaint : palette.ink),
+      ),
+    );
+  }
+}
+
+/// How long a swap of the quoted amount usually takes.
+class _SpeedLine extends StatelessWidget {
+  const _SpeedLine({required this.bridge});
+
+  final BridgeController bridge;
+
+  @override
+  Widget build(BuildContext context) {
+    final quote = bridge.quote;
+    final speed = quote?.speedMinutes;
+    if (quote?.estimatedXmr == null || speed == null) return const SizedBox.shrink();
+    return Text(Copy.bridgeSpeed(speed), style: KranoxType.small.copyWith(color: context.palette.inkSoft));
+  }
+}
+
+/// Why there is no quote, or a warning of the exchanger beside a good one.
+class _QuoteNote extends StatelessWidget {
+  const _QuoteNote({required this.bridge});
+
+  final BridgeController bridge;
+
+  @override
+  Widget build(BuildContext context) => switch ((bridge.quoteError, bridge.quote)) {
+    _ when bridge.quoting => const SwapNote(null),
+    (final error?, _) => SwapNote(bridgeFailureText(error), failure: true),
+    (null, BridgeQuote(:final warning?)) => SwapNote(warning),
+    _ => const SwapNote(null),
+  };
 }
 
 /// The swap that the page follows: its steps from the deposit to the XMR in this wallet, each with what ChangeNOW
@@ -373,27 +414,7 @@ class _Deposit extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // A code to scan needs dark modules on a light ground in every look.
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: BrandColors.white,
-                borderRadius: BorderRadius.circular(Metrics.radiusField),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: QrImageView(
-                  data: swap.depositAddress,
-                  size: Metrics.bridgeQrSize,
-                  padding: EdgeInsets.zero,
-                  backgroundColor: BrandColors.white,
-                  eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: BrandColors.coal),
-                  dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: BrandColors.coal,
-                  ),
-                ),
-              ),
-            ),
+            QrCard(data: swap.depositAddress, size: Metrics.bridgeQrSize, padding: Metrics.bridgeQrPadding),
             const SizedBox(width: Metrics.gap),
             Expanded(
               child: Column(

@@ -352,17 +352,26 @@ void main() {
 
     test('quotes an amount and allows a swap only above the minimum', () async {
       expect(bridge.available, isTrue);
+      expect(bridge.minimum, isNull);
       bridge.setAmount('0.001');
       await _quoteSettles();
       expect(bridge.quote?.estimatedXmr, isNull);
+      expect(bridge.belowMinimum, isTrue);
+      expect(bridge.minimum, 0.004);
       expect(bridge.canSwap, isFalse);
       bridge.setAmount('0.0055');
       expect(bridge.quoting, isTrue);
+      expect(bridge.belowMinimum, isFalse);
+      expect(bridge.minimum, 0.004, reason: 'the minimum stays while the next quote is on its way');
       await _quoteSettles();
       expect(bridge.quote?.estimatedXmr, closeTo(0.0275, 1e-9));
+      expect(bridge.belowMinimum, isFalse);
       expect(bridge.canSwap, isTrue);
       bridge.selectAsset(BridgeAsset.usdg);
       expect(bridge.canSwap, isFalse);
+      expect(bridge.minimum, isNull, reason: 'each coin has a minimum of its own');
+      await _quoteSettles();
+      expect(bridge.minimum, 0.004);
     });
 
     test('pays out to a new subaddress and follows the swap to its end', () async {

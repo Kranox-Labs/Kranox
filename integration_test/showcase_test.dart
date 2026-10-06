@@ -22,6 +22,7 @@ import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/ui/copy.dart';
 import 'package:kranox_wallet/ui/format.dart';
+import 'package:kranox_wallet/ui/theme/metrics.dart';
 import 'package:kranox_wallet/ui/theme/palette.dart';
 import 'package:kranox_wallet/ui/theme/typography.dart';
 import 'package:kranox_wallet/ui/widgets/sidebar.dart';
@@ -152,6 +153,9 @@ final class _SampleBackend implements WalletBackend {
 /// XMR for one ETH, from the prices of 5 Oct 2026 (CoinGecko: ETH 2,727.50 USD, XMR 547.88 USD), for the sample quote.
 const double _xmrPerEth = 4.978;
 
+/// The least ETH that the sample exchanger takes for XMR.
+const double _minEth = 0.0041715;
+
 /// A sample deposit address on Robinhood Chain for the picture of an open swap. It belongs to no known wallet.
 const String _sampleDeposit = '0x7a3fC0e1b9D24A6c58E0f3B1d9a7C4e2F6b8D015';
 
@@ -182,12 +186,13 @@ final class _SampleBridge implements BridgeClient {
   SwapState state = const SwapState(stage: SwapStage.waiting);
   int _swaps = 0;
 
+  // Below the minimum the relay gives the minimum alone, without an estimate.
   @override
   Future<BridgeQuote> quote(BridgeAsset asset, String amount) async => BridgeQuote(
     asset: asset,
     amount: amount,
-    minAmount: 0.0041715,
-    estimatedXmr: double.parse(amount) * _xmrPerEth,
+    minAmount: _minEth,
+    estimatedXmr: double.parse(amount) < _minEth ? null : double.parse(amount) * _xmrPerEth,
     speedMinutes: '10-60',
     warning: null,
   );
@@ -342,9 +347,10 @@ void main() {
       }
     }
 
-    Future<void> shoot(String name) async {
+    // A moving part, such as a toast, is drawn without the pause, before it goes.
+    Future<void> shoot(String name, {bool settle = true}) async {
       // The pictures of the ground and the logo decode off the frame; give them a moment.
-      await tester.runAsync(() => Future<void>.delayed(const Duration(seconds: 1)));
+      if (settle) await tester.runAsync(() => Future<void>.delayed(const Duration(seconds: 1)));
       await tester.pump(_frame);
       final boundary = frame.currentContext!.findRenderObject()! as RenderRepaintBoundary;
       final image = await boundary.toImage(pixelRatio: _pixelRatio);
@@ -387,6 +393,12 @@ void main() {
     await openPage(Copy.navReceive);
     await waitFor(find.text(Copy.newAddress));
     await shoot('receive');
+    // The toast of a copy at the foot of the page. The clipboard of the test takes the text without a platform.
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async => null);
+    await tester.tap(find.text(Copy.copyAddress));
+    await tester.pump(Metrics.toastFade + _frame);
+    await shoot('receive-copied', settle: false);
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null);
 
     await openPage(Copy.navSend);
     await tester.enterText(find.byType(TextField).at(0), _recipientAddress);
@@ -446,7 +458,9 @@ void main() {
     await waitFor(find.text(Copy.balance.toUpperCase()));
     await openPage(Copy.navReceive);
     await tester.tap(find.text(Copy.receiveChainTab.toUpperCase()));
-    await waitFor(find.text(Copy.bridgeFormTitle));
+    await waitFor(find.text(Copy.bridgeYouSend.toUpperCase()));
+    // The XMR that the sample amount of 0.006 ETH buys.
+    final estimate = find.text(Copy.about(formatDecimal(0.006 * _xmrPerEth)));
     Future<void> swapAt(SwapState state, String name) async {
       sampleBridge.state = state;
       await mainnetBridge.refresh();
@@ -454,13 +468,16 @@ void main() {
       await shoot(name);
     }
 
+    await tester.enterText(find.byType(TextField).first, '0.001');
+    await waitFor(find.textContaining('Below the minimum'));
+    await shoot('receive-chain-minimum');
     await tester.enterText(find.byType(TextField).first, '0.006');
-    await waitFor(find.textContaining('You get about'));
+    await waitFor(estimate);
     await shoot('receive-chain-quote');
     await tester.tap(find.text(Copy.bridgeCreate));
     await waitFor(find.text(Copy.bridgeStepWaiting));
     await tester.pump(_frame);
-    expect(find.text(Copy.bridgeFormTitle), findsNothing);
+    expect(find.text(Copy.bridgeCreate), findsNothing);
     await shoot('receive-chain-waiting');
     await swapAt(
       const SwapState(stage: SwapStage.confirming, expectedOut: 0.0205789, depositHash: _sampleDepositHash),
@@ -478,10 +495,10 @@ void main() {
 
     // A swap that fails after the deposit, and its refund.
     await tester.tap(find.text(Copy.bridgeClose));
-    await waitFor(find.text(Copy.bridgeFormTitle));
+    await waitFor(find.text(Copy.bridgeYouSend.toUpperCase()));
     sampleBridge.state = const SwapState(stage: SwapStage.waiting);
     await tester.enterText(find.byType(TextField).first, '0.006');
-    await waitFor(find.textContaining('You get about'));
+    await waitFor(estimate);
     await tester.tap(find.text(Copy.bridgeCreate));
     await waitFor(find.text(Copy.bridgeStepWaiting));
     await swapAt(const SwapState(stage: SwapStage.confirming, depositHash: _sampleDepositHash), 'receive-chain-step');
