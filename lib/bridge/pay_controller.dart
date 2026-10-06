@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
@@ -16,6 +18,7 @@ final class PayReview {
   const PayReview({
     required this.created,
     required this.asset,
+    required this.rate,
     required this.prepared,
     required this.refund,
     required this.validUntil,
@@ -23,6 +26,7 @@ final class PayReview {
 
   final CreatedPay created;
   final BridgeAsset asset;
+  final PayRate rate;
 
   /// The XMR payment to the deposit address of the exchanger, with its fee.
   final PreparedSend prepared;
@@ -34,9 +38,9 @@ final class PayReview {
   final DateTime? validUntil;
 }
 
-/// The state of pay for the send page: the form with its live quote at a fixed rate, the review of a payment, and the
-/// payment itself, which [record] keeps among the swaps that the app follows. The exchanger works on the Monero
-/// mainnet only.
+/// The state of pay for the send page: the form, where the user types the XMR to pay, chooses the rate, and sees the
+/// coin that it buys, the review of a payment, and the payment itself, which [record] keeps among the swaps that the
+/// app follows. The exchanger works on the Monero mainnet only.
 final class PayController extends ChangeNotifier {
   PayController({required this._client, required this._wallet, required this._record});
 
@@ -46,23 +50,88 @@ final class PayController extends ChangeNotifier {
 
   // The mock of 3 Oct 2026 shows a payment in USDG first, the coin with a fixed value.
   BridgeAsset _asset = BridgeAsset.usdg;
+
+  // A fixed rate first: the recipient gets exactly the amount that the form shows.
+  PayRate _rate = PayRate.fixed;
   String _recipient = '';
-  String _amount = '';
-  late final LiveQuote<(BridgeAsset, String), PayQuote> _quote = LiveQuote(
-    fetch: (key) => _client.payQuote(key.$1, key.$2),
+  String _xmrText = '';
+  late final LiveQuote<(BridgeAsset, PayRate, String), PayQuote> _quote = LiveQuote(
+    fetch: _fetchQuote,
     onChanged: notifyListeners,
   );
   PayReview? _review;
 
+  // The range of one payment for each coin and rate, so that the form shows the least amount before the user types.
+  final Map<(BridgeAsset, PayRate), PayRange> _ranges = {};
+  BridgeException? _rangeError;
+
+  // A range on its way when the page goes away must not reach a controller that is gone.
+  bool _disposed = false;
+
   BridgeAsset get asset => _asset;
+  PayRate get rate => _rate;
   String get recipientText => _recipient;
-  String get amount => _amount;
+
+  /// The XMR to pay, as the field holds it.
+  String get xmrText => _xmrText;
   PayQuote? get quote => _quote.value;
   BridgeException? get quoteError => _quote.error;
   bool get quoting => _quote.pending;
 
   /// The payment under review, or null while the form shows.
   PayReview? get review => _review;
+
+  /// The range of one payment into the coin of the form at the rate of the form, once the exchanger gave it.
+  PayRange? get range => rangeOf(_rate);
+
+  /// The range of one payment into the coin of the form at [rate], for the choice of the rate.
+  PayRange? rangeOf(PayRate rate) => _ranges[(_asset, rate)];
+
+  /// Why a range of the coin of the form did not come, or null.
+  BridgeException? get rangeError => _rangeError;
+
+  /// Asks the exchanger for the range of one payment into the coin of the form at each rate, unless the app knows it
+  /// already.
+  Future<void> loadRange() async {
+    final asset = _asset;
+    if (!available) return;
+    for (final rate in PayRate.values) {
+      if (_ranges.containsKey((asset, rate))) continue;
+      try {
+        final range = await _client.payRange(asset, rate);
+        if (_disposed) return;
+        _ranges[(asset, rate)] = range;
+        _rangeError = null;
+      } on BridgeException catch (failure) {
+        _rangeError = failure;
+      } on FormatException catch (failure) {
+        _rangeError = BridgeException(BridgeFailure.failed, failure.message);
+      }
+    }
+    if (!_disposed) notifyListeners();
+  }
+
+  /// Where the XMR to pay stands against [range]: below it, above it, or null within it or while it is unknown.
+  PayLimit? _limitIn(PayRange? range) {
+    final xmr = this.xmr;
+    if (xmr == null || range == null) return null;
+    final value = xmr.units / XmrAmount.unitsPerXmr;
+    if (value < range.minXmr) return PayLimit.below;
+    final max = range.maxXmr;
+    if (max != null && value > max) return PayLimit.above;
+    return null;
+  }
+
+  /// Where the XMR to pay stands against the range of the rate of the form.
+  PayLimit? get limit => _limitIn(range);
+
+  /// Whether the XMR to pay is below the minimum of a fixed rate but within the range of a floating one, so that the
+  /// form offers the floating rate.
+  bool get suggestsFloating =>
+      _rate == PayRate.fixed &&
+      limit == PayLimit.below &&
+      rangeOf(PayRate.floating) != null &&
+      _limitIn(rangeOf(PayRate.floating)) == null;
 
   /// Whether the open wallet can pay: the exchanger works on mainnet only.
   bool get available => _wallet.network == MoneroNetwork.mainnet;
@@ -86,50 +155,77 @@ final class PayController extends ChangeNotifier {
     if (asset == _asset) return;
     _asset = asset;
     _followQuote();
+    unawaited(loadRange());
   }
 
-  void setAmount(String text) {
-    final amount = text.trim();
-    if (amount == _amount) return;
-    _amount = amount;
+  void selectRate(PayRate rate) {
+    if (rate == _rate) return;
+    _rate = rate;
     _followQuote();
   }
 
-  void _followQuote() => _quote.follow(available && isBridgeAmount(_amount) ? (_asset, _amount) : null);
+  void setXmr(String text) {
+    final xmr = text.trim();
+    if (xmr == _xmrText) return;
+    _xmrText = xmr;
+    _followQuote();
+  }
 
-  /// The XMR that the quote of the form asks for, when the exchanger takes the amount at a fixed rate.
-  XmrAmount? get quotedXmr {
+  void _followQuote() => _quote.follow(available && isBridgeAmount(_xmrText) ? (_asset, _rate, _xmrText) : null);
+
+  /// Asks for a quote, and keeps the range that comes with an amount outside it, which is the newest one.
+  Future<PayQuote> _fetchQuote((BridgeAsset, PayRate, String) key) async {
+    final quote = await _client.payQuote(key.$1, key.$2, key.$3);
+    final min = quote.minXmr;
+    if (quote.limit != null && min != null) {
+      _ranges[(quote.asset, quote.rate)] = PayRange(
+        asset: quote.asset,
+        rate: quote.rate,
+        minXmr: min,
+        maxXmr: quote.maxXmr,
+      );
+    }
+    return quote;
+  }
+
+  /// The XMR to pay, when the field holds an amount that the form takes.
+  XmrAmount? get xmr => isBridgeAmount(_xmrText) ? XmrAmount.parse(_xmrText) : null;
+
+  /// The quote when it covers the form as it stands.
+  PayQuote? get _currentQuote {
     final quote = _quote.value;
-    final xmr = quote?.xmrAmount;
-    if (quote == null || xmr == null || quote.asset != _asset || quote.amount != _amount) return null;
-    return _xmr(xmr);
+    if (quote == null || quote.asset != _asset || quote.rate != _rate || quote.xmrAmount != _xmrText) return null;
+    return quote;
   }
 
-  /// Whether the quote asks for more XMR than the wallet can send now. The fee comes out of the unlocked balance too.
-  bool get aboveUnlocked {
-    final xmr = quotedXmr;
+  /// The amount of the coin that the recipient gets, when the quote covers the form as it stands: exact at a fixed
+  /// rate, an estimate at a floating rate.
+  double? get quotedAmount => _currentQuote?.amount;
+
+  /// Whether the XMR to pay leaves room for the network fee in the unlocked balance, once the wallet knows it.
+  bool get coversFee {
+    final xmr = this.xmr;
     final status = _wallet.status;
-    return xmr != null && !status.isLoading && !(status.unlocked > xmr);
+    return xmr == null || status.isLoading || status.unlocked > xmr;
   }
 
-  /// Whether the form holds a recipient and a quoted amount that the wallet can pay.
+  /// Whether the form holds a recipient and an amount of XMR that the exchanger quoted and the wallet can pay.
   bool get canReview =>
       available &&
       recipient != null &&
-      quotedXmr != null &&
-      _quote.value?.rateId != null &&
+      quotedAmount != null &&
+      (_rate == PayRate.floating || _currentQuote?.rateId != null) &&
       !_quote.pending &&
-      !aboveUnlocked &&
+      coversFee &&
       _review == null;
 
   /// Makes the payment at the exchanger at the quoted rate, then builds the XMR payment to its deposit address, so
   /// that the review shows the real fee. Nothing leaves the wallet yet: a payment that the user does not send runs out
   /// at the exchanger. Throws a [BridgeException] or a wallet failure.
   Future<PayReview> startReview() async {
-    final quote = _quote.value;
+    final quote = _currentQuote;
     final recipient = this.recipient;
-    final rateId = quote?.rateId;
-    if (!canReview || quote == null || recipient == null || rateId == null) {
+    if (!canReview || quote == null || recipient == null) {
       throw StateError('The pay form holds no recipient and quoted amount.');
     }
     // A new subaddress takes a refund, so that the exchanger sees an address that no payer has seen.
@@ -140,26 +236,29 @@ final class PayController extends ChangeNotifier {
     try {
       created = await _client.createPay(
         asset: quote.asset,
-        amount: quote.amount,
+        rate: quote.rate,
+        xmrAmount: quote.xmrAmount,
         address: recipient,
         refundAddress: refund.address,
-        rateId: rateId,
+        rateId: quote.rate == PayRate.fixed ? quote.rateId : null,
       );
     } on FormatException catch (failure) {
       throw BridgeException(BridgeFailure.failed, failure.message);
     }
-    _checkCreated(created, recipient: recipient, amount: quote.amount);
-    // The state of the new payment gives the time until which the fixed rate waits for the deposit.
+    final xmr = XmrAmount.parse(quote.xmrAmount);
+    _checkCreated(created, recipient: recipient, xmr: xmr);
+    // The state of the new payment gives the time until which a fixed rate waits for the deposit.
     final SwapState state;
     try {
       state = await _client.readSwap(created.id);
     } on FormatException catch (failure) {
       throw BridgeException(BridgeFailure.failed, failure.message);
     }
-    final prepared = await _wallet.prepareSend(address: created.depositAddress, amount: _xmr(created.xmrAmount));
+    final prepared = await _wallet.prepareSend(address: created.depositAddress, amount: xmr);
     final review = PayReview(
       created: created,
       asset: quote.asset,
+      rate: quote.rate,
       prepared: prepared,
       refund: refund,
       validUntil: state.validUntil,
@@ -196,10 +295,11 @@ final class PayController extends ChangeNotifier {
       createdAt: DateTime.now(),
       stage: SwapStage.waiting,
       validUntil: validUntil,
+      fixedRate: review.rate == PayRate.fixed,
     );
     _review = null;
     _recipient = '';
-    _amount = '';
+    _xmrText = '';
     _quote.follow(null);
     await _record(swap);
     return swap;
@@ -213,14 +313,14 @@ final class PayController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The app checks what the exchanger made before it builds a payment to it: the recipient, the amount, and a deposit
+  /// The app checks what the exchanger made before it builds a payment to it: the recipient, the XMR, and a deposit
   /// address of the Monero mainnet.
-  static void _checkCreated(CreatedPay created, {required String recipient, required String amount}) {
+  static void _checkCreated(CreatedPay created, {required String recipient, required XmrAmount xmr}) {
     if (created.payoutAddress.toLowerCase() != recipient.toLowerCase()) {
       throw const BridgeException(BridgeFailure.failed, 'The exchanger made the payment for another recipient.');
     }
-    if ((created.amount - double.parse(amount)).abs() > AppConfig.payAmountTolerance) {
-      throw const BridgeException(BridgeFailure.failed, 'The exchanger made the payment for another amount.');
+    if ((created.xmrAmount - xmr.units / XmrAmount.unitsPerXmr).abs() > AppConfig.payAmountTolerance) {
+      throw const BridgeException(BridgeFailure.failed, 'The exchanger made the payment for another amount of XMR.');
     }
     try {
       checkAddress(created.depositAddress, MoneroNetwork.mainnet);
@@ -229,11 +329,9 @@ final class PayController extends ChangeNotifier {
     }
   }
 
-  /// An amount of XMR from the exchanger, which gives it as a number with at most a few decimals.
-  static XmrAmount _xmr(double value) => XmrAmount.parse(value.toStringAsFixed(XmrAmount.decimals));
-
   @override
   void dispose() {
+    _disposed = true;
     _quote.dispose();
     super.dispose();
   }

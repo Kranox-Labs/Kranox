@@ -53,6 +53,18 @@ abstract final class Metrics {
   /// The code of the deposit address of a swap of the bridge, beside its text.
   static const double bridgeQrSize = 132;
 
+  /// The two sides of pay: the room inside each box, and the round arrow between them.
+  static const double swapBoxPadding = 16;
+  static const double swapArrow = 38;
+
+  /// The edge of a chosen card of a choice, such as the rate of pay.
+  static const double choiceBorder = 1.6;
+
+  /// The menu of the coin of pay: its least width, its shadow, and the turn of its arrow.
+  static const double coinMenuWidth = 220;
+  static const double menuElevation = 12;
+  static const Duration menuTurn = Duration(milliseconds: 160);
+
   /// The mark of a step of a swap: a check, a spinner, or a ring.
   static const double stepMark = 24;
   static const double stepLine = 2;

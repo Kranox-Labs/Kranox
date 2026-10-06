@@ -53,16 +53,21 @@ final class _SampleWallet implements WalletBackend {
   void stop() {}
 }
 
-/// An exchanger with a minimum of 0.004 and a rate of 5 XMR for one coin, whose swaps report [stage]. A payment takes
-/// 0.002 XMR for one coin at a fixed rate, from 10 to 1000 coins, and its rate waits [payWindow] for the deposit.
+/// An exchanger with a minimum of 0.004 and a rate of 5 XMR for one coin, whose swaps report [stage]. A payment buys
+/// 500 coins for one XMR at a fixed rate, from 0.02 to 2 XMR, and its rate waits [payWindow] for the deposit; at a
+/// floating rate it buys about 480 coins for one XMR, from 0.01 XMR without a top.
 final class _SampleBridge implements BridgeClient {
   SwapStage stage = SwapStage.waiting;
   final List<String> created = [];
   final List<(String, String)> paid = [];
+  final List<(PayRate, String?)> paidRates = [];
   Duration payWindow = const Duration(minutes: 10);
 
   /// The recipient of a payment that the exchanger makes, when it makes one for another recipient.
   String? payoutOverride;
+
+  /// The XMR of a payment that the exchanger makes, when it makes one for another amount.
+  double? xmrOverride;
 
   @override
   Future<BridgeQuote> quote(BridgeAsset asset, String amount) async {
@@ -95,35 +100,50 @@ final class _SampleBridge implements BridgeClient {
   }
 
   @override
-  Future<PayQuote> payQuote(BridgeAsset asset, String amount) async {
-    final value = double.parse(amount);
-    final inRange = value >= 10 && value <= 1000;
+  Future<PayRange> payRange(BridgeAsset asset, PayRate rate) async => switch (rate) {
+    PayRate.fixed => PayRange(asset: asset, rate: rate, minXmr: 0.02, maxXmr: 2),
+    PayRate.floating => PayRange(asset: asset, rate: rate, minXmr: 0.01, maxXmr: null),
+  };
+
+  static double _coinsPerXmr(PayRate rate) => rate == PayRate.fixed ? 500 : 480;
+
+  @override
+  Future<PayQuote> payQuote(BridgeAsset asset, PayRate rate, String xmrAmount) async {
+    final value = double.parse(xmrAmount);
+    final range = await payRange(asset, rate);
+    final max = range.maxXmr;
+    final inRange = value >= range.minXmr && (max == null || value <= max);
     return PayQuote(
       asset: asset,
-      amount: amount,
-      xmrAmount: inRange ? value * 0.002 : null,
-      rateId: inRange ? 'rate-$amount' : null,
+      rate: rate,
+      xmrAmount: xmrAmount,
+      amount: inRange ? value * _coinsPerXmr(rate) : null,
+      rateId: inRange && rate == PayRate.fixed ? 'rate-$xmrAmount' : null,
       validUntil: null,
       warning: null,
-      limit: inRange ? null : (value < 10 ? PayLimit.below : PayLimit.above),
-      minXmr: inRange ? null : 0.02,
-      maxXmr: inRange ? null : 2,
+      limit: inRange ? null : (value < range.minXmr ? PayLimit.below : PayLimit.above),
+      minXmr: inRange ? null : range.minXmr,
+      maxXmr: inRange ? null : max,
+      depositFee: 0.006,
+      withdrawalFee: 0.737,
     );
   }
 
   @override
   Future<CreatedPay> createPay({
     required BridgeAsset asset,
-    required String amount,
+    required PayRate rate,
+    required String xmrAmount,
     required String address,
     required String refundAddress,
-    required String rateId,
+    required String? rateId,
   }) async {
     paid.add((address, refundAddress));
+    paidRates.add((rate, rateId));
     return CreatedPay(
       id: 'pay${paid.length}',
-      amount: double.parse(amount),
-      xmrAmount: double.parse(amount) * 0.002,
+      amount: double.parse(xmrAmount) * _coinsPerXmr(rate),
+      xmrAmount: xmrOverride ?? double.parse(xmrAmount),
       depositAddress: _xmrDeposit,
       payoutAddress: payoutOverride ?? address.toLowerCase(),
     );
@@ -259,6 +279,8 @@ void main() {
     expect(payment.reached, SwapStage.exchanging);
     final read = BridgeSwap.fromJson(payment.toJson());
     expect(read.direction, SwapDirection.pay);
+    final saved = payment.toJson()..remove('fixedRate');
+    expect(BridgeSwap.fromJson(saved).fixedRate, isTrue, reason: 'the payments of 5 Oct 2026 ran at a fixed rate');
     expect(read.validUntil, DateTime.utc(2026, 10, 5, 15, 10));
     expect(read.toJson(), payment.toJson());
   });
@@ -266,30 +288,37 @@ void main() {
   test('reads a pay quote of the relay, also one outside the range of the fixed rate', () {
     final quote = PayQuote.fromJson({
       'asset': 'usdg',
-      'amount': '80',
-      'xmrAmount': 0.15366631,
+      'rate': 'fixed',
+      'xmrAmount': '0.1',
+      'amount': 51.229932,
       'rateId': 'rate',
-      'validUntil': '2026-10-05T15:10:34.715Z',
+      'validUntil': '2026-10-06T03:07:28.793Z',
       'warning': null,
+      'depositFee': 0.006,
+      'withdrawalFee': 0.7370513,
+      'speedMinutes': null,
       'limit': null,
       'minXmr': null,
       'maxXmr': null,
     });
-    expect(quote.xmrAmount, 0.15366631);
-    expect(quote.validUntil, DateTime.utc(2026, 10, 5, 15, 10, 34, 715));
+    expect(quote.amount, 51.229932);
+    expect(quote.rate, PayRate.fixed);
+    expect(quote.depositFee, 0.006);
+    expect(quote.validUntil, DateTime.utc(2026, 10, 6, 3, 7, 28, 793));
     final outside = PayQuote.fromJson({
       'asset': 'eth',
-      'amount': '5',
-      'xmrAmount': null,
+      'rate': 'floating',
+      'xmrAmount': '0.01',
+      'amount': null,
       'rateId': null,
       'validUntil': null,
       'warning': null,
-      'limit': 'above',
-      'minXmr': 0.0228,
-      'maxXmr': 1.4685,
+      'limit': 'below',
+      'minXmr': 0.0227,
+      'maxXmr': 1.4505,
     });
-    expect(outside.limit, PayLimit.above);
-    expect(outside.maxXmr, 1.4685);
+    expect(outside.limit, PayLimit.below);
+    expect(outside.minXmr, 0.0227);
   });
 
   group('the controller', () {
@@ -383,12 +412,12 @@ void main() {
       expect(bridge.checkingRelay, isFalse);
     });
 
-    test('quotes a payment at a fixed rate and allows a review only for a valid recipient', () async {
+    test('quotes the coin that an amount of XMR buys and allows a review only for a valid recipient', () async {
       final pay = bridge.pay;
-      pay.setAmount('80');
+      pay.setXmr('0.16');
       expect(pay.quoting, isTrue);
       await _quoteSettles();
-      expect(pay.quotedXmr, XmrAmount.parse('0.16'));
+      expect(pay.quotedAmount, closeTo(80, 1e-9));
       expect(pay.canReview, isFalse, reason: 'no recipient yet');
       pay.setRecipient('0x5aaeb6053F3E94C9b9A09f33669435E7Ef1BeAed');
       expect(pay.recipient, isNull, reason: 'a typo in the checksum');
@@ -399,21 +428,38 @@ void main() {
       expect(pay.canReview, isFalse, reason: 'the quote follows the new coin');
     });
 
+    test('knows the minimum payment before the user types, and marks an amount outside the range', () async {
+      final pay = bridge.pay;
+      expect(pay.range, isNull);
+      await pay.loadRange();
+      expect(pay.range?.minXmr, 0.02);
+      expect(pay.rangeOf(PayRate.floating)?.minXmr, 0.01);
+      expect(pay.limit, isNull, reason: 'no amount yet');
+      pay.setXmr('0.01');
+      expect(pay.limit, PayLimit.below);
+      pay.setXmr('3');
+      expect(pay.limit, PayLimit.above);
+      pay.setXmr('0.16');
+      expect(pay.limit, isNull);
+    });
+
     test('shows the range of the fixed rate for an amount outside it', () async {
       final pay = bridge.pay;
       pay.setRecipient(_recipient);
-      pay.setAmount('5');
+      pay.setXmr('0.01');
       await _quoteSettles();
       expect(pay.quote?.limit, PayLimit.below);
       expect(pay.quote?.minXmr, 0.02);
-      expect(pay.quotedXmr, isNull);
+      expect(pay.quotedAmount, isNull);
+      expect(pay.range?.minXmr, 0.02, reason: 'the quote outside the range brings the range');
+      expect(pay.limit, PayLimit.below);
       expect(pay.canReview, isFalse);
     });
 
     test('makes a payment, sends its XMR to the exchanger, and follows it as a swap of pay', () async {
       final pay = bridge.pay;
       pay.setRecipient(_recipient);
-      pay.setAmount('80');
+      pay.setXmr('0.16');
       await _quoteSettles();
       final review = await pay.startReview();
       expect(exchanger.paid.single, (_recipient, wallet.receiveAddress!.address));
@@ -426,11 +472,14 @@ void main() {
       final swap = await pay.confirm();
       expect(engine.requests.whereType<ConfirmSend>(), hasLength(1));
       expect(swap.direction, SwapDirection.pay);
+      expect(swap.fixedRate, isTrue);
+      expect(exchanger.paidRates.single, (PayRate.fixed, 'rate-0.16'));
       expect(swap.depositHash, 'c4f27a91');
       expect(swap.xmrAmount, closeTo(0.16, 1e-12));
+      expect(swap.amount, closeTo(80, 1e-9));
       expect(swap.refundAddress, review.refund.address);
       expect(pay.review, isNull);
-      expect(pay.amount, isEmpty);
+      expect(pay.xmrText, isEmpty);
       expect(bridge.activeSwapOf(SwapDirection.pay)?.id, swap.id);
       expect(bridge.activeSwapOf(SwapDirection.receive), isNull);
 
@@ -446,11 +495,34 @@ void main() {
       expect(saved.stage, SwapStage.finished);
     });
 
+    test('offers a floating rate below the minimum of a fixed one, and pays at it without a rate id', () async {
+      final pay = bridge.pay;
+      await pay.loadRange();
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.015');
+      expect(pay.limit, PayLimit.below);
+      expect(pay.suggestsFloating, isTrue);
+      pay.selectRate(PayRate.floating);
+      expect(pay.limit, isNull);
+      expect(pay.suggestsFloating, isFalse);
+      await _quoteSettles();
+      expect(pay.quotedAmount, closeTo(7.2, 1e-9));
+      expect(pay.quote?.rateId, isNull);
+      expect(pay.canReview, isTrue, reason: 'a floating rate needs no rate id');
+      final review = await pay.startReview();
+      expect(review.rate, PayRate.floating);
+      expect(exchanger.paidRates.single, (PayRate.floating, null));
+      final swap = await pay.confirm();
+      expect(swap.fixedRate, isFalse);
+      // The first read of the new payment is on its way; the test ends after it.
+      await bridge.refresh();
+    });
+
     test('builds no payment that the exchanger made for another recipient', () async {
       final pay = bridge.pay;
       exchanger.payoutOverride = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
       pay.setRecipient(_recipient);
-      pay.setAmount('80');
+      pay.setXmr('0.16');
       await _quoteSettles();
       await expectLater(
         pay.startReview(),
@@ -460,11 +532,24 @@ void main() {
       expect(pay.review, isNull);
     });
 
+    test('builds no payment that the exchanger made for another amount of XMR', () async {
+      final pay = bridge.pay;
+      exchanger.xmrOverride = 0.17;
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.16');
+      await _quoteSettles();
+      await expectLater(
+        pay.startReview(),
+        throwsA(isA<BridgeException>().having((error) => error.failure, 'failure', BridgeFailure.failed)),
+      );
+      expect(engine.requests.whereType<PrepareSend>(), isEmpty);
+    });
+
     test('sends nothing when the fixed rate runs out too soon, and drops the review', () async {
       final pay = bridge.pay;
       exchanger.payWindow = const Duration(seconds: 30);
       pay.setRecipient(_recipient);
-      pay.setAmount('80');
+      pay.setXmr('0.16');
       await _quoteSettles();
       await pay.startReview();
       await expectLater(

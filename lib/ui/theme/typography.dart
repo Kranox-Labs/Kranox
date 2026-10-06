@@ -28,6 +28,9 @@ abstract final class KranoxType {
   /// The amount on the send page, large in the middle of the form.
   static final TextStyle sendFigure = _style(48, 250, tracking: -0.03, height: 1.15);
 
+  /// The amounts of the two sides of pay, beside their coin, smaller than the amount of a send so that both fit.
+  static final TextStyle swapFigure = _style(36, 250, tracking: -0.03, height: 1.15);
+
   static final TextStyle pageTitle = _style(26, 500, tracking: -0.02, height: 1.15);
   static final TextStyle onboardingTitle = _style(34, 500, tracking: -0.025, height: 1.1);
   static final TextStyle cardTitle = _style(15, 600);
