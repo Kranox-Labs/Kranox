@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../bridge/client.dart';
 import '../config/app_config.dart';
 import '../config/network.dart';
@@ -73,6 +75,14 @@ String? passwordProblem(String password, String repeated) {
 }
 
 /// Writes an amount of the bridge with at most [decimals] decimals and no zeros at the end, such as 0.0271.
+/// Writes a limit of an amount at [decimals]: a minimum rounded up and a maximum rounded down, so that a limit on the
+/// screen never lets an amount through that the exchanger refuses.
+String formatLimit(double value, {required bool up, int decimals = 4}) {
+  final scale = math.pow(10, decimals);
+  final scaled = value * scale;
+  return formatDecimal((up ? scaled.ceil() : scaled.floor()) / scale, decimals: decimals);
+}
+
 String formatDecimal(double value, {int decimals = 6}) {
   final fixed = value.toStringAsFixed(decimals);
   if (!fixed.contains('.')) return fixed;

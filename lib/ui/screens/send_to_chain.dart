@@ -15,7 +15,6 @@ import '../theme/metrics.dart';
 import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
-import '../widgets/choice_pill.dart';
 import '../widgets/field.dart';
 import '../widgets/page_frame.dart';
 import '../widgets/review_line.dart';
@@ -25,9 +24,9 @@ import '../widgets/swap_steps.dart';
 /// The length of an address on Robinhood Chain: 0x and 40 hex digits. The live check of the recipient waits for it.
 const int _evmAddressLength = 42;
 
-/// Pay to Robinhood Chain: the user enters a recipient there and the amount that the recipient gets, and ChangeNOW
-/// turns XMR of this wallet into exactly that amount at a fixed rate. The part of the send page under the choice "To
-/// Robinhood Chain".
+/// Pay to Robinhood Chain: the user types the XMR to pay and sees the coin that it buys at a fixed rate, then enters
+/// the recipient there, and ChangeNOW turns the XMR of this wallet into exactly that amount. The part of the send page
+/// under the choice "To Robinhood Chain", in the form of a swap, as the owner showed on 6 Oct 2026.
 class SendToChain extends StatefulWidget {
   const SendToChain({super.key, required this.bridge, required this.wallet});
 
@@ -40,7 +39,7 @@ class SendToChain extends StatefulWidget {
 
 class _SendToChainState extends State<SendToChain> {
   late final _recipient = TextEditingController(text: _pay.recipientText);
-  late final _amount = TextEditingController(text: _pay.amount);
+  late final _xmr = TextEditingController(text: _pay.xmrText);
   String? _error;
   bool _busy = false;
 
@@ -53,14 +52,15 @@ class _SendToChainState extends State<SendToChain> {
   void initState() {
     super.initState();
     _recipient.addListener(() => _pay.setRecipient(_recipient.text));
-    _amount.addListener(() => _pay.setAmount(_amount.text));
+    _xmr.addListener(() => _pay.setXmr(_xmr.text));
     widget.bridge.refresh();
+    _pay.loadRange();
   }
 
   @override
   void dispose() {
     _recipient.dispose();
-    _amount.dispose();
+    _xmr.dispose();
     super.dispose();
   }
 
@@ -76,7 +76,7 @@ class _SendToChainState extends State<SendToChain> {
   Future<void> _confirm() => _run(() async {
     await _pay.confirm();
     _recipient.clear();
-    _amount.clear();
+    _xmr.clear();
     _another = false;
   });
 
@@ -135,8 +135,7 @@ class _SendToChainState extends State<SendToChain> {
             SwapHistory(
               title: Copy.paymentsTitle,
               swaps: payments,
-              line: (swap) =>
-                  Copy.paySwapTitle(formatDecimal(swap.amount, decimals: 8), swap.asset, shortText(swap.payoutAddress)),
+              line: (swap) => Copy.paySwapTitle(_paidAmount(swap), swap.asset, shortText(swap.payoutAddress)),
               // A failed or refunded payment brought the XMR back, so it shows no amount that left.
               trailing: (swap) => switch (swap.xmrAmount) {
                 final xmr? when swap.stage != SwapStage.failed && swap.stage != SwapStage.refunded => Copy.payOut(
@@ -171,6 +170,68 @@ class _SendToChainState extends State<SendToChain> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _AmountBox(
+            label: Copy.payYouSend,
+            amount: TextField(
+              controller: _xmr,
+              onSubmitted: (_) => pay.canReview ? _startReview() : null,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: KranoxType.swapFigure.copyWith(color: palette.ink),
+              cursorColor: palette.accent,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: Copy.amountHint,
+                hintStyle: KranoxType.swapFigure.copyWith(color: palette.inkFaint),
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            coin: const _Coin(label: Copy.currency, network: Copy.payOnMonero),
+            footer: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _LimitLine(pay: pay),
+                if (pay.suggestsFloating) _FloatingHint(pay: pay),
+                _FundsLine(pay: pay, wallet: widget.wallet),
+              ],
+            ),
+          ),
+          // The arrow between the two sides sits over the upper edge of the second one, so that they read as one swap.
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: Metrics.gapSmall),
+                child: _AmountBox(
+                  label: pay.rate == PayRate.floating ? Copy.payTheyReceiveAbout : Copy.payTheyReceive,
+                  amount: _ReceivedFigure(pay: pay),
+                  coin: _CoinMenu(asset: pay.asset, enabled: !_busy, onSelect: pay.selectAsset),
+                  footer: _FeesLine(pay: pay),
+                ),
+              ),
+              const Positioned(
+                top: (Metrics.gapSmall - Metrics.swapArrow) / 2,
+                left: 0,
+                right: 0,
+                child: Center(child: _Arrow()),
+              ),
+            ],
+          ),
+          _QuoteNote(pay: pay),
+          const SizedBox(height: Metrics.gap),
+          Text(Copy.payRateTitle.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
+          const SizedBox(height: Metrics.gapTiny),
+          Row(
+            children: [
+              for (final (index, rate) in PayRate.values.indexed) ...[
+                if (index > 0) const SizedBox(width: Metrics.gapSmall),
+                Expanded(
+                  child: _RateCard(rate: rate, pay: pay, onSelect: _busy ? null : () => pay.selectRate(rate)),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: Metrics.gap),
           LabeledField(
             label: Copy.payRecipient,
             controller: _recipient,
@@ -191,52 +252,10 @@ class _SendToChainState extends State<SendToChain> {
               child: const Text(Copy.paste),
             ),
           ),
-          const SizedBox(height: Metrics.gap + 4),
-          Text(
-            Copy.payTheyReceive.toUpperCase(),
-            textAlign: TextAlign.center,
-            style: KranoxType.label.copyWith(color: palette.inkSoft),
-          ),
-          const SizedBox(height: Metrics.gapSmall),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: Metrics.gapTiny,
-            children: [
-              for (final asset in BridgeAsset.values)
-                ChoicePill(
-                  label: asset.label,
-                  active: asset == pay.asset,
-                  onTap: _busy ? null : () => pay.selectAsset(asset),
-                ),
-            ],
-          ),
-          const SizedBox(height: Metrics.gapSmall),
-          // The amount that the recipient gets stands large in the middle, like the amount of a Monero payment.
-          TextField(
-            controller: _amount,
-            onSubmitted: (_) => pay.canReview ? _startReview() : null,
-            textAlign: TextAlign.center,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: KranoxType.sendFigure.copyWith(color: palette.ink),
-            cursorColor: palette.accent,
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              hintText: Copy.amountHint,
-              hintStyle: KranoxType.sendFigure.copyWith(color: palette.inkFaint),
-              isDense: true,
-            ),
-          ),
-          Text(
-            pay.asset.label,
-            textAlign: TextAlign.center,
-            style: KranoxType.smallStrong.copyWith(color: palette.inkSoft),
-          ),
-          const SizedBox(height: Metrics.gapSmall),
-          _QuoteLines(pay: pay, wallet: widget.wallet),
           ErrorLine(_error),
           const SizedBox(height: Metrics.gap + 4),
           PillButton(
-            label: Copy.review,
+            label: pay.recipient == null ? Copy.payEnterRecipient : Copy.review,
             busy: _busy,
             busyLabel: Copy.payPreparing,
             expand: true,
@@ -248,10 +267,353 @@ class _SendToChainState extends State<SendToChain> {
   }
 }
 
-/// The quote under the amount: the XMR that the payment takes at a fixed rate with the unlocked balance, or the range
-/// of the fixed rate, or why there is no quote.
-class _QuoteLines extends StatelessWidget {
-  const _QuoteLines({required this.pay, required this.wallet});
+/// One side of the swap: its label, the amount at the left, and its coin at the right, with a line below it.
+class _AmountBox extends StatelessWidget {
+  const _AmountBox({required this.label, required this.amount, required this.coin, this.footer});
+
+  final String label;
+  final Widget amount;
+  final Widget coin;
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: palette.field,
+        borderRadius: BorderRadius.circular(Metrics.radiusField),
+        border: Border.all(color: palette.line),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(Metrics.swapBoxPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(label.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
+            const SizedBox(height: Metrics.gapTiny),
+            Row(
+              children: [
+                Expanded(child: amount),
+                const SizedBox(width: Metrics.gapSmall),
+                coin,
+              ],
+            ),
+            if (footer case final footer?) ...[const SizedBox(height: Metrics.gapTiny), footer],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A coin of the swap with its network below it, and a sign at its right when it opens a choice.
+class _Coin extends StatelessWidget {
+  const _Coin({required this.label, required this.network, this.trailing});
+
+  final String label;
+  final String network;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(Metrics.radiusField),
+        border: Border.all(color: palette.line),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: KranoxType.cardTitle.copyWith(color: palette.ink)),
+                Text(network, style: KranoxType.small.copyWith(color: palette.inkSoft)),
+              ],
+            ),
+            if (trailing case final trailing?) ...[const SizedBox(width: Metrics.gapTiny), trailing],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The coin that the recipient gets, as a menu of the coins of Robinhood Chain that the bridge pays out. The menu opens
+/// below the coin on the solid ground of a card, each coin with its network, and the chosen one with a check. The
+/// owner turned down the plain menu of Material on 6 Oct 2026 ("ui dropdownya jangan gini").
+class _CoinMenu extends StatelessWidget {
+  const _CoinMenu({required this.asset, required this.enabled, required this.onSelect});
+
+  final BridgeAsset asset;
+  final bool enabled;
+  final ValueChanged<BridgeAsset> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final radius = BorderRadius.circular(Metrics.radiusField);
+    // A menu lies over other parts, so it takes the color of a card on the ground, without the see-through.
+    final ground = Color.alphaBlend(palette.surface, palette.ground);
+    // The menu hangs from the lower right corner of the coin, so that its right edge meets the edge of the coin and it
+    // stays inside the form.
+    return MenuAnchor(
+      alignmentOffset: const Offset(-Metrics.coinMenuWidth, Metrics.gapTiny),
+      style: MenuStyle(
+        alignment: AlignmentDirectional.bottomEnd,
+        backgroundColor: WidgetStatePropertyAll(ground),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        elevation: const WidgetStatePropertyAll(Metrics.menuElevation),
+        padding: const WidgetStatePropertyAll(EdgeInsets.all(Metrics.gapTiny)),
+        minimumSize: const WidgetStatePropertyAll(Size(Metrics.coinMenuWidth, 0)),
+        maximumSize: const WidgetStatePropertyAll(Size(Metrics.coinMenuWidth, double.infinity)),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(color: palette.line),
+          ),
+        ),
+      ),
+      menuChildren: [
+        for (final choice in BridgeAsset.values)
+          MenuItemButton(
+            onPressed: () => onSelect(choice),
+            trailingIcon: choice == asset
+                ? Icon(Icons.check_rounded, size: 18, color: palette.accent)
+                : const SizedBox(width: 18),
+            style: ButtonStyle(
+              minimumSize: const WidgetStatePropertyAll(Size(Metrics.coinMenuWidth - 2 * Metrics.gapTiny, 0)),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: Metrics.gapSmall + 2, vertical: Metrics.gapSmall),
+              ),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(Metrics.radiusField - Metrics.gapTiny)),
+              ),
+              backgroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.hovered) || states.contains(WidgetState.focused)
+                    ? palette.field
+                    : Colors.transparent,
+              ),
+              overlayColor: WidgetStatePropertyAll(palette.field),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  choice.label,
+                  style: KranoxType.cardTitle.copyWith(color: choice == asset ? palette.accent : palette.ink),
+                ),
+                Text(Copy.payOnChain, style: KranoxType.small.copyWith(color: palette.inkSoft)),
+              ],
+            ),
+          ),
+      ],
+      builder: (context, controller, _) => InkWell(
+        onTap: enabled ? () => controller.isOpen ? controller.close() : controller.open() : null,
+        borderRadius: radius,
+        child: _Coin(
+          label: asset.label,
+          network: Copy.payOnChain,
+          trailing: AnimatedRotation(
+            turns: controller.isOpen ? 0.5 : 0,
+            duration: Metrics.menuTurn,
+            child: Icon(Icons.expand_more_rounded, size: 18, color: palette.inkSoft),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The round arrow between the two sides of the swap: the XMR above turns into the coin below.
+class _Arrow extends StatelessWidget {
+  const _Arrow();
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: palette.field,
+        shape: BoxShape.circle,
+        border: Border.all(color: palette.line),
+      ),
+      child: SizedBox.square(
+        dimension: Metrics.swapArrow,
+        child: Icon(Icons.arrow_downward_rounded, size: 18, color: palette.ink),
+      ),
+    );
+  }
+}
+
+/// The amount that the recipient gets: a spinner while the quote is on its way, then the amount at the fixed rate.
+class _ReceivedFigure extends StatelessWidget {
+  const _ReceivedFigure({required this.pay});
+
+  final PayController pay;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final style = KranoxType.swapFigure;
+    if (pay.quoting) return LoadingFigure(style: style);
+    final amount = pay.quotedAmount;
+    final text = amount == null ? Copy.amountHint : formatDecimal(amount, decimals: 8);
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Text(
+        amount != null && pay.rate == PayRate.floating ? Copy.about(text) : text,
+        style: style.copyWith(color: amount == null ? palette.inkFaint : palette.ink),
+      ),
+    );
+  }
+}
+
+/// The amount of a payment in its list and on its card: what arrived once the exchanger reports it, else the quoted
+/// amount, which is an estimate at a floating rate.
+String _paidAmount(BridgeSwap swap) {
+  final text = formatDecimal(swap.amountOut ?? swap.amount, decimals: 8);
+  return swap.fixedRate || swap.amountOut != null ? text : Copy.about(text);
+}
+
+/// One choice of the rate: its name, what it means, and its minimum for the coin of the form. The chosen one has the
+/// accent on its edge and a check.
+class _RateCard extends StatelessWidget {
+  const _RateCard({required this.rate, required this.pay, required this.onSelect});
+
+  final PayRate rate;
+  final PayController pay;
+  final VoidCallback? onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final chosen = pay.rate == rate;
+    final (icon, title, note) = switch (rate) {
+      PayRate.fixed => (Icons.lock_rounded, Copy.payRateFixed, Copy.payRateFixedNote),
+      PayRate.floating => (Icons.show_chart_rounded, Copy.payRateFloating, Copy.payRateFloatingNote),
+    };
+    final range = pay.rangeOf(rate);
+    final minimum = range == null ? '…' : formatLimit(range.minXmr, up: true);
+    final radius = BorderRadius.circular(Metrics.radiusField);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: chosen ? null : onSelect,
+        borderRadius: radius,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: palette.field,
+            borderRadius: radius,
+            border: Border.all(color: chosen ? palette.accent : palette.line, width: chosen ? Metrics.choiceBorder : 1),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(Metrics.swapBoxPadding - 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 16, color: chosen ? palette.accent : palette.inkSoft),
+                    const SizedBox(width: Metrics.gapTiny),
+                    Expanded(
+                      child: Text(title, style: KranoxType.cardTitle.copyWith(color: palette.ink)),
+                    ),
+                    if (chosen) Icon(Icons.check_circle_rounded, size: 16, color: palette.accent),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(note, style: KranoxType.small.copyWith(color: palette.inkSoft)),
+                Text(Copy.payRateMinimum(minimum), style: KranoxType.smallStrong.copyWith(color: palette.inkSoft)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The way out of an amount below the minimum of a fixed rate: a floating rate, whose minimum is lower.
+class _FloatingHint extends StatelessWidget {
+  const _FloatingHint({required this.pay});
+
+  final PayController pay;
+
+  @override
+  Widget build(BuildContext context) {
+    final range = pay.rangeOf(PayRate.floating);
+    if (range == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: InkWell(
+        onTap: () => pay.selectRate(PayRate.floating),
+        child: Text(
+          Copy.paySwitchToFloating(formatLimit(range.minXmr, up: true)),
+          style: KranoxType.smallStrong.copyWith(
+            color: context.palette.accent,
+            decoration: TextDecoration.underline,
+            decorationColor: context.palette.accent,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The fees of the exchanger that the quote holds, so that a small payment explains what it loses.
+class _FeesLine extends StatelessWidget {
+  const _FeesLine({required this.pay});
+
+  final PayController pay;
+
+  @override
+  Widget build(BuildContext context) {
+    final quote = pay.quotedAmount == null ? null : pay.quote;
+    final deposit = quote?.depositFee;
+    final withdrawal = quote?.withdrawalFee;
+    if (quote == null || deposit == null || withdrawal == null) return const SizedBox.shrink();
+    return Text(
+      Copy.payFees(formatDecimal(deposit, decimals: 8), formatDecimal(withdrawal, decimals: 8), quote.asset),
+      style: KranoxType.small.copyWith(color: context.palette.inkSoft),
+    );
+  }
+}
+
+/// The minimum payment of the coin of the form, from the start, so that nobody has to guess it; in the color of a
+/// failure when the XMR to pay stands below it, or above the maximum.
+class _LimitLine extends StatelessWidget {
+  const _LimitLine({required this.pay});
+
+  final PayController pay;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final range = pay.range;
+    if (range == null) return const SizedBox.shrink();
+    final minimum = formatLimit(range.minXmr, up: true);
+    final max = range.maxXmr;
+    final (text, color) = switch (pay.limit) {
+      PayLimit.below => (Copy.payBelowMinimum(minimum), palette.danger),
+      PayLimit.above when max != null => (Copy.payAboveMaximum(formatLimit(max, up: false)), palette.danger),
+      _ => (Copy.payMinimum(minimum), palette.inkSoft),
+    };
+    return Text(text, style: KranoxType.smallStrong.copyWith(color: color));
+  }
+}
+
+/// The unlocked balance below the XMR to pay, or why the wallet cannot pay that much.
+class _FundsLine extends StatelessWidget {
+  const _FundsLine({required this.pay, required this.wallet});
 
   final PayController pay;
   final WalletController wallet;
@@ -259,43 +621,44 @@ class _QuoteLines extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    Widget centered(String text, Color color) => Text(
-      text,
-      textAlign: TextAlign.center,
-      style: KranoxType.small.copyWith(color: color),
-    );
     final status = wallet.status;
-    final available = status.isLoading
-        ? const Center(child: IntrinsicWidth(child: LoadingLine(Copy.availableUpdating)))
-        : centered(Copy.available(status.unlocked.toExact()), palette.inkSoft);
-    if (pay.quoting) return const Center(child: IntrinsicWidth(child: LoadingLine(Copy.payQuoting)));
-    if (pay.quoteError case final error?) return centered(bridgeFailureText(error), palette.danger);
-    final quote = pay.quote;
-    if (quote != null && quote.limit != null) {
-      final min = quote.minXmr;
-      final max = quote.maxXmr;
-      final range = switch ((min, max)) {
-        (final min?, final max?) => Copy.payRange(formatDecimal(min, decimals: 4), formatDecimal(max, decimals: 4)),
-        (final min?, null) => Copy.payBelowRange(formatDecimal(min, decimals: 4)),
-        (null, final max?) => Copy.payAboveRange(formatDecimal(max, decimals: 4)),
-        (null, null) => Copy.payRange('…', '…'),
-      };
-      return centered(range, palette.danger);
+    if (status.isLoading) return const LoadingLine(Copy.availableUpdating);
+    final xmr = pay.xmr;
+    if (xmr != null && !pay.coversFee) {
+      return Text(
+        xmr == status.unlocked ? Copy.amountLeavesNoFee : Copy.amountAboveUnlocked,
+        style: KranoxType.small.copyWith(color: palette.danger),
+      );
     }
-    final xmr = pay.quotedXmr;
-    if (xmr == null) return available;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          Copy.payYouPay(xmr.toExact()),
-          textAlign: TextAlign.center,
-          style: KranoxType.cardTitle.copyWith(color: palette.ink),
-        ),
-        const SizedBox(height: 2),
-        if (pay.aboveUnlocked) centered(Copy.amountAboveUnlocked, palette.danger) else available,
-        if (quote?.warning case final warning?) centered(warning, palette.inkSoft),
-      ],
+    return Text(Copy.available(status.unlocked.toExact()), style: KranoxType.small.copyWith(color: palette.inkSoft));
+  }
+}
+
+/// What the quote says beside a good estimate: why there is none, or a warning of the exchanger. The box of the XMR
+/// shows the range of the fixed rate.
+class _QuoteNote extends StatelessWidget {
+  const _QuoteNote({required this.pay});
+
+  final PayController pay;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final quote = pay.quote;
+    final (String, Color)? note = switch ((pay.quoteError, quote)) {
+      _ when pay.quoting => null,
+      (final error?, _) => (bridgeFailureText(error), palette.danger),
+      (null, PayQuote(:final warning?)) => (warning, palette.inkSoft),
+      _ => null,
+    };
+    if (note == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: Metrics.gapSmall),
+      child: Text(
+        note.$1,
+        textAlign: TextAlign.center,
+        style: KranoxType.small.copyWith(color: note.$2),
+      ),
     );
   }
 }
@@ -340,7 +703,7 @@ class _Review extends StatelessWidget {
           ),
           const SizedBox(height: Metrics.gap + 4),
           Text(
-            Copy.payTheyReceive.toUpperCase(),
+            (review.rate == PayRate.floating ? Copy.payTheyReceiveAbout : Copy.payTheyReceive).toUpperCase(),
             textAlign: TextAlign.center,
             style: KranoxType.label.copyWith(color: palette.inkSoft),
           ),
@@ -349,7 +712,9 @@ class _Review extends StatelessWidget {
             child: FittedBox(
               fit: BoxFit.scaleDown,
               child: AmountFigure(
-                value: formatDecimal(created.amount, decimals: 8),
+                value: review.rate == PayRate.floating
+                    ? Copy.about(formatDecimal(created.amount, decimals: 8))
+                    : formatDecimal(created.amount, decimals: 8),
                 unit: review.asset.label,
                 style: KranoxType.sendFigure,
                 unitStyle: KranoxType.smallStrong,
@@ -382,6 +747,10 @@ class _Review extends StatelessWidget {
           Divider(height: 1, color: palette.line),
           ReviewLine(label: Copy.total, value: '${prepared.total.toExact()} ${Copy.currency}', strong: true),
           if (validUntil != null) ReviewLine(label: Copy.payRateHolds, value: formatTime(validUntil, DateTime.now())),
+          ReviewLine(
+            label: Copy.payRateTitle,
+            value: review.rate == PayRate.fixed ? Copy.payRateFixedReview : Copy.payRateFloatingReview,
+          ),
           ReviewLine(label: Copy.payRefundLabel, value: Copy.payRefund(review.refund.index)),
           ErrorLine(error),
           const SizedBox(height: Metrics.gap),
@@ -427,7 +796,7 @@ class _PaymentCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CardTitle(
-            Copy.paySwapTitle(formatDecimal(swap.amount, decimals: 8), swap.asset, shortText(swap.payoutAddress)),
+            Copy.paySwapTitle(_paidAmount(swap), swap.asset, shortText(swap.payoutAddress)),
             trailing: swap.stage.isFinal
                 ? null
                 : PillButton(label: Copy.bridgeRefresh, tone: PillTone.quiet, onPressed: onRefresh),
@@ -461,7 +830,7 @@ class _PaymentCard extends StatelessWidget {
 
   List<SwapStep> _steps() {
     final asset = swap.asset;
-    final amount = formatDecimal(swap.amount, decimals: 8);
+    final amount = _paidAmount(swap);
     final xmr = swap.xmrAmount;
     final xmrText = xmr == null ? '…' : formatDecimal(xmr, decimals: 8);
     final recipient = shortText(swap.payoutAddress);

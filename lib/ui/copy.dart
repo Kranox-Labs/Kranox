@@ -251,8 +251,8 @@ abstract final class Copy {
   static String bridgeFailed(String detail) => 'The bridge failed: $detail';
 
   // Pay, from XMR to an address on Robinhood Chain, through ChangeNOW at a fixed rate. On 5 Oct 2026 the owner chose
-  // it as the next main feature: a choice on the send page beside Monero, where the user enters the amount that the
-  // recipient gets.
+  // it as the next main feature, as a choice on the send page beside Monero. On 6 Oct 2026 the owner asked for the
+  // form of a swap: the XMR to pay above, the coin that the recipient gets below, and the recipient last.
   static const String sendMoneroTab = 'Monero';
   static const String sendChainTab = 'To Robinhood Chain';
   static const String payLead = 'Pay any address on Robinhood Chain from your XMR. ChangeNOW handles the exchange.';
@@ -266,11 +266,31 @@ abstract final class Copy {
   static const String payRecipientWrongForm = 'Enter a Robinhood Chain address: 0x and 40 hex digits.';
   static const String payRecipientBadChecksum = 'This address has a typo: its checksum does not match.';
   static const String payTheyReceive = 'They receive';
+  static const String payTheyReceiveAbout = 'They receive about';
+
+  /// An amount at a floating rate, which can still move.
+  static String about(String amount) => '≈ $amount';
+  static String payFees(String xmrFee, String coinFee, BridgeAsset asset) =>
+      'ChangeNOW fees, included: $xmrFee XMR + $coinFee ${asset.label}';
+  // The choice of the rate. On 6 Oct 2026 the owner asked to let the user choose, with the trade of each one in view.
+  static const String payRateTitle = 'Rate';
+  static const String payRateFixed = 'Fixed rate';
+  static const String payRateFixedNote = 'Exact amount';
+  static const String payRateFloating = 'Floating rate';
+  static const String payRateFloatingNote = 'Can move a little';
+  static String payRateMinimum(String xmr) => 'Min $xmr XMR';
+  static String paySwitchToFloating(String xmr) => 'Switch to a floating rate to pay from $xmr XMR';
+  static const String payRateFixedReview = 'Fixed: they get exactly this amount';
+  static const String payRateFloatingReview =
+      'Floating: the amount follows the market until ChangeNOW exchanges the XMR';
+  static const String payOnMonero = 'On Monero';
+  static const String payOnChain = 'On Robinhood Chain';
+  static const String payEnterRecipient = 'Enter recipient address';
   static const String payQuoting = 'Asking ChangeNOW for a fixed rate…';
-  static String payYouPay(String xmr) => 'You pay $xmr XMR, plus the network fee.';
-  static String payRange(String min, String max) => 'One payment takes from $min to $max XMR at a fixed rate.';
-  static String payBelowRange(String min) => 'One payment takes at least $min XMR at a fixed rate.';
-  static String payAboveRange(String max) => 'One payment takes at most $max XMR at a fixed rate.';
+  // The owner asked on 6 Oct 2026 for the minimum payment in plain view, before the user types.
+  static String payMinimum(String xmr) => 'Minimum payment: $xmr XMR';
+  static String payBelowMinimum(String xmr) => 'Below the minimum payment of $xmr XMR.';
+  static String payAboveMaximum(String xmr) => 'Above the maximum payment of $xmr XMR.';
   static const String payPreparing = 'Asking ChangeNOW…';
   static const String payTo = 'To, on Robinhood Chain';
   static const String payYouSend = 'You pay';

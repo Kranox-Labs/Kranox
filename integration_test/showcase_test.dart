@@ -21,6 +21,7 @@ import 'package:kranox_wallet/bridge/store.dart';
 import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/ui/copy.dart';
+import 'package:kranox_wallet/ui/format.dart';
 import 'package:kranox_wallet/ui/theme/palette.dart';
 import 'package:kranox_wallet/ui/theme/typography.dart';
 import 'package:kranox_wallet/ui/widgets/sidebar.dart';
@@ -170,6 +171,9 @@ const String _sampleChainHash = '0x5c8e2a7b9d14f03e6a2c8b5d7e9f1a3c5e7b9d0f2a4c6
 
 /// The XMR for one coin of a payment at a fixed rate. CHECKED 5 Oct 2026, the fixed-rate estimates of ChangeNOW: 80
 /// USDG for 0.15366631 XMR, and 0.03 ETH for 0.15475806 XMR.
+
+/// The XMR of the sample payment to Robinhood Chain.
+const String _payXmr = '0.15';
 const Map<BridgeAsset, double> _payXmrPerCoin = {BridgeAsset.usdg: 0.15366631 / 80, BridgeAsset.eth: 0.15475806 / 0.03};
 
 /// The answers of the exchanger for the pictures: a quote at the prices of 5 Oct 2026, and swaps whose state the test
@@ -202,12 +206,45 @@ final class _SampleBridge implements BridgeClient {
     payoutAddress: address,
   );
 
+  // The range of one payment at a fixed rate. CHECKED 6 Oct 2026, the range of ChangeNOW for XMR into ETH: 0.02267982 to
+  // 1.451521737121 XMR.
+  // CHECKED the same day, the floating rate: from 0.0118679 XMR, without a top.
   @override
-  Future<PayQuote> payQuote(BridgeAsset asset, String amount) async => PayQuote(
+  Future<PayRange> payRange(BridgeAsset asset, PayRate rate) async => switch (rate) {
+    PayRate.fixed => PayRange(asset: asset, rate: rate, minXmr: 0.02267982, maxXmr: 1.451521737121),
+    PayRate.floating => PayRange(asset: asset, rate: rate, minXmr: 0.0118679, maxXmr: null),
+  };
+
+  @override
+  Future<PayQuote> payQuote(BridgeAsset asset, PayRate rate, String xmrAmount) async {
+    final xmr = double.parse(xmrAmount);
+    final range = await payRange(asset, rate);
+    if (xmr < range.minXmr) {
+      return PayQuote(
+        asset: asset,
+        rate: rate,
+        xmrAmount: xmrAmount,
+        amount: null,
+        rateId: null,
+        validUntil: null,
+        warning: null,
+        limit: PayLimit.below,
+        minXmr: range.minXmr,
+        maxXmr: range.maxXmr,
+      );
+    }
+    return _quoteAt(asset, rate, xmrAmount);
+  }
+
+  // The fees of ChangeNOW: CHECKED 6 Oct 2026, 0.006 XMR for the deposit and 0.7370513 USDG for the payout.
+  PayQuote _quoteAt(BridgeAsset asset, PayRate rate, String xmrAmount) => PayQuote(
     asset: asset,
-    amount: amount,
-    xmrAmount: double.parse(amount) * _payXmrPerCoin[asset]!,
-    rateId: 'sample-rate',
+    rate: rate,
+    depositFee: 0.006,
+    withdrawalFee: 0.7370513,
+    xmrAmount: xmrAmount,
+    amount: double.parse(xmrAmount) / _payXmrPerCoin[asset]!,
+    rateId: rate == PayRate.fixed ? 'sample-rate' : null,
     validUntil: null,
     warning: null,
     limit: null,
@@ -219,14 +256,15 @@ final class _SampleBridge implements BridgeClient {
   @override
   Future<CreatedPay> createPay({
     required BridgeAsset asset,
-    required String amount,
+    required PayRate rate,
+    required String xmrAmount,
     required String address,
     required String refundAddress,
-    required String rateId,
+    required String? rateId,
   }) async => CreatedPay(
     id: '7b2d91e04c5fa${++_swaps}',
-    amount: double.parse(amount),
-    xmrAmount: double.parse(amount) * _payXmrPerCoin[asset]!,
+    amount: double.parse(xmrAmount) / _payXmrPerCoin[asset]!,
+    xmrAmount: double.parse(xmrAmount),
     depositAddress: _recipientAddress,
     payoutAddress: address,
   );
@@ -312,6 +350,13 @@ void main() {
       final image = await boundary.toImage(pixelRatio: _pixelRatio);
       final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
       File('${out.path}/wallet-$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
+    }
+
+    // A button below the window scrolls into view first, as the user scrolls to it.
+    Future<void> tapInView(Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pump(_frame);
+      await tester.tap(finder);
     }
 
     Future<void> openPage(String label) async {
@@ -450,38 +495,45 @@ void main() {
       ),
       'receive-chain-refunded',
     );
-    // Pay to Robinhood Chain: a quote for 80 USDG at a fixed rate, the review, and the payment on its way and at its
-    // end.
+    // Pay to Robinhood Chain: the USDG that 0.15 XMR buys at a fixed rate, the review, and the payment on its way and
+    // at its end.
     await openPage(Copy.navSend);
     await tester.tap(find.text(Copy.sendChainTab.toUpperCase()));
     await waitFor(find.text(Copy.payTheyReceive.toUpperCase()));
-    await tester.enterText(find.byType(TextField).at(0), _payRecipient);
-    await tester.enterText(find.byType(TextField).at(1), '80');
-    await waitFor(find.textContaining('You pay'));
+    await tester.enterText(find.byType(TextField).at(1), _payRecipient);
+    await tester.enterText(find.byType(TextField).at(0), '0.01');
+    await waitFor(find.textContaining('Below the minimum payment'));
+    await shoot('send-chain-minimum');
+    await tester.enterText(find.byType(TextField).at(0), '0.015');
+    await waitFor(find.textContaining('Switch to a floating rate'));
+    await tester.tap(find.textContaining('Switch to a floating rate'));
+    await waitFor(find.text(Copy.payTheyReceiveAbout.toUpperCase()));
+    await waitFor(find.textContaining('ChangeNOW fees'));
+    await shoot('send-chain-floating');
+    await tester.tap(find.text(Copy.payRateFixed));
+    await tester.enterText(find.byType(TextField).at(0), _payXmr);
+    await waitFor(find.text(formatDecimal(double.parse(_payXmr) / _payXmrPerCoin[BridgeAsset.usdg]!, decimals: 8)));
     await shoot('send-chain-quote');
+    // The menu of the coin, open below the coin; choosing the same coin closes it.
+    await tester.tap(find.text(BridgeAsset.usdg.label).first);
+    await tester.pumpAndSettle();
+    await shoot('send-chain-coins');
+    await tester.tap(find.text(BridgeAsset.usdg.label).last);
+    await tester.pumpAndSettle();
     sampleBridge.state = SwapState(
       stage: SwapStage.waiting,
       validUntil: DateTime.now().add(const Duration(minutes: 10)),
     );
-    await tester.tap(find.text(Copy.review));
+    await tapInView(find.text(Copy.review));
     await waitFor(find.text(Copy.payNow));
     await shoot('send-chain-review');
-    await tester.tap(find.text(Copy.payNow));
+    await tapInView(find.text(Copy.payNow));
     await waitFor(find.text(Copy.payStepWaiting));
     await tester.pump(_frame);
     await shoot('send-chain-waiting');
+    await swapAt(const SwapState(stage: SwapStage.exchanging, depositHash: _samplePayinHash), 'send-chain-exchanging');
     await swapAt(
-      const SwapState(stage: SwapStage.exchanging, expectedOut: 80, depositHash: _samplePayinHash),
-      'send-chain-exchanging',
-    );
-    await swapAt(
-      const SwapState(
-        stage: SwapStage.finished,
-        expectedOut: 80,
-        amountOut: 80,
-        depositHash: _samplePayinHash,
-        payoutHash: _sampleChainHash,
-      ),
+      const SwapState(stage: SwapStage.finished, depositHash: _samplePayinHash, payoutHash: _sampleChainHash),
       'send-chain-done',
     );
 

@@ -17,6 +17,7 @@ final class LiveQuote<K, Q> {
   Q? _value;
   BridgeException? _error;
   bool _pending = false;
+  bool _disposed = false;
   Timer? _timer;
 
   /// The answer for the form as it stands, or null while none has come.
@@ -47,13 +48,16 @@ final class LiveQuote<K, Q> {
     } on FormatException catch (failure) {
       error = BridgeException(BridgeFailure.failed, failure.message);
     }
-    // The form may have changed while the quote was on its way; a newer request follows then.
-    if (key != _key) return;
+    // The form may have changed while the quote was on its way, and a newer request follows then; or the form is gone.
+    if (_disposed || key != _key) return;
     _value = value;
     _error = error;
     _pending = false;
     _onChanged();
   }
 
-  void dispose() => _timer?.cancel();
+  void dispose() {
+    _disposed = true;
+    _timer?.cancel();
+  }
 }

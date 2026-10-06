@@ -54,50 +54,89 @@ final class BridgeQuote {
   );
 }
 
-/// Where an amount of a payment stands outside the range of the fixed rate.
+/// Where an amount of a payment stands outside the range of its rate.
 enum PayLimit { below, above }
 
-/// What the exchanger asks for a payment of [amount] of [asset] at a fixed rate: the XMR that it takes, with the id
-/// of the rate and the time until which the estimate holds. Outside the range of the fixed rate it gives that range in
-/// XMR instead, with [limit] on the side where the amount stands.
+/// The rate of a payment, which the user chooses: a fixed rate, at which the recipient gets exactly the quoted amount,
+/// or a floating rate, with about half the minimum, at which the amount follows the market until the exchange. The
+/// owner asked on 6 Oct 2026 to let the user choose. The names are the names at the relay.
+enum PayRate { fixed, floating }
+
+/// The range of the XMR of one payment into [asset] at [rate]. A floating rate has no top.
+final class PayRange {
+  const PayRange({required this.asset, required this.rate, required this.minXmr, required this.maxXmr});
+
+  final BridgeAsset asset;
+  final PayRate rate;
+  final double minXmr;
+  final double? maxXmr;
+
+  factory PayRange.fromJson(Map<String, Object?> data) => PayRange(
+    asset: BridgeAsset.fromCode(_string(data, 'asset')),
+    rate: PayRate.values.byName(_string(data, 'rate')),
+    minXmr: _number(data, 'minXmr'),
+    maxXmr: _numberOrNull(data, 'maxXmr'),
+  );
+}
+
+/// What the exchanger gives for a payment of [xmrAmount] at [rate]: the [amount] of [asset] that the recipient gets,
+/// after the fees of the exchanger, a [depositFee] in XMR and a [withdrawalFee] in [asset]. A fixed rate gives the id
+/// of the rate and the time until which the estimate holds. Outside the range of the rate the exchanger gives that
+/// range in XMR instead, with [limit] on the side where the amount of XMR stands.
 final class PayQuote {
   const PayQuote({
     required this.asset,
-    required this.amount,
+    required this.rate,
     required this.xmrAmount,
+    required this.amount,
     required this.rateId,
     required this.validUntil,
     required this.warning,
     required this.limit,
     required this.minXmr,
     required this.maxXmr,
+    this.depositFee,
+    this.withdrawalFee,
+    this.speedMinutes,
   });
 
   final BridgeAsset asset;
+  final PayRate rate;
 
-  /// The amount that the recipient gets, as the form holds it.
-  final String amount;
-  final double? xmrAmount;
+  /// The amount of XMR that the wallet pays, as the form holds it.
+  final String xmrAmount;
+
+  /// The amount of [asset] that the recipient gets at the fixed rate.
+  final double? amount;
   final String? rateId;
   final DateTime? validUntil;
   final String? warning;
   final PayLimit? limit;
   final double? minXmr;
   final double? maxXmr;
+  final double? depositFee;
+  final double? withdrawalFee;
+
+  /// Minutes, such as "10-60", as the exchanger forecasts them for a floating rate.
+  final String? speedMinutes;
 
   factory PayQuote.fromJson(Map<String, Object?> data) {
     final valid = _stringOrNull(data, 'validUntil');
     final limit = _stringOrNull(data, 'limit');
     return PayQuote(
       asset: BridgeAsset.fromCode(_string(data, 'asset')),
-      amount: _string(data, 'amount'),
-      xmrAmount: _numberOrNull(data, 'xmrAmount'),
+      rate: PayRate.values.byName(_string(data, 'rate')),
+      xmrAmount: _string(data, 'xmrAmount'),
+      amount: _numberOrNull(data, 'amount'),
       rateId: _stringOrNull(data, 'rateId'),
       validUntil: valid == null ? null : DateTime.tryParse(valid),
       warning: _stringOrNull(data, 'warning'),
       limit: limit == null ? null : PayLimit.values.byName(limit),
       minXmr: _numberOrNull(data, 'minXmr'),
       maxXmr: _numberOrNull(data, 'maxXmr'),
+      depositFee: _numberOrNull(data, 'depositFee'),
+      withdrawalFee: _numberOrNull(data, 'withdrawalFee'),
+      speedMinutes: _stringOrNull(data, 'speedMinutes'),
     );
   }
 }
@@ -165,6 +204,7 @@ final class BridgeSwap {
     this.refundAmount,
     this.updatedAt,
     this.validUntil,
+    this.fixedRate = false,
     this.closed = false,
   }) : reached = reached ?? stage;
 
@@ -208,6 +248,9 @@ final class BridgeSwap {
 
   /// For pay, the time until which the fixed rate waits for the deposit.
   final DateTime? validUntil;
+
+  /// Whether the swap runs at a fixed rate, so that [amount] is exact; a swap at a floating rate has an estimate.
+  final bool fixedRate;
 
   /// Whether the user closed the card of the ended swap. An ended swap shows until the user closes it.
   final bool closed;
@@ -256,6 +299,7 @@ final class BridgeSwap {
     bool? closed,
   }) => BridgeSwap(
     direction: direction,
+    fixedRate: fixedRate,
     id: id,
     asset: asset,
     amount: amount,
@@ -297,11 +341,12 @@ final class BridgeSwap {
     'refundAmount': refundAmount,
     'updatedAt': updatedAt?.toUtc().toIso8601String(),
     'validUntil': validUntil?.toUtc().toIso8601String(),
+    'fixedRate': fixedRate,
     'closed': closed,
   };
 
   /// Reads a saved swap. A swap saved before a field existed reads without it: a swap of the release 0.1.0 is a
-  /// receive with its XMR under the name "estimatedXmr".
+  /// receive with its XMR under the name "estimatedXmr", and a payment of 5 Oct 2026 ran at a fixed rate.
   factory BridgeSwap.fromJson(Map<String, Object?> data) {
     final stage = _stageNamed(_string(data, 'stage'));
     final reached = _stringOrNull(data, 'reached');
@@ -328,6 +373,10 @@ final class BridgeSwap {
       refundAmount: _numberOrNull(data, 'refundAmount'),
       updatedAt: updated == null ? null : DateTime.parse(updated),
       validUntil: valid == null ? null : DateTime.parse(valid),
+      fixedRate: switch (data['fixedRate']) {
+        final bool fixed => fixed,
+        _ => direction == SwapDirection.pay.name,
+      },
       closed: data['closed'] == true,
     );
   }
