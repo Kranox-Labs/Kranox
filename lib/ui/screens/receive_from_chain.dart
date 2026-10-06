@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../bridge/client.dart';
+import '../../config/app_config.dart';
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
 import '../../wallet/failure.dart';
@@ -143,6 +144,7 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
                 controller: _amount,
                 onSubmitted: (_) => bridge.canSwap ? _create() : null,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [AmountInputFormatter(decimals: AppConfig.bridgeAmountDecimals)],
                 style: KranoxType.swapFigure.copyWith(color: palette.ink),
                 cursorColor: palette.accent,
                 decoration: InputDecoration(
