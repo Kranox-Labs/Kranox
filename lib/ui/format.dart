@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart';
+
 import '../bridge/client.dart';
 import '../config/app_config.dart';
 import '../config/network.dart';
@@ -15,6 +17,21 @@ const int listDecimals = 4;
 
 /// The number of characters that a short address keeps at each end.
 const int _shortAddressEnds = 4;
+
+/// Lets an amount field take digits, then one point with at most [decimals] digits after it, and nothing else: a key or
+/// a paste that would make anything else leaves the field as it was. Without [decimals], the field takes any number of
+/// them, for a form that says itself when there are too many. A keyboard of numbers filters no keys on the desktop; on
+/// 6 Oct 2026 the owner typed letters and signs into the amount of receive.
+final class AmountInputFormatter extends TextInputFormatter {
+  AmountInputFormatter({int? decimals})
+    : _pattern = RegExp('^(\\d+(\\.\\d${decimals == null ? '*' : '{0,$decimals}'})?)?\$');
+
+  final RegExp _pattern;
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) =>
+      _pattern.hasMatch(newValue.text) ? newValue : oldValue;
+}
 
 String formatAmount(XmrAmount amount) => amount.toFixed(listDecimals);
 

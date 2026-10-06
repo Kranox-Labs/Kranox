@@ -294,6 +294,8 @@ class _SendPageState extends State<SendPage> {
             onSubmitted: (_) => _canReview ? _review() : null,
             textAlign: TextAlign.center,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            // The form says itself when an amount has too many decimals.
+            inputFormatters: [AmountInputFormatter()],
             style: KranoxType.sendFigure.copyWith(color: palette.ink),
             cursorColor: palette.accent,
             decoration: InputDecoration(

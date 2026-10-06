@@ -5,6 +5,7 @@ import '../../bridge/client.dart';
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
 import '../../bridge/pay_controller.dart';
+import '../../config/app_config.dart';
 import '../../core/evm_address.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
@@ -178,6 +179,7 @@ class _SendToChainState extends State<SendToChain> {
                 controller: _xmr,
                 onSubmitted: (_) => pay.canReview ? _startReview() : null,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [AmountInputFormatter(decimals: AppConfig.bridgeAmountDecimals)],
                 style: KranoxType.swapFigure.copyWith(color: palette.ink),
                 cursorColor: palette.accent,
                 decoration: InputDecoration(
