@@ -243,8 +243,9 @@ abstract final class Copy {
       'On the chain this shows a transfer with an exchanger, and only the records of ChangeNOW tie it to your XMR.';
   static const String privacyExposureTitle = 'What everyone sees';
   static const String privacyExposureEmpty = 'It has no public history yet.';
+  // The source of the scan may count only what it read, so the counts are a floor.
   static String privacyExposure(int transactions, int transfers) =>
-      '$transactions transactions and $transfers token transfers.';
+      'At least $transactions transactions and $transfers token transfers.';
   static String privacyExposureSince(String day) => 'Active since $day.';
   static String privacyExposureTokens(String tokens) => 'It holds $tokens.';
   static String privacyExposureHours(String from, String to) =>
