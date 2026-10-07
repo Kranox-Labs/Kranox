@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import '../../config/app_config.dart';
 import '../../bridge/models.dart';
 import '../../core/address.dart';
 import '../../core/amount.dart';
+import '../../privacy/privacy_check.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
 import '../../wallet/models.dart';
@@ -21,6 +23,7 @@ import '../widgets/buttons.dart';
 import '../widgets/choice_pill.dart';
 import '../widgets/field.dart';
 import '../widgets/page_frame.dart';
+import '../widgets/privacy_check.dart';
 import '../widgets/review_line.dart';
 import '../widgets/send_password.dart';
 import '../widgets/surfaces.dart';
@@ -66,6 +69,10 @@ class _SendPageState extends State<SendPage> {
   bool _busy = false;
   PreparedSend? _prepared;
   SentPayment? _sent;
+
+  // The privacy check of the payment under review, made once for each review, so that its suggestion stays put.
+  PrivacyReport? _privacy;
+  final Random _random = Random.secure();
 
   @override
   void dispose() {
@@ -157,7 +164,10 @@ class _SendPageState extends State<SendPage> {
     if (_addressError != null || _amountError != null || amount == null) return;
     await _run(() async {
       final prepared = await widget.controller.prepareSend(address: _address.text, amount: amount!);
-      setState(() => _prepared = prepared);
+      setState(() {
+        _prepared = prepared;
+        _privacy = _checkPrivacy(prepared);
+      });
     });
   }
 
@@ -184,8 +194,34 @@ class _SendPageState extends State<SendPage> {
     final prepared = _prepared;
     if (prepared != null) await widget.controller.cancelSend(prepared);
     _password.clear();
-    setState(() => _prepared = null);
+    setState(() {
+      _prepared = null;
+      _privacy = null;
+    });
   });
+
+  PrivacyReport _checkPrivacy(PreparedSend prepared) {
+    final status = widget.controller.status;
+    return checkPrivacy(
+      amount: prepared.amount,
+      fee: prepared.fee,
+      transfers: widget.controller.transfers,
+      swaps: widget.bridge.swaps,
+      balance: status.balance,
+      spendable: status.unlocked,
+      now: DateTime.now(),
+      random: _random,
+    );
+  }
+
+  /// Leaves the review, puts the suggested amount of the privacy check into the form, and reviews the payment again.
+  Future<void> _useSuggestion(XmrAmount amount) async {
+    await _cancel();
+    final text = amount.toExact();
+    _amount.text = text;
+    _onAmountChanged(text);
+    if (_canReview) await _review();
+  }
 
   void _restart() {
     _address.clear();
@@ -264,6 +300,8 @@ class _SendPageState extends State<SendPage> {
       (_, final SentPayment sent) => _Receipt(sent: sent, onDone: _restart),
       (final PreparedSend prepared, _) => _Review(
         prepared: prepared,
+        privacy: _privacy,
+        onUseSuggestion: _useSuggestion,
         password: _password,
         busy: _busy,
         error: _error,
@@ -392,6 +430,8 @@ class _SendPageState extends State<SendPage> {
 class _Review extends StatelessWidget {
   const _Review({
     required this.prepared,
+    required this.privacy,
+    required this.onUseSuggestion,
     required this.password,
     required this.busy,
     required this.error,
@@ -400,6 +440,8 @@ class _Review extends StatelessWidget {
   });
 
   final PreparedSend prepared;
+  final PrivacyReport? privacy;
+  final ValueChanged<XmrAmount> onUseSuggestion;
   final TextEditingController password;
   final bool busy;
   final String? error;
@@ -465,6 +507,10 @@ class _Review extends StatelessWidget {
           ReviewLine(label: Copy.fee, value: '${prepared.fee.toExact()} ${Copy.currency}'),
           Divider(height: 1, color: palette.line),
           ReviewLine(label: Copy.total, value: '${prepared.total.toExact()} ${Copy.currency}', strong: true),
+          if (privacy case final report?) ...[
+            const SizedBox(height: Metrics.gapSmall),
+            PrivacyCheckCard(report: report, now: DateTime.now(), onUseSuggestion: busy ? null : onUseSuggestion),
+          ],
           const SizedBox(height: Metrics.gap),
           SendWithPassword(
             password: password,

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,8 +8,10 @@ import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
 import '../../bridge/pay_controller.dart';
 import '../../config/app_config.dart';
+import '../../core/amount.dart';
 import '../../core/evm_address.dart';
 import '../../core/unlock.dart';
+import '../../privacy/privacy_check.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
 import '../../wallet/models.dart';
@@ -19,6 +23,7 @@ import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
+import '../widgets/privacy_check.dart';
 import '../widgets/review_line.dart';
 import '../widgets/send_password.dart';
 import '../widgets/surfaces.dart';
@@ -50,6 +55,12 @@ class _SendToChainState extends State<SendToChain> {
 
   // While a payment is on its way, the page shows that payment alone, until the user asks for the form of another one.
   bool _another = false;
+
+  // The privacy check of the review on screen, made once for each review, so that its suggestion stays put. The review
+  // lives in pay, so it can outlast a visit of this page.
+  PayReview? _checked;
+  PrivacyReport? _privacy;
+  final Random _random = Random.secure();
 
   PayController get _pay => widget.bridge.pay;
 
@@ -91,6 +102,40 @@ class _SendToChainState extends State<SendToChain> {
     await _pay.cancelReview();
     _password.clear();
   });
+
+  PrivacyReport _privacyOf(PayReview review) {
+    final known = _privacy;
+    if (known != null && identical(review, _checked)) return known;
+    final status = widget.wallet.status;
+    final range = _pay.range;
+    final report = checkPrivacy(
+      amount: review.prepared.amount,
+      fee: review.prepared.fee,
+      transfers: widget.wallet.transfers,
+      swaps: widget.bridge.swaps,
+      balance: status.balance,
+      spendable: status.unlocked,
+      now: DateTime.now(),
+      chain: ChainPayment(
+        asset: review.asset,
+        amount: review.created.amount,
+        recipient: review.created.payoutAddress,
+        minXmr: range?.minXmr,
+        maxXmr: range?.maxXmr,
+      ),
+      random: _random,
+    );
+    _checked = review;
+    _privacy = report;
+    return report;
+  }
+
+  /// Leaves the review and puts the suggested amount of the privacy check into the form. Pay quotes it again, and the
+  /// user reviews the new amount.
+  Future<void> _useSuggestion(XmrAmount amount) async {
+    await _cancel();
+    _xmr.text = amount.toExact();
+  }
 
   /// Runs a call of pay while the buttons show that it works, and shows a failure under the buttons.
   Future<void> _run(Future<void> Function() action) async {
@@ -135,6 +180,8 @@ class _SendToChainState extends State<SendToChain> {
           if (review != null)
             _Review(
               review: review,
+              privacy: _privacyOf(review),
+              onUseSuggestion: _useSuggestion,
               password: _password,
               busy: _busy,
               error: _error,
@@ -494,6 +541,8 @@ class _QuoteNote extends StatelessWidget {
 class _Review extends StatelessWidget {
   const _Review({
     required this.review,
+    required this.privacy,
+    required this.onUseSuggestion,
     required this.password,
     required this.busy,
     required this.error,
@@ -502,6 +551,8 @@ class _Review extends StatelessWidget {
   });
 
   final PayReview review;
+  final PrivacyReport privacy;
+  final ValueChanged<XmrAmount> onUseSuggestion;
   final TextEditingController password;
   final bool busy;
   final String? error;
@@ -580,6 +631,8 @@ class _Review extends StatelessWidget {
             value: review.rate == PayRate.fixed ? Copy.payRateFixedReview : Copy.payRateFloatingReview,
           ),
           ReviewLine(label: Copy.payRefundLabel, value: Copy.payRefund(review.refund.index)),
+          const SizedBox(height: Metrics.gapSmall),
+          PrivacyCheckCard(report: privacy, now: DateTime.now(), onUseSuggestion: busy ? null : onUseSuggestion),
           const SizedBox(height: Metrics.gap),
           SendWithPassword(
             password: password,

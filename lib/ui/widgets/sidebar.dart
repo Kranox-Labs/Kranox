@@ -12,7 +12,7 @@ import '../theme/typography.dart';
 import 'bits.dart';
 
 /// The pages of the open wallet.
-enum WalletPage { home, send, receive, activity, settings }
+enum WalletPage { home, send, receive, activity, privacy, settings }
 
 /// The sidebar of the open wallet, after the sidebar of System Settings in macOS: a panel that floats inside the
 /// window, with the window buttons at its top and the brand below them, then the wallet, the pages with their
@@ -41,6 +41,7 @@ class Sidebar extends StatelessWidget {
     (WalletPage.send, Icons.arrow_outward_rounded),
     (WalletPage.receive, Icons.call_received_rounded),
     (WalletPage.activity, Icons.history_rounded),
+    (WalletPage.privacy, Icons.visibility_off_rounded),
   ];
 
   /// The brand sits this far below the top of the panel, just below the window buttons. It shows no control, so it
@@ -101,6 +102,7 @@ class Sidebar extends StatelessWidget {
     WalletPage.send => Copy.navSend,
     WalletPage.receive => Copy.navReceive,
     WalletPage.activity => Copy.navActivity,
+    WalletPage.privacy => Copy.navPrivacy,
     WalletPage.settings => Copy.navSettings,
   };
 }

@@ -7,6 +7,7 @@ import '../widgets/sidebar.dart';
 import '../widgets/toast.dart';
 import 'activity_page.dart';
 import 'home_page.dart';
+import 'privacy_page.dart';
 import 'receive_page.dart';
 import 'send_page.dart';
 import 'settings_page.dart';
@@ -56,6 +57,7 @@ class _WalletShellState extends State<WalletShell> {
                   WalletPage.send => SendPage(controller: controller, bridge: widget.bridge),
                   WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
                   WalletPage.activity => ActivityPage(controller: controller),
+                  WalletPage.privacy => PrivacyPage(controller: controller, bridge: widget.bridge, onNavigate: _go),
                   WalletPage.settings => SettingsPage(controller: controller, bridge: widget.bridge, onLock: _lock),
                 },
               ),

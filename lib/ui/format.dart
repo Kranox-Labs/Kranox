@@ -55,6 +55,26 @@ String formatTime(DateTime time, DateTime now) {
   return local.year == now.year ? day : '$day ${local.year}';
 }
 
+/// Writes how long ago something happened, such as "3 hours ago".
+String formatAgo(Duration age) {
+  if (age.inMinutes < 1) return Copy.justNow;
+  if (age.inHours < 1) return Copy.minutesAgo(age.inMinutes);
+  if (age.inDays < 1) return Copy.hoursAgo(age.inHours);
+  return Copy.daysAgo(age.inDays);
+}
+
+/// Writes a moment to come with its hour: today, tomorrow, or its day.
+String formatMoment(DateTime time, DateTime now) {
+  final local = time.toLocal();
+  final current = now.toLocal();
+  // Calendar days, not spans of 24 hours, so that a change of the clock for summer time keeps "tomorrow".
+  bool sameDay(DateTime day) => local.year == day.year && local.month == day.month && local.day == day.day;
+  final hour = '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  if (sameDay(current)) return Copy.todayAt(hour);
+  if (sameDay(DateTime(current.year, current.month, current.day + 1))) return Copy.tomorrowAt(hour);
+  return Copy.dayAt('${local.day} ${Copy.months[local.month - 1]}', hour);
+}
+
 /// Shortens an address or a transaction id to its first and last characters.
 String shortText(String text) => text.length <= _shortAddressEnds * 2 + 1
     ? text
