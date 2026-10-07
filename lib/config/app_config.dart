@@ -64,6 +64,22 @@ abstract final class AppConfig {
   /// The decimals of a suggested amount of XMR, as people type amounts.
   static const int privacySuggestionDecimals = 4;
 
+  // The scan of an address on Robinhood Chain in the menu Privacy, stage 2 of 7 Oct 2026.
+
+  /// Two addresses look alike when these many hex digits at the start and at the end agree, as the fake addresses of
+  /// address poisoning do, which an attacker makes to match the start and the end that a wallet shows.
+  static const int lookAlikeHead = 4;
+  static const int lookAlikeTail = 4;
+
+  /// The activity of an address hints at a time zone when a window of these hours of the day holds this share of its
+  /// transfers, out of at least this many.
+  static const int activityWindowHours = 6;
+  static const double activityShare = 0.6;
+  static const int activityMinTransfers = 10;
+
+  /// The scan names at most this many tokens that the address holds.
+  static const int scanTokensShown = 3;
+
   /// wallet2 asks the node for new blocks this often while the wallet is open.
   static const Duration autoRefreshInterval = Duration(seconds: 20);
 

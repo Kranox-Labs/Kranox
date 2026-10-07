@@ -7,6 +7,7 @@ import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/evm_address.dart';
 import '../wallet/controller.dart';
+import 'chain_scan.dart';
 import 'client.dart';
 import 'live_quote.dart';
 import 'models.dart';
@@ -16,9 +17,12 @@ import 'store.dart';
 /// The state of the bridge for its pages: the receive form with its live quote, pay in [pay], and the swaps of both
 /// ways that the app follows. The exchanger works on the Monero mainnet only.
 final class BridgeController extends ChangeNotifier {
-  BridgeController({required this._client, required this._store, required this._wallet});
+  BridgeController({required this._client, required this._store, required this._wallet, this._scanner});
 
   final BridgeClient _client;
+
+  /// The scan of an address on Robinhood Chain for the menu Privacy, when the relay of the app offers it.
+  final ChainScanClient? _scanner;
   final BridgeStore _store;
   final WalletController _wallet;
 
@@ -47,6 +51,7 @@ final class BridgeController extends ChangeNotifier {
   );
   PayController? _pay;
 
+  ChainScanClient? get scanner => _scanner;
   BridgeAsset get asset => _asset;
   String get amount => _amount;
   BridgeQuote? get quote => _quote.value;

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../config/app_config.dart';
+import 'chain_scan.dart';
 import 'models.dart';
 
 /// The ways in which a call of the bridge can fail. The screens show a sentence for each one.
@@ -158,8 +159,8 @@ final class CreatedPay {
   }
 }
 
-/// The bridge through the relay of Kranox, over HTTP.
-final class RelayBridgeClient implements BridgeClient {
+/// The bridge through the relay of Kranox, over HTTP, and the scan of an address on Robinhood Chain through it.
+final class RelayBridgeClient implements BridgeClient, ChainScanClient {
   RelayBridgeClient({String baseUrl = AppConfig.bridgeRelay}) : _base = Uri.parse(baseUrl);
 
   final Uri _base;
@@ -218,6 +219,10 @@ final class RelayBridgeClient implements BridgeClient {
   @override
   Future<SwapState> readSwap(String id) async =>
       SwapState.fromJson(await _call('GET', '/v1/swaps/${Uri.encodeComponent(id)}'));
+
+  @override
+  Future<ChainScan> scanAddress(String address) async =>
+      ChainScan.fromJson(await _call('GET', '/v1/scan/robinhood', query: {'address': address}));
 
   @override
   Future<bool> isOnline() async {

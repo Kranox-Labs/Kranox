@@ -14,10 +14,13 @@ Future<void> main() async {
   final worker = await WalletWorker.start(libraryPath: moneroLibraryPath());
   final controller = WalletController(worker: worker, storage: storage);
   await controller.start();
+  // One client of the relay serves the bridge and the scan of an address on Robinhood Chain.
+  final relay = RelayBridgeClient();
   final bridge = BridgeController(
-    client: RelayBridgeClient(),
+    client: relay,
     store: BridgeStore(storage.bridgePath),
     wallet: controller,
+    scanner: relay,
   );
   await bridge.start();
   runApp(KranoxApp(controller: controller, bridge: bridge));
