@@ -203,6 +203,12 @@ void main() {
     await waitFor(find.text(Copy.activityLead));
     await shoot('07-activity');
 
+    // A new wallet on a public node: the node is the one thing to improve.
+    await tapText(Copy.navPrivacy);
+    await waitFor(find.text(Copy.privacyPageLead));
+    expect(find.text(Copy.privacyToImprove(1)), findsOneWidget);
+    await shoot('07-privacy');
+
     // The exchanger works on mainnet only, so receive from Robinhood Chain on stagenet says so and offers no form.
     await tapText(Copy.navReceive);
     await tapText(Copy.receiveChainTab.toUpperCase());

@@ -40,6 +40,30 @@ abstract final class AppConfig {
   /// The app compares the time of the last use with the clock this often.
   static const Duration idleCheckInterval = Duration(seconds: 15);
 
+  // The privacy check of a payment. The owner approved its three rules and these windows on 7 Oct 2026 ("gas").
+
+  /// The rule of the amount compares a payment with what came in over this time.
+  static const Duration privacyAmountWindow = Duration(days: 3);
+
+  /// The rule of the timing calls coins new for this long after they come in.
+  static const Duration privacyFreshWindow = Duration(hours: 24);
+
+  /// Two amounts of XMR match within this share of the larger one.
+  static const double privacyXmrTolerance = 0.02;
+
+  /// Two amounts on Robinhood Chain match within this share, which leaves room for the fees of the exchanger on the
+  /// way in and on the way out.
+  static const double privacyChainTolerance = 0.05;
+
+  /// A suggested amount clears a match by a random extra share between these two, so that suggestions follow no
+  /// fixed step, and each further attempt widens it.
+  static const double privacySuggestionMarginMin = 0.01;
+  static const double privacySuggestionMarginMax = 0.03;
+  static const int privacySuggestionAttempts = 4;
+
+  /// The decimals of a suggested amount of XMR, as people type amounts.
+  static const int privacySuggestionDecimals = 4;
+
   /// wallet2 asks the node for new blocks this often while the wallet is open.
   static const Duration autoRefreshInterval = Duration(seconds: 20);
 

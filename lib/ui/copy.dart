@@ -67,6 +67,7 @@ abstract final class Copy {
   static const String navSend = 'Send';
   static const String navReceive = 'Receive';
   static const String navActivity = 'Activity';
+  static const String navPrivacy = 'Privacy';
   static const String navSettings = 'Settings';
   static const String navLock = 'Lock';
   static const String synced = 'Synced';
@@ -128,6 +129,90 @@ abstract final class Copy {
   static const String total = 'Total';
   static const String sendNow = 'Send now';
   static const String sendPassword = 'Your password, to send';
+
+  // The privacy check on the review of a payment.
+  static const String privacyTitle = 'Privacy check';
+  static const String privacyClear = 'All clear';
+  static String privacyWarnings(int count) => count == 1 ? '1 warning' : '$count warnings';
+  static const String privacyAmountLabel = 'Amount';
+  static const String privacyTimingLabel = 'Timing';
+  static const String privacyAddressLabel = 'Address';
+  static const String privacyAmountClear = 'It matches nothing that came in lately.';
+  static String privacyAmountMatchesXmr(String amount, String ago) =>
+      'It is close to the $amount XMR that came in $ago. Anyone who sees both payments can match them.';
+  static String privacyAmountMatchesChain(String paid, String sent, String asset, String ago) =>
+      'They get about $paid $asset, close to the $sent $asset that you sent in from Robinhood Chain $ago. Anyone who '
+      'watches the chain can match the two.';
+  static String privacyUse(String amount) => 'Use $amount XMR';
+  static String privacyTimingClear(int hours) => 'You hold enough XMR that came in more than $hours hours ago.';
+  static String privacyTimingFresh(String ago, String moment) =>
+      'This payment may use XMR that came in $ago. A short gap makes the two easy to match. Waiting until $moment '
+      'helps.';
+  static String privacyTimingFromChain(String ago, String moment) =>
+      'This payment may use XMR that came from Robinhood Chain $ago. A short gap makes the two easy to match. Waiting '
+      'until $moment helps.';
+  static const String privacyAddressClear = 'It is not an address of yours from a receive.';
+  static String privacyAddressOwn(String day) =>
+      'You gave it as the refund address of a receive on $day. Paying it from XMR links both sides.';
+  static const String privacyNote = 'The check runs on this Mac. You can still send.';
+
+  // The menu Privacy: the whole wallet, from its history on this Mac.
+  static const String privacyPageTitle = 'Privacy';
+  static const String privacyPageLead = 'How private your wallet is, worked out on this Mac from your own history.';
+  static String privacyToImprove(int count) => count == 1 ? '1 thing to improve' : '$count things to improve';
+  static const String privacyAllClearLead = 'Your wallet gives nothing away that this page can find.';
+  static const String privacyToImproveLead = 'Each card below says what shows and what you can do about it.';
+  static const String privacyPageNote = 'Everything on this page comes from this Mac. Nothing leaves it.';
+  static const String privacyNodeTitle = 'Node';
+  static String privacyNodeOwn(String node) =>
+      'Your wallet uses the node at $node in your own network, so no outside node sees what it asks.';
+  static String privacyNodePublic(String node) =>
+      'Your wallet syncs and sends through $node. That node sees your IP address and when you send. A node of your '
+      'own keeps this to you.';
+  static const String privacyChangeNode = 'Change node';
+  static const String privacySubaddressTitle = 'Subaddresses';
+  static const String privacySubaddressClear = 'Each subaddress took one payment at most.';
+  static String privacySubaddressOne(int index, int payments) =>
+      'Subaddress #$index took $payments payments. Payers who compare notes can tell that they paid the same person. '
+      'Give each payer a new subaddress.';
+  static String privacySubaddressMany(int count, int index, int payments) =>
+      '$count subaddresses took more than one payment, #$index the most with $payments. Payers who compare notes can '
+      'tell that they paid the same person. Give each payer a new subaddress.';
+  static const String privacyNewSubaddress = 'New subaddress';
+  static const String privacySwapsTitle = 'Swaps with Robinhood Chain';
+  static const String privacySwapsClear = 'None of your swaps sit close in time or amount.';
+  static String privacySwapsPair(String sent, String paid, String receivedOn, String paidOn, String how) =>
+      'Your receive of $sent on $receivedOn and your payment of $paid on $paidOn sit close in $how. Anyone who '
+      'watches the chain can match them.';
+  static String privacySwapsMore(int count) => count == 1 ? '1 more pair does too.' : '$count more pairs do too.';
+  static const String privacySwapsTip = 'Next time, leave a day between them and change the amount.';
+  static const String privacyCloseInTime = 'time';
+  static const String privacyCloseInAmount = 'amount';
+  static const String privacyCloseInBoth = 'time and amount';
+  static const String privacyRefundTitle = 'Refund addresses';
+  static const String privacyRefundClear = 'You never paid a refund address of yours from XMR.';
+  static String privacyRefundLinked(String address, String paidOn, String receivedOn) =>
+      'You paid $address from XMR on $paidOn, and you gave it as the refund address of a receive on $receivedOn. That '
+      'links both sides.';
+  static String privacyRefundMore(int count) =>
+      count == 1 ? '1 more address does too.' : '$count more addresses do too.';
+  static const String privacyNewCoinsTitle = 'New XMR';
+  static String privacyNewCoinsClear(int hours) => 'All your XMR came in more than $hours hours ago.';
+  static String privacyNewCoins(String amount, int hours, String moment) =>
+      '$amount XMR came in within the last $hours hours. Spending it soon after makes the two easy to match. All of '
+      'it is older from $moment.';
+  static const String privacyLockTitle = 'Lock and password';
+  static String privacyLock(int minutes) =>
+      'The wallet locks after $minutes minutes without use, and each send asks for your password.';
+
+  // How long ago something happened, and a moment to come.
+  static const String justNow = 'just now';
+  static String minutesAgo(int count) => count == 1 ? 'a minute ago' : '$count minutes ago';
+  static String hoursAgo(int count) => count == 1 ? 'an hour ago' : '$count hours ago';
+  static String daysAgo(int count) => count == 1 ? 'a day ago' : '$count days ago';
+  static String todayAt(String time) => 'today at $time';
+  static String tomorrowAt(String time) => 'tomorrow at $time';
+  static String dayAt(String day, String time) => '$day at $time';
   static const String sending = 'Sending…';
   static const String cancel = 'Cancel';
   static const String sentTitle = 'Payment sent';
