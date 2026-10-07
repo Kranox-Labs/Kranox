@@ -1,7 +1,8 @@
 #!/bin/sh
 # Packs the release build of the macOS app into a disk image for a release on GitHub: the app, a link to
-# Applications, and the notices of the third-party software inside the app. It checks the build first, writes the
-# SHA-256 of the image to hashes.txt, and signs that list when a signing key is set.
+# Applications, and the notices of the third-party software inside the app. It checks the build first and writes the
+# SHA-256 of the image. With a signing key it signs that list as hashes.txt; without one it writes the list as
+# hashes.unsigned.txt only, so that no release can carry an unsigned list under the name that users check.
 #
 # Usage, in apps/wallet:
 #   fvm flutter build macos --release
@@ -38,14 +39,17 @@ license() {
 [ -n "${MONERO_C_VERSION}" ] || fail "tool/fetch_monero_c.sh names no version of monero_c."
 [ -d "${APP}" ] || fail "${APP} is missing. Run fvm flutter build macos --release first."
 
-# The build must be of this version, signed as a whole, made for both kinds of Mac, and without the entitlement
-# that lets a debugger read the memory of the app.
+# The build must be of this version, signed as a whole, made for both kinds of Mac, with the hardened runtime, which
+# keeps other software from injecting a library through DYLD_INSERT_LIBRARIES, and without the entitlement that lets
+# a debugger read the memory of the app.
 BUILT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${APP}/Contents/Info.plist")"
 [ "${BUILT}" = "${VERSION}" ] || fail "The build is version ${BUILT}, not ${VERSION}. Build it again."
 codesign --verify --deep --strict "${APP}" || fail "The signature of the app does not verify."
 if codesign -d --entitlements - --xml "${APP}" 2>/dev/null | grep -q 'get-task-allow'; then
   fail "The app carries the entitlement get-task-allow. Build the release configuration."
 fi
+codesign -d --verbose=2 "${APP}" 2>&1 | grep -q '^CodeDirectory .*flags=0x[0-9a-f]*(.*runtime' ||
+  fail "The app runs without the hardened runtime. Build the release configuration."
 for binary in "${APP}/Contents/MacOS/Kranox" "${LIBRARY}"; do
   for arch in arm64 x86_64; do
     lipo "${binary}" -verify_arch "${arch}" || fail "${binary} has no ${arch} part."
@@ -90,11 +94,14 @@ hdiutil create -quiet -volname "Kranox ${VERSION}" -srcfolder "${STAGE}" -fs HFS
 rm -rf "${STAGE}"
 
 cd "${OUT}"
-shasum -a 256 "${IMAGE}" > hashes.txt
+rm -f hashes.txt hashes.unsigned.txt kranox-release-key.asc
+shasum -a 256 "${IMAGE}" > hashes.unsigned.txt
 if [ -n "${KRANOX_SIGNING_KEY:-}" ]; then
-  gpg --yes --local-user "${KRANOX_SIGNING_KEY}" --clearsign --output hashes.txt.asc hashes.txt
-  mv hashes.txt.asc hashes.txt
+  gpg --yes --local-user "${KRANOX_SIGNING_KEY}" --clearsign --output hashes.txt hashes.unsigned.txt
+  rm hashes.unsigned.txt
   gpg --verify hashes.txt
   cp "${RELEASE}/kranox-release-key.asc" .
+else
+  echo "NOT SIGNED: hashes.unsigned.txt is no file to publish. Run again with KRANOX_SIGNING_KEY to sign the list." >&2
 fi
 echo "Wrote $(ls | tr '\n' ' ')to ${OUT}."

@@ -20,6 +20,7 @@ import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
 import '../widgets/review_line.dart';
+import '../widgets/send_password.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/swap_box.dart';
 import '../widgets/swap_steps.dart';
@@ -43,6 +44,7 @@ class SendToChain extends StatefulWidget {
 class _SendToChainState extends State<SendToChain> {
   late final _recipient = TextEditingController(text: _pay.recipientText);
   late final _xmr = TextEditingController(text: _pay.xmrText);
+  final _password = TextEditingController();
   String? _error;
   bool _busy = false;
 
@@ -64,6 +66,7 @@ class _SendToChainState extends State<SendToChain> {
   void dispose() {
     _recipient.dispose();
     _xmr.dispose();
+    _password.dispose();
     super.dispose();
   }
 
@@ -77,13 +80,17 @@ class _SendToChainState extends State<SendToChain> {
   Future<void> _startReview() => _run(_pay.startReview);
 
   Future<void> _confirm() => _run(() async {
-    await _pay.confirm();
+    await _pay.confirm(password: _password.text);
+    _password.clear();
     _recipient.clear();
     _xmr.clear();
     _another = false;
   });
 
-  Future<void> _cancel() => _run(_pay.cancelReview);
+  Future<void> _cancel() => _run(() async {
+    await _pay.cancelReview();
+    _password.clear();
+  });
 
   /// Runs a call of pay while the buttons show that it works, and shows a failure under the buttons.
   Future<void> _run(Future<void> Function() action) async {
@@ -97,6 +104,10 @@ class _SendToChainState extends State<SendToChain> {
       setState(() => _error = bridgeFailureText(error));
     } on WalletException catch (error) {
       setState(() => _error = failureText(error));
+    } on Object {
+      // The page says so, and the error still reaches the handler of Flutter.
+      setState(() => _error = Copy.unexpectedFailure);
+      rethrow;
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -122,7 +133,14 @@ class _SendToChainState extends State<SendToChain> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (review != null)
-            _Review(review: review, busy: _busy, error: _error, onConfirm: _confirm, onCancel: _cancel)
+            _Review(
+              review: review,
+              password: _password,
+              busy: _busy,
+              error: _error,
+              onConfirm: _confirm,
+              onCancel: _cancel,
+            )
           else if (shown != null) ...[
             _PaymentCard(
               swap: shown,
@@ -193,7 +211,10 @@ class _SendToChainState extends State<SendToChain> {
                 controller: _xmr,
                 onSubmitted: (_) => pay.canReview ? _startReview() : null,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [AmountInputFormatter(decimals: AppConfig.bridgeAmountDecimals)],
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(AppConfig.amountFieldMaxLength),
+                  AmountInputFormatter(decimals: AppConfig.bridgeAmountDecimals),
+                ],
                 style: KranoxType.swapFigure.copyWith(color: palette.ink),
                 cursorColor: palette.accent,
                 decoration: InputDecoration(
@@ -473,6 +494,7 @@ class _QuoteNote extends StatelessWidget {
 class _Review extends StatelessWidget {
   const _Review({
     required this.review,
+    required this.password,
     required this.busy,
     required this.error,
     required this.onConfirm,
@@ -480,6 +502,7 @@ class _Review extends StatelessWidget {
   });
 
   final PayReview review;
+  final TextEditingController password;
   final bool busy;
   final String? error;
   final VoidCallback onConfirm;
@@ -557,9 +580,15 @@ class _Review extends StatelessWidget {
             value: review.rate == PayRate.fixed ? Copy.payRateFixedReview : Copy.payRateFloatingReview,
           ),
           ReviewLine(label: Copy.payRefundLabel, value: Copy.payRefund(review.refund.index)),
-          ErrorLine(error),
           const SizedBox(height: Metrics.gap),
-          PillButton(label: Copy.payNow, busy: busy, busyLabel: Copy.paying, expand: true, onPressed: onConfirm),
+          SendWithPassword(
+            password: password,
+            label: Copy.payNow,
+            busyLabel: Copy.paying,
+            busy: busy,
+            onConfirm: onConfirm,
+          ),
+          ErrorLine(error),
           const SizedBox(height: Metrics.gapSmall),
           PillButton(label: Copy.cancel, tone: PillTone.quiet, expand: true, onPressed: busy ? null : onCancel),
           const SizedBox(height: Metrics.gapSmall),

@@ -25,6 +25,7 @@ import 'package:kranox_wallet/ui/format.dart';
 import 'package:kranox_wallet/ui/theme/metrics.dart';
 import 'package:kranox_wallet/ui/theme/palette.dart';
 import 'package:kranox_wallet/ui/theme/typography.dart';
+import 'package:kranox_wallet/ui/widgets/field.dart';
 import 'package:kranox_wallet/ui/widgets/sidebar.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
 import 'package:kranox_wallet/wallet/models.dart';
@@ -148,8 +149,9 @@ final class _SampleBackend implements WalletBackend {
   Future<T> call<T>(WalletRequest request) async {
     final Object? answer = switch (request) {
       OpenWallet() || ConnectNode() || StoreWallet() || CloseWallet() => null,
-      ReadReceiveAddress() => const ReceiveAddress(address: _sampleAddress, index: 4),
+      ReadReceiveAddress() || ReadSubaddress() => const ReceiveAddress(address: _sampleAddress, index: 4),
       PrepareSend(:final address, :final amountUnits) => _prepared = PreparedSend(
+        id: 1,
         address: address,
         amount: XmrAmount(amountUnits),
         fee: _xmr('0.0000312'),
@@ -181,7 +183,7 @@ const double _xmrPerEth = 4.978;
 const double _minEth = 0.0041715;
 
 /// A sample deposit address on Robinhood Chain for the picture of an open swap. It belongs to no known wallet.
-const String _sampleDeposit = '0x7a3fC0e1b9D24A6c58E0f3B1d9a7C4e2F6b8D015';
+const String _sampleDeposit = '0x7A3Fc0E1b9D24a6C58E0F3B1d9A7C4e2F6B8D015';
 
 /// Sample transaction hashes for the pictures of the steps of a swap. They belong to no known transaction.
 const String _sampleDepositHash = '0x946f9c2d7be41a0c58f3e1b9d24a6c58e0f3b1d9a7c4e2f6b8d015a3c78bdce6';
@@ -539,8 +541,38 @@ void main() {
     // Pay to Robinhood Chain: the USDG that 0.15 XMR buys at a fixed rate, the review, and the payment on its way and
     // at its end.
     await openPage(Copy.navSend);
+    // The steps of the feature video of pay, in the order of a user: the send page as it opens, the empty form of pay,
+    // the amount with its quote at each rate, and the form scrolled to the recipient, before and after a paste.
+    final quotedUsdg = find.text(formatDecimal(double.parse(_payXmr) / _payXmrPerCoin[BridgeAsset.usdg]!, decimals: 8));
+    await waitFor(find.text(Copy.sendMoneroTab.toUpperCase()));
+    await shoot('send');
     await tester.tap(find.text(Copy.sendChainTab.toUpperCase()));
     await waitFor(find.text(Copy.payTheyReceive.toUpperCase()));
+    await waitFor(find.textContaining('Minimum payment'));
+    await shoot('send-chain-empty');
+    await tester.enterText(find.byType(TextField).at(0), _payXmr);
+    await waitFor(quotedUsdg);
+    await shoot('send-chain-amount');
+    await tester.tap(find.text(Copy.payRateFloating));
+    await waitFor(find.text(Copy.payTheyReceiveAbout.toUpperCase()));
+    await shoot('send-chain-amount-floating');
+    await tester.tap(find.text(Copy.payRateFixed));
+    await waitFor(quotedUsdg);
+    await tester.ensureVisible(find.text(Copy.payEnterRecipient));
+    await tester.pump(_frame);
+    await shoot('send-chain-scrolled');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => call.method == 'Clipboard.getData' ? <String, Object?>{'text': _payRecipient} : null,
+    );
+    await tester.tap(find.text(Copy.paste));
+    await waitFor(find.text(Copy.payRecipientValid));
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null);
+    await shoot('send-chain-ready');
+    // The pictures that follow show the form from its top.
+    final payPage = find.ancestor(of: find.text(Copy.payRateTitle.toUpperCase()), matching: find.byType(Scrollable));
+    tester.state<ScrollableState>(payPage.first).position.jumpTo(0);
+    await tester.pump(_frame);
     await tester.enterText(find.byType(TextField).at(1), _payRecipient);
     await tester.enterText(find.byType(TextField).at(0), '0.01');
     await waitFor(find.textContaining('Below the minimum payment'));
@@ -553,7 +585,7 @@ void main() {
     await shoot('send-chain-floating');
     await tester.tap(find.text(Copy.payRateFixed));
     await tester.enterText(find.byType(TextField).at(0), _payXmr);
-    await waitFor(find.text(formatDecimal(double.parse(_payXmr) / _payXmrPerCoin[BridgeAsset.usdg]!, decimals: 8)));
+    await waitFor(quotedUsdg);
     await shoot('send-chain-quote');
     // The menu of the coin, open below the coin; choosing the same coin closes it.
     await tester.tap(find.text(BridgeAsset.usdg.label).first);
@@ -567,6 +599,12 @@ void main() {
     );
     await tapInView(find.text(Copy.review));
     await waitFor(find.text(Copy.payNow));
+    // The button waits for the password of the wallet; the sample engine takes any.
+    await tester.enterText(
+      find.descendant(of: find.widgetWithText(LabeledField, Copy.sendPassword), matching: find.byType(TextField)),
+      'sample',
+    );
+    await tester.pump(_frame);
     await shoot('send-chain-review');
     await tapInView(find.text(Copy.payNow));
     await waitFor(find.text(Copy.payStepWaiting));

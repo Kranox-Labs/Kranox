@@ -61,7 +61,14 @@ final class ReadReceiveAddress extends WalletRequest {
   final bool createNew;
 }
 
-/// Builds a payment without sending it, so that the user sees its fee.
+/// Gives the subaddress with [index], which the wallet made before.
+final class ReadSubaddress extends WalletRequest {
+  const ReadSubaddress({required this.index});
+
+  final int index;
+}
+
+/// Builds a payment without sending it, so that the user sees its fee. The answer names the payment with an id.
 final class PrepareSend extends WalletRequest {
   const PrepareSend({required this.address, required this.amountUnits});
 
@@ -69,14 +76,32 @@ final class PrepareSend extends WalletRequest {
   final int amountUnits;
 }
 
-/// Sends the payment that [PrepareSend] built.
+/// Sends the payment that [PrepareSend] built with [id]. The engine sends it only with the [password] of the wallet,
+/// when it still holds that payment, to [address] and of [amountUnits] as the review showed, and, with [deadline],
+/// only before that time.
 final class ConfirmSend extends WalletRequest {
-  const ConfirmSend();
+  const ConfirmSend({
+    required this.id,
+    required this.address,
+    required this.amountUnits,
+    required this.password,
+    this.deadline,
+  });
+
+  final int id;
+  final String address;
+  final int amountUnits;
+  final String password;
+
+  /// The time, in milliseconds since the epoch in UTC, after which the payment must not leave.
+  final int? deadline;
 }
 
-/// Drops the payment that [PrepareSend] built.
+/// Drops the payment that [PrepareSend] built with [id]. Another payment that the wallet built later stays.
 final class CancelSend extends WalletRequest {
-  const CancelSend();
+  const CancelSend({required this.id});
+
+  final int id;
 }
 
 /// Gives the words of the seed after it checks the password against the key file.

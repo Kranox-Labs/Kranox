@@ -129,7 +129,7 @@ final class PayQuote {
       xmrAmount: _string(data, 'xmrAmount'),
       amount: _numberOrNull(data, 'amount'),
       rateId: _stringOrNull(data, 'rateId'),
-      validUntil: valid == null ? null : DateTime.tryParse(valid),
+      validUntil: _zonedTimeOrNull(valid),
       warning: _stringOrNull(data, 'warning'),
       limit: limit == null ? null : PayLimit.values.byName(limit),
       minXmr: _numberOrNull(data, 'minXmr'),
@@ -275,6 +275,9 @@ final class BridgeSwap {
   }
 
   BridgeSwap close() => _copy(closed: true);
+
+  /// The payment once its XMR left the wallet in the Monero transaction [hash].
+  BridgeSwap withDeposit(String hash) => _copy(depositHash: hash);
 
   /// Whether the app keeps asking for the state of the swap. A failed swap can still turn into a refund, so the app
   /// follows it until the user closes its card.
@@ -426,10 +429,19 @@ final class SwapState {
       refundHash: _stringOrNull(data, 'refundHash'),
       refundAmount: _numberOrNull(data, 'refundAmount'),
       updatedAt: updated == null ? null : DateTime.tryParse(updated),
-      validUntil: valid == null ? null : DateTime.tryParse(valid),
+      validUntil: _zonedTimeOrNull(valid),
     );
   }
 }
+
+/// A time of the exchanger that names its zone, Z or an offset such as +02:00. Dart reads a time without a zone as
+/// local time, which would move the deadline of a fixed rate by the offset of the Mac, so such a time reads as none.
+DateTime? _zonedTimeOrNull(String? text) {
+  if (text == null || !_zonedTime.hasMatch(text)) return null;
+  return DateTime.tryParse(text);
+}
+
+final RegExp _zonedTime = RegExp(r'(?:Z|[+-]\d{2}:?\d{2})$');
 
 String _string(Map<String, Object?> data, String field) {
   final value = data[field];

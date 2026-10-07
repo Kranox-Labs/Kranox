@@ -33,6 +33,10 @@ final class WalletController extends ChangeNotifier {
   Timer? _poll;
   Future<void>? _pollInFlight;
 
+  // A payment on its way: a lock, a change of network, and the end of the app wait for it, so that the wallet never
+  // closes between a payment that left and the reads after it.
+  Future<void>? _sendInFlight;
+
   WalletPhase get phase => _phase;
   WalletStatus get status => _status;
   List<WalletTransfer> get transfers => _transfers;
@@ -98,7 +102,7 @@ final class WalletController extends ChangeNotifier {
   /// wallet open: the home screen shows the connection, and the user can choose another node.
   Future<void> enterWallet() async {
     // The history comes first: once the wallet scans the chain, a read of the history stops the scan.
-    _receiveAddress = await _worker.call<ReceiveAddress>(const ReadReceiveAddress(createNew: false));
+    _receiveAddress = await _readReceiveAddress();
     _transfers = await _worker.call<List<WalletTransfer>>(const ReadHistory());
     await _connect();
     await _readState(withHistory: false);
@@ -111,11 +115,13 @@ final class WalletController extends ChangeNotifier {
     _setPhase(WalletPhase.locked);
   }
 
-  /// Stops the reads of the state and closes the wallet in the engine, if one is open there.
+  /// Stops the reads of the state and closes the wallet in the engine, if one is open there. A payment on its way
+  /// ends first.
   Future<void> _closeWallet() async {
     _poll?.cancel();
     _poll = null;
     await _pollInFlight;
+    await _sendInFlight;
     await _worker.call<void>(const CloseWallet());
     _status = WalletStatus.unknown;
     _transfers = const [];
@@ -130,21 +136,83 @@ final class WalletController extends ChangeNotifier {
     _worker.stop();
   }
 
+  /// The subaddress that the receive page shows: the one that the settings keep for this network. Without one, or
+  /// when the wallet does not have it, as after a restore, the wallet makes a new subaddress, so that the page never
+  /// shows one that the bridge handed to the exchanger.
+  Future<ReceiveAddress> _readReceiveAddress() async {
+    final saved = _settings.receiveIndexOf(network);
+    if (saved != null) {
+      try {
+        return await _worker.call<ReceiveAddress>(ReadSubaddress(index: saved));
+      } on WalletException catch (error) {
+        if (error.failure != WalletFailure.native) rethrow;
+      }
+    }
+    final address = await _worker.call<ReceiveAddress>(const ReadReceiveAddress(createNew: true));
+    await _keepReceiveIndex(address.index);
+    return address;
+  }
+
+  Future<void> _keepReceiveIndex(int index) async {
+    _settings = _settings.withReceiveIndex(network, index);
+    await _storage.writeSettings(_settings);
+  }
+
+  /// Makes a new subaddress for the receive page.
   Future<void> newReceiveAddress() async {
-    _receiveAddress = await _worker.call<ReceiveAddress>(const ReadReceiveAddress(createNew: true));
+    final address = await _worker.call<ReceiveAddress>(const ReadReceiveAddress(createNew: true));
+    await _keepReceiveIndex(address.index);
+    _receiveAddress = address;
     notifyListeners();
+  }
+
+  /// Makes a subaddress for the exchanger: the payout of a swap or the refund of a payment. The receive page keeps its
+  /// own subaddress, so that the user never hands out an address that the exchanger knows. The wallet writes its file
+  /// at once, so that no crash can give the same index again.
+  Future<ReceiveAddress> newBridgeAddress() async {
+    final address = await _worker.call<ReceiveAddress>(const ReadReceiveAddress(createNew: true));
+    await _worker.call<void>(const StoreWallet());
+    return address;
   }
 
   Future<PreparedSend> prepareSend({required String address, required XmrAmount amount}) =>
       _worker.call<PreparedSend>(PrepareSend(address: address.trim(), amountUnits: amount.units));
 
-  Future<SentPayment> confirmSend() async {
-    final payment = await _worker.call<SentPayment>(const ConfirmSend());
-    await _readState(withHistory: true);
-    return payment;
+  /// Sends [prepared], the payment of the review on screen, and no other, with the [password] of the wallet. With
+  /// [deadline], the payment leaves only before that time. Throws a [WalletException] when nothing left the wallet.
+  Future<SentPayment> confirmSend(PreparedSend prepared, {required String password, DateTime? deadline}) async {
+    final done = Completer<void>();
+    _sendInFlight = done.future;
+    try {
+      final payment = await _worker.call<SentPayment>(
+        ConfirmSend(
+          id: prepared.id,
+          address: prepared.address,
+          amountUnits: prepared.amount.units,
+          password: password,
+          deadline: deadline?.millisecondsSinceEpoch,
+        ),
+      );
+      await _refreshAfterSend();
+      return payment;
+    } finally {
+      _sendInFlight = null;
+      done.complete();
+    }
   }
 
-  Future<void> cancelSend() => _worker.call<void>(const CancelSend());
+  /// Reads the state after a payment left. The payment is out either way, so a read that fails, such as one that a
+  /// node interrupts, leaves the screens as they were until the next read of the poll.
+  Future<void> _refreshAfterSend() async {
+    try {
+      await _readState(withHistory: true);
+    } on WalletException {
+      // The payment stays sent: the next read shows it in the history.
+    }
+  }
+
+  /// Drops [prepared] when it is still the payment that the wallet holds.
+  Future<void> cancelSend(PreparedSend prepared) => _worker.call<void>(CancelSend(id: prepared.id));
 
   Future<List<String>> readSeed(String password) => _worker.call<List<String>>(ReadSeed(password: password));
 

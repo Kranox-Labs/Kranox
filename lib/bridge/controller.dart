@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
 import '../config/network.dart';
+import '../core/evm_address.dart';
 import '../wallet/controller.dart';
 import 'client.dart';
 import 'live_quote.dart';
@@ -36,7 +37,15 @@ final class BridgeController extends ChangeNotifier {
   Future<void>? _pollInFlight;
 
   /// Pay, XMR out to an address on Robinhood Chain, for the send page. A payment that leaves joins the swaps here.
-  late final PayController pay = PayController(client: _client, wallet: _wallet, record: _addSwap);
+  /// The controller exists from the first use, so that a bridge that never paid listens to nothing.
+  PayController get pay => _pay ??= PayController(
+    client: _client,
+    wallet: _wallet,
+    record: _addSwap,
+    update: _replaceSwap,
+    forget: _removeSwap,
+  );
+  PayController? _pay;
 
   BridgeAsset get asset => _asset;
   String get amount => _amount;
@@ -163,9 +172,7 @@ final class BridgeController extends ChangeNotifier {
     if (!canSwap) throw StateError('The bridge form holds no quoted amount.');
     final asset = _asset;
     final amount = _amount;
-    await _wallet.newReceiveAddress();
-    final address = _wallet.receiveAddress;
-    if (address == null) throw StateError('The wallet gave no subaddress.');
+    final address = await _wallet.newBridgeAddress();
     final CreatedSwap created;
     try {
       created = await _client.createSwap(
@@ -177,6 +184,7 @@ final class BridgeController extends ChangeNotifier {
     } on FormatException catch (failure) {
       throw BridgeException(BridgeFailure.failed, failure.message);
     }
+    _checkCreated(created, address: address.address, amount: amount);
     final swap = BridgeSwap(
       id: created.id,
       asset: asset,
@@ -195,11 +203,52 @@ final class BridgeController extends ChangeNotifier {
     return swap;
   }
 
+  /// The app checks what the exchanger made before it shows the deposit address as a code and the amount as "Send
+  /// exactly": the coin goes in at an address of Robinhood Chain, of the amount of the form, for the subaddress that
+  /// the app sent.
+  static void _checkCreated(CreatedSwap created, {required String address, required String amount}) {
+    if (created.payoutAddress != address) {
+      throw const BridgeException(BridgeFailure.failed, 'The exchanger made the swap for another address.');
+    }
+    if ((created.amount - double.parse(amount)).abs() > AppConfig.payAmountTolerance) {
+      throw const BridgeException(BridgeFailure.failed, 'The exchanger made the swap for another amount.');
+    }
+    try {
+      checkEvmAddress(created.depositAddress);
+    } on EvmAddressException {
+      throw const BridgeException(
+        BridgeFailure.failed,
+        'The exchanger gave a deposit address outside Robinhood Chain.',
+      );
+    }
+  }
+
   /// Keeps a new swap, the newest first, and follows it.
   Future<void> _addSwap(BridgeSwap swap) async {
     _swaps = [swap, ..._swaps];
     await _store.write(_swaps);
     _followSwaps();
+    notifyListeners();
+  }
+
+  /// Keeps the newer state of a swap that the list holds.
+  Future<void> _replaceSwap(BridgeSwap swap) async {
+    _swaps = [for (final kept in _swaps) kept.id == swap.id ? swap : kept];
+    await _store.write(_swaps);
+    notifyListeners();
+  }
+
+  /// Drops a swap whose payment never left the wallet.
+  Future<void> _removeSwap(String id) async {
+    _swaps = [
+      for (final kept in _swaps)
+        if (kept.id != id) kept,
+    ];
+    await _store.write(_swaps);
+    if (activeSwap == null) {
+      _poll?.cancel();
+      _poll = null;
+    }
     notifyListeners();
   }
 
@@ -243,7 +292,7 @@ final class BridgeController extends ChangeNotifier {
   @override
   void dispose() {
     _quote.dispose();
-    pay.dispose();
+    _pay?.dispose();
     _poll?.cancel();
     super.dispose();
   }

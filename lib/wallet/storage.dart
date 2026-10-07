@@ -36,7 +36,9 @@ final class AppStorage {
 
   Future<void> prepareWalletFolder(MoneroNetwork network) => Directory(walletFolder(network)).create(recursive: true);
 
-  /// Reads the choices of the user, or the defaults when the user has made none.
+  /// Reads the choices of the user, or the defaults when the user has made none. A file that the app cannot read,
+  /// after a crash or from a newer release, moves aside with the time in its name, and the app starts with the
+  /// defaults: the wallets stay, and the user chooses the network and the node again.
   Future<AppSettings> readSettings() async {
     final file = File(_settingsPath);
     if (!await file.exists()) {
@@ -44,13 +46,17 @@ final class AppStorage {
     }
     try {
       return AppSettings.fromJson(jsonDecode(await file.readAsString()));
-    } on FormatException catch (error) {
-      throw FormatException('${error.message} File: $_settingsPath', error.source);
+    } on FormatException {
+      await file.rename('$_settingsPath.unreadable-${DateTime.now().toUtc().millisecondsSinceEpoch}');
+      return const AppSettings();
     }
   }
 
+  /// Writes the settings through a temporary file and a rename, so that a crash leaves the old file or the new one.
   Future<void> writeSettings(AppSettings settings) async {
     await Directory(root).create(recursive: true);
-    await File(_settingsPath).writeAsString(jsonEncode(settings.toJson()));
+    final temporary = File('$_settingsPath.tmp');
+    await temporary.writeAsString(jsonEncode(settings.toJson()), flush: true);
+    await temporary.rename(_settingsPath);
   }
 }

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../bridge/controller.dart';
+import '../../config/app_config.dart';
 import '../../bridge/models.dart';
 import '../../core/address.dart';
 import '../../core/amount.dart';
@@ -19,6 +22,7 @@ import '../widgets/choice_pill.dart';
 import '../widgets/field.dart';
 import '../widgets/page_frame.dart';
 import '../widgets/review_line.dart';
+import '../widgets/send_password.dart';
 import '../widgets/surfaces.dart';
 import 'send_to_chain.dart';
 
@@ -42,12 +46,16 @@ class SendPage extends StatefulWidget {
 const int _shortestAddress = 95;
 
 class _SendPageState extends State<SendPage> {
-  // A payment on its way or under review brings the user back to pay.
-  late _SendWay _way = widget.bridge.activeSwapOf(SwapDirection.pay) == null && widget.bridge.pay.review == null
+  // A payment on its way, under review, or in preparation brings the user back to pay.
+  late _SendWay _way =
+      widget.bridge.activeSwapOf(SwapDirection.pay) == null &&
+          widget.bridge.pay.review == null &&
+          !widget.bridge.pay.preparing
       ? _SendWay.monero
       : _SendWay.robinhood;
   final _address = TextEditingController();
   final _amount = TextEditingController();
+  final _password = TextEditingController();
   String? _addressError;
   String? _amountError;
 
@@ -61,8 +69,12 @@ class _SendPageState extends State<SendPage> {
 
   @override
   void dispose() {
+    // A review that the user leaves goes: the wallet drops its payment unless it built another one since.
+    final prepared = _prepared;
+    if (prepared != null) unawaited(widget.controller.cancelSend(prepared));
     _address.dispose();
     _amount.dispose();
+    _password.dispose();
     super.dispose();
   }
 
@@ -150,15 +162,28 @@ class _SendPageState extends State<SendPage> {
   }
 
   Future<void> _confirm() => _run(() async {
-    final sent = await widget.controller.confirmSend();
-    setState(() {
-      _sent = sent;
-      _prepared = null;
-    });
+    final prepared = _prepared;
+    if (prepared == null) return;
+    try {
+      final sent = await widget.controller.confirmSend(prepared, password: _password.text);
+      _password.clear();
+      setState(() {
+        _sent = sent;
+        _prepared = null;
+      });
+    } on WalletException catch (error) {
+      // The wallet holds another payment or none, so this review cannot leave: the form shows again.
+      if (error.failure == WalletFailure.paymentChanged || error.failure == WalletFailure.walletClosed) {
+        setState(() => _prepared = null);
+      }
+      rethrow;
+    }
   });
 
   Future<void> _cancel() => _run(() async {
-    await widget.controller.cancelSend();
+    final prepared = _prepared;
+    if (prepared != null) await widget.controller.cancelSend(prepared);
+    _password.clear();
     setState(() => _prepared = null);
   });
 
@@ -182,16 +207,26 @@ class _SendPageState extends State<SendPage> {
       await action();
     } on WalletException catch (error) {
       setState(() => _error = failureText(error));
+    } on Object {
+      // The page says so, and the error still reaches the handler of Flutter.
+      setState(() => _error = Copy.unexpectedFailure);
+      rethrow;
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  // The choice of the way follows pay, which prepares a review on its own page.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: widget.bridge.pay, builder: (context, _) => _page(context));
+
+  Widget _page(BuildContext context) {
     final toChain = _way == _SendWay.robinhood;
-    // The choice waits while a payment is under review, so that a review never stays open behind the other way.
-    final choosing = _prepared == null && widget.bridge.pay.review == null && !_busy;
+    final pay = widget.bridge.pay;
+    // The choice waits while a payment is under review or in preparation, so that a review never stays open behind
+    // the other way and no plain payment is built while pay builds one.
+    final choosing = _prepared == null && pay.review == null && !pay.preparing && !_busy;
     final ways = Wrap(
       alignment: WrapAlignment.center,
       spacing: Metrics.gapTiny,
@@ -229,6 +264,7 @@ class _SendPageState extends State<SendPage> {
       (_, final SentPayment sent) => _Receipt(sent: sent, onDone: _restart),
       (final PreparedSend prepared, _) => _Review(
         prepared: prepared,
+        password: _password,
         busy: _busy,
         error: _error,
         onConfirm: _confirm,
@@ -295,7 +331,7 @@ class _SendPageState extends State<SendPage> {
             textAlign: TextAlign.center,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             // The form says itself when an amount has too many decimals.
-            inputFormatters: [AmountInputFormatter()],
+            inputFormatters: [LengthLimitingTextInputFormatter(AppConfig.amountFieldMaxLength), AmountInputFormatter()],
             style: KranoxType.sendFigure.copyWith(color: palette.ink),
             cursorColor: palette.accent,
             decoration: InputDecoration(
@@ -356,6 +392,7 @@ class _SendPageState extends State<SendPage> {
 class _Review extends StatelessWidget {
   const _Review({
     required this.prepared,
+    required this.password,
     required this.busy,
     required this.error,
     required this.onConfirm,
@@ -363,6 +400,7 @@ class _Review extends StatelessWidget {
   });
 
   final PreparedSend prepared;
+  final TextEditingController password;
   final bool busy;
   final String? error;
   final VoidCallback onConfirm;
@@ -427,9 +465,15 @@ class _Review extends StatelessWidget {
           ReviewLine(label: Copy.fee, value: '${prepared.fee.toExact()} ${Copy.currency}'),
           Divider(height: 1, color: palette.line),
           ReviewLine(label: Copy.total, value: '${prepared.total.toExact()} ${Copy.currency}', strong: true),
-          ErrorLine(error),
           const SizedBox(height: Metrics.gap),
-          PillButton(label: Copy.sendNow, busy: busy, busyLabel: Copy.sending, expand: true, onPressed: onConfirm),
+          SendWithPassword(
+            password: password,
+            label: Copy.sendNow,
+            busyLabel: Copy.sending,
+            busy: busy,
+            onConfirm: onConfirm,
+          ),
+          ErrorLine(error),
           const SizedBox(height: Metrics.gapSmall),
           PillButton(label: Copy.cancel, tone: PillTone.quiet, expand: true, onPressed: busy ? null : onCancel),
         ],

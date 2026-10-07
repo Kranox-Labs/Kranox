@@ -127,6 +127,7 @@ abstract final class Copy {
   static const String fee = 'Network fee';
   static const String total = 'Total';
   static const String sendNow = 'Send now';
+  static const String sendPassword = 'Your password, to send';
   static const String sending = 'Sending…';
   static const String cancel = 'Cancel';
   static const String sentTitle = 'Payment sent';
@@ -410,6 +411,11 @@ abstract final class Copy {
   static const String notEnoughUnlocked = 'Your unlocked balance does not cover this payment and its fee.';
   static const String nodeUnreachable = 'The node does not answer. Check its address in Settings.';
   static String walletReported(String detail) => 'The wallet reported: $detail';
+  static const String walletClosed = 'The wallet locked before this step. Unlock it and try again.';
+  static const String paymentChanged = 'This payment changed before it left. Nothing was sent; review it again.';
+  static const String deadlinePassed = 'The time for this payment passed. Nothing was sent; review it again.';
+  // A failure that the app does not name. A payment may have left before it, so the user looks first.
+  static const String unexpectedFailure = 'Something went wrong. Check Activity before you try again.';
 
   // Dates.
   static const List<String> months = [
