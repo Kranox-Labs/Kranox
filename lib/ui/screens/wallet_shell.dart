@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../bridge/controller.dart';
+import '../../privacy/chain_scans.dart';
 import '../../wallet/controller.dart';
 import '../widgets/backdrop.dart';
 import '../widgets/sidebar.dart';
@@ -25,6 +26,18 @@ class WalletShell extends StatefulWidget {
 
 class _WalletShellState extends State<WalletShell> {
   WalletPage _page = WalletPage.home;
+
+  // The scans of addresses on Robinhood Chain live while the wallet is open, and go when it locks.
+  late final ChainScans? _scans = switch (widget.bridge.scanner) {
+    final scanner? => ChainScans(scanner),
+    null => null,
+  };
+
+  @override
+  void dispose() {
+    _scans?.dispose();
+    super.dispose();
+  }
 
   void _go(WalletPage page) => setState(() => _page = page);
 
@@ -57,7 +70,12 @@ class _WalletShellState extends State<WalletShell> {
                   WalletPage.send => SendPage(controller: controller, bridge: widget.bridge),
                   WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
                   WalletPage.activity => ActivityPage(controller: controller),
-                  WalletPage.privacy => PrivacyPage(controller: controller, bridge: widget.bridge, onNavigate: _go),
+                  WalletPage.privacy => PrivacyPage(
+                    controller: controller,
+                    bridge: widget.bridge,
+                    onNavigate: _go,
+                    scans: _scans,
+                  ),
                   WalletPage.settings => SettingsPage(controller: controller, bridge: widget.bridge, onLock: _lock),
                 },
               ),

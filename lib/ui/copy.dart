@@ -202,6 +202,53 @@ abstract final class Copy {
       '$amount XMR came in within the last $hours hours. Spending it soon after makes the two easy to match. All of '
       'it is older from $moment.';
   static const String privacyLockTitle = 'Lock and password';
+
+  // The scan of an address on Robinhood Chain in the menu Privacy.
+  static const String privacyChainHeading = 'Robinhood Chain';
+  static const String privacyChainTitle = 'Scan an address of yours';
+  static const String privacyChainLead =
+      'See what the public history of an address on Robinhood Chain gives away. Kranox asks the explorer through its '
+      'relay, so the explorer never sees your IP address, and the relay keeps no record.';
+  static const String privacyChainField = 'Your address on Robinhood Chain';
+  static const String privacyChainScan = 'Scan';
+  static const String privacyChainScanning = 'Scanning…';
+  static String privacyChainResult(String address) => 'What $address shows';
+  static const String privacyCleanStart = 'To start clean, pay a new address of yours from XMR with Kranox.';
+  static const String privacyFundingTitle = 'First funding';
+  static const String privacyFundingNone = 'Kranox found no transfer that first funded this address.';
+  static String privacyFundingOwn(String sender, String day) =>
+      'Your address $sender funded it first on $day, so the two are linked in public.';
+  static String privacyFundingNamed(String name, String day) =>
+      '$name funded it first on $day. If $name knows who you are, it can tie you to this address.';
+  static String privacyFundingPlain(String sender, String day) =>
+      '$sender funded it first on $day, and that address has no public name.';
+  static const String privacyOwnTitle = 'Your other addresses';
+  static const String privacyOwnClear = 'It never dealt directly with another address of yours that Kranox knows.';
+  static String privacyOwnLinked(String other, String day) =>
+      'It dealt directly with $other, another address of yours, on $day, so the two are linked in public.';
+  static String privacyMoreAddresses(int count) =>
+      count == 1 ? '1 more address does too.' : '$count more addresses do too.';
+  static const String privacyLookAlikeTitle = 'Look-alike addresses';
+  static const String privacyLookAlikeClear = 'No address that looks like one it paid sent it anything.';
+  static String privacyLookAlike(String sender, String resembles, String day) =>
+      '$sender looks like $resembles, which this address paid, and sent it a transfer on $day. The trick aims to make '
+      'you copy the wrong address later, so copy an address from its owner and never from a history.';
+  static const String privacyKranoxTitle = 'Swaps with Kranox';
+  static const String privacyKranoxClear = 'It takes part in none of your swaps in Kranox.';
+  static String privacyKranoxFunded(String amount, String day) => 'It sent $amount into your receive on $day.';
+  static String privacyKranoxPaid(String amount, String day) => 'It got your payment of $amount from XMR on $day.';
+  static String privacyKranoxRefund(String day) => 'You gave it as the refund address of your receive on $day.';
+  static String privacyMoreSwaps(int count) => count == 1 ? '1 more swap does too.' : '$count more swaps do too.';
+  static const String privacyKranoxNote =
+      'On the chain this shows a transfer with an exchanger, and only the records of ChangeNOW tie it to your XMR.';
+  static const String privacyExposureTitle = 'What everyone sees';
+  static const String privacyExposureEmpty = 'It has no public history yet.';
+  static String privacyExposure(int transactions, int transfers) =>
+      '$transactions transactions and $transfers token transfers.';
+  static String privacyExposureSince(String day) => 'Active since $day.';
+  static String privacyExposureTokens(String tokens) => 'It holds $tokens.';
+  static String privacyExposureHours(String from, String to) =>
+      'Most of its activity falls between $from and $to UTC, which hints at your time zone.';
   static String privacyLock(int minutes) =>
       'The wallet locks after $minutes minutes without use, and each send asks for your password.';
 
