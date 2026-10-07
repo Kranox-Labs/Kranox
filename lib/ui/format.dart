@@ -65,6 +65,9 @@ String failureText(WalletException error) => switch (error.failure) {
   WalletFailure.walletMissing => Copy.walletMissing,
   WalletFailure.notEnoughUnlocked => Copy.notEnoughUnlocked,
   WalletFailure.nodeUnreachable => Copy.nodeUnreachable,
+  WalletFailure.walletClosed => Copy.walletClosed,
+  WalletFailure.paymentChanged => Copy.paymentChanged,
+  WalletFailure.deadlinePassed => Copy.deadlinePassed,
   WalletFailure.native => Copy.walletReported(error.detail),
 };
 

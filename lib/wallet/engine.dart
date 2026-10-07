@@ -10,6 +10,7 @@ import '../core/amount.dart';
 import '../core/seed.dart';
 import 'failure.dart';
 import 'models.dart';
+import 'pending_slot.dart';
 import 'requests.dart';
 
 /// The status of wallet2 after a call that went well.
@@ -33,7 +34,9 @@ final class WalletEngine {
   late final monero.WalletManager _manager;
   monero.wallet? _wallet;
   String? _path;
-  monero.PendingTransaction? _pending;
+
+  /// The payment that wallet2 built last and has not sent. A confirm sends it only when it names this payment.
+  final PendingSlot<monero.PendingTransaction> _slot = PendingSlot();
 
   /// Runs one request and gives its answer. Throws a [WalletException] when wallet2 reports an error.
   Object? handle(WalletRequest request) => switch (request) {
@@ -44,9 +47,10 @@ final class WalletEngine {
     ReadStatus() => _status(),
     ReadHistory() => _history(),
     ReadReceiveAddress() => _receiveAddress(request),
+    ReadSubaddress() => _subaddress(request),
     PrepareSend() => _prepareSend(request),
-    ConfirmSend() => _confirmSend(),
-    CancelSend() => _cancelSend(),
+    ConfirmSend() => _confirmSend(request),
+    CancelSend() => _cancelSend(request),
     ReadSeed() => _seed(request),
     StoreWallet() => _store(),
     CloseWallet() => _close(),
@@ -177,11 +181,28 @@ final class WalletEngine {
     );
   }
 
+  ReceiveAddress _subaddress(ReadSubaddress request) {
+    final wallet = _requireWallet();
+    final count = monero.Wallet_numSubaddresses(wallet, accountIndex: AppConfig.accountIndex);
+    // Index 0 is the main address, which the app never hands out.
+    if (request.index < 1 || request.index >= count) {
+      throw WalletException(WalletFailure.native, 'The wallet has no subaddress #${request.index}.');
+    }
+    return ReceiveAddress(
+      address: monero.Wallet_address(wallet, accountIndex: AppConfig.accountIndex, addressIndex: request.index),
+      index: request.index,
+    );
+  }
+
   PreparedSend _prepareSend(PrepareSend request) {
     final wallet = _requireWallet();
+    // monero_c reads an amount of 0 as a sweep of the whole balance, so the engine refuses it here, below every form.
+    if (request.amountUnits <= 0) {
+      throw const WalletException(WalletFailure.native, 'A payment needs an amount above zero.');
+    }
     // monero_c offers no call to free a built payment. A payment that the user drops stays in memory until the
     // wallet closes.
-    _pending = null;
+    _slot.clear();
     final pending = monero.Wallet_createTransaction(
       wallet,
       dst_addr: request.address,
@@ -192,21 +213,26 @@ final class WalletEngine {
       subaddr_account: AppConfig.accountIndex,
     );
     _checkPending(pending);
-    _pending = pending;
+    final amount = XmrAmount(monero.PendingTransaction_amount(pending));
     return PreparedSend(
+      id: _slot.put(pending, address: request.address, units: amount.units),
       address: request.address,
-      amount: XmrAmount(monero.PendingTransaction_amount(pending)),
+      amount: amount,
       fee: XmrAmount(monero.PendingTransaction_fee(pending)),
     );
   }
 
-  SentPayment _confirmSend() {
+  SentPayment _confirmSend(ConfirmSend request) {
     final wallet = _requireWallet();
-    final pending = _pending;
-    if (pending == null) {
-      throw StateError('No payment waits for its confirmation.');
-    }
-    _pending = null;
+    // A wrong password sends nothing and keeps the payment, so that the user can type it again.
+    _checkPassword(request.password);
+    final pending = _slot.take(
+      id: request.id,
+      address: request.address,
+      units: request.amountUnits,
+      deadline: request.deadline,
+      now: DateTime.now().millisecondsSinceEpoch,
+    );
     // The id, the amount, and the fee come before the commit: a commit sends each transaction and drops it from the
     // pending payment, so afterwards the amount and the fee read 0, and monero_c gives the id of an empty list as a
     // static "" that its Dart binding then frees. CHECKED 5 Oct 2026: the app crashed with "pointer being freed was not
@@ -228,28 +254,34 @@ final class WalletEngine {
     return payment;
   }
 
-  Null _cancelSend() {
-    _pending = null;
+  /// Drops the payment [request] names. A payment that the wallet built after it, for another screen, stays.
+  Null _cancelSend(CancelSend request) {
+    _slot.drop(request.id);
     return null;
   }
 
   List<String> _seed(ReadSeed request) {
     final wallet = _requireWallet();
+    _checkPassword(request.password);
+    return _seedWords(wallet);
+  }
+
+  /// Checks [password] against the key file of the open wallet. Throws a [WalletException] when it does not open it.
+  void _checkPassword(String password) {
     final path = _path;
     if (path == null) {
-      throw StateError('The open wallet has no path.');
+      throw const WalletException(WalletFailure.walletClosed, 'The open wallet has no path.');
     }
     final valid = monero.WalletManager_verifyWalletPassword(
       _manager,
       keysFileName: '$path.keys',
-      password: request.password,
+      password: password,
       noSpendKey: false,
       kdfRounds: AppConfig.kdfRounds,
     );
     if (!valid) {
       throw const WalletException(WalletFailure.wrongPassword, 'The password does not open the key file.');
     }
-    return _seedWords(wallet);
   }
 
   Null _store() {
@@ -265,7 +297,7 @@ final class WalletEngine {
     if (wallet == null) {
       return null;
     }
-    _pending = null;
+    _slot.clear();
     _wallet = null;
     _path = null;
     // closeWallet with its store flag writes the file while the scan of wallet2 may still run, and the two break the
@@ -290,7 +322,7 @@ final class WalletEngine {
   monero.wallet _requireWallet() {
     final wallet = _wallet;
     if (wallet == null) {
-      throw StateError('No wallet is open.');
+      throw const WalletException(WalletFailure.walletClosed, 'No wallet is open.');
     }
     return wallet;
   }

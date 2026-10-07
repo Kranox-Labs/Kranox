@@ -8,6 +8,7 @@ import '../core/address.dart';
 import '../core/amount.dart';
 import '../core/evm_address.dart';
 import '../wallet/controller.dart';
+import '../wallet/failure.dart';
 import '../wallet/models.dart';
 import 'client.dart';
 import 'live_quote.dart';
@@ -40,13 +41,28 @@ final class PayReview {
 
 /// The state of pay for the send page: the form, where the user types the XMR to pay, chooses the rate, and sees the
 /// coin that it buys, the review of a payment, and the payment itself, which [record] keeps among the swaps that the
-/// app follows. The exchanger works on the Monero mainnet only.
+/// app follows before its XMR leaves, [update] completes once it left, and [forget] drops when nothing left. The
+/// exchanger works on the Monero mainnet only.
 final class PayController extends ChangeNotifier {
-  PayController({required this._client, required this._wallet, required this._record});
+  PayController({
+    required this._client,
+    required this._wallet,
+    required this._record,
+    required this._update,
+    required this._forget,
+  }) {
+    _wallet.addListener(_followWallet);
+  }
 
   final BridgeClient _client;
   final WalletController _wallet;
   final Future<void> Function(BridgeSwap swap) _record;
+  final Future<void> Function(BridgeSwap swap) _update;
+  final Future<void> Function(String id) _forget;
+
+  // A review on its way: the exchanger makes the payment and the wallet builds it. The send page keeps its choice of
+  // the way until it ends, so that no plain payment is built meanwhile.
+  bool _preparing = false;
 
   // The mock of 3 Oct 2026 shows a payment in USDG first, the coin with a fixed value.
   BridgeAsset _asset = BridgeAsset.usdg;
@@ -80,6 +96,17 @@ final class PayController extends ChangeNotifier {
 
   /// The payment under review, or null while the form shows.
   PayReview? get review => _review;
+
+  /// Whether a review is on its way.
+  bool get preparing => _preparing;
+
+  /// A lock or a change of network closes the wallet and drops the payment that it built, so the review goes too.
+  void _followWallet() {
+    if (_review != null && _wallet.phase != WalletPhase.open) {
+      _review = null;
+      notifyListeners();
+    }
+  }
 
   /// The range of one payment into the coin of the form at the rate of the form, once the exchanger gave it.
   PayRange? get range => rangeOf(_rate);
@@ -188,8 +215,15 @@ final class PayController extends ChangeNotifier {
     return quote;
   }
 
-  /// The XMR to pay, when the field holds an amount that the form takes.
-  XmrAmount? get xmr => isBridgeAmount(_xmrText) ? XmrAmount.parse(_xmrText) : null;
+  /// The XMR to pay, when the field holds an amount that the form takes and that the wallet can hold.
+  XmrAmount? get xmr {
+    if (!isBridgeAmount(_xmrText)) return null;
+    try {
+      return XmrAmount.parse(_xmrText);
+    } on AmountFormatException {
+      return null;
+    }
+  }
 
   /// The quote when it covers the form as it stands.
   PayQuote? get _currentQuote {
@@ -217,7 +251,8 @@ final class PayController extends ChangeNotifier {
       (_rate == PayRate.floating || _currentQuote?.rateId != null) &&
       !_quote.pending &&
       coversFee &&
-      _review == null;
+      _review == null &&
+      !_preparing;
 
   /// Makes the payment at the exchanger at the quoted rate, then builds the XMR payment to its deposit address, so
   /// that the review shows the real fee. Nothing leaves the wallet yet: a payment that the user does not send runs out
@@ -228,10 +263,19 @@ final class PayController extends ChangeNotifier {
     if (!canReview || quote == null || recipient == null) {
       throw StateError('The pay form holds no recipient and quoted amount.');
     }
+    _preparing = true;
+    notifyListeners();
+    try {
+      return await _prepareReview(quote, recipient);
+    } finally {
+      _preparing = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  Future<PayReview> _prepareReview(PayQuote quote, String recipient) async {
     // A new subaddress takes a refund, so that the exchanger sees an address that no payer has seen.
-    await _wallet.newReceiveAddress();
-    final refund = _wallet.receiveAddress;
-    if (refund == null) throw StateError('The wallet gave no subaddress.');
+    final refund = await _wallet.newBridgeAddress();
     final CreatedPay created;
     try {
       created = await _client.createPay(
@@ -254,6 +298,10 @@ final class PayController extends ChangeNotifier {
     } on FormatException catch (failure) {
       throw BridgeException(BridgeFailure.failed, failure.message);
     }
+    // Without its time, a fixed rate would let the XMR leave after the rate ran out.
+    if (quote.rate == PayRate.fixed && state.validUntil == null) {
+      throw const BridgeException(BridgeFailure.failed, 'The exchanger gave no time for its fixed rate.');
+    }
     final prepared = await _wallet.prepareSend(address: created.depositAddress, amount: xmr);
     final review = PayReview(
       created: created,
@@ -268,20 +316,22 @@ final class PayController extends ChangeNotifier {
     return review;
   }
 
-  /// Sends the XMR of the payment under review and keeps the swap among the swaps that the app follows. Throws a
-  /// [BridgeException] of [BridgeFailure.rateExpired] when the fixed rate runs out too soon, so that the user reviews
-  /// the payment again.
-  Future<BridgeSwap> confirm() async {
+  /// Sends the XMR of the payment under review with the [password] of the wallet, and keeps the swap among the swaps
+  /// that the app follows. Throws a [BridgeException] of [BridgeFailure.rateExpired] when the fixed rate runs out too
+  /// soon, so that the user reviews the payment again.
+  Future<BridgeSwap> confirm({required String password}) async {
     final review = _review;
     if (review == null) throw StateError('No payment is under review.');
     final validUntil = review.validUntil;
-    if (validUntil != null && DateTime.now().isAfter(validUntil.subtract(AppConfig.payRateMargin))) {
+    final deadline = validUntil?.subtract(AppConfig.payRateMargin);
+    if (deadline != null && !DateTime.now().isBefore(deadline)) {
       await cancelReview();
       throw const BridgeException(BridgeFailure.rateExpired, 'The fixed rate ran out before the payment left.');
     }
-    final sent = await _wallet.confirmSend();
     final created = review.created;
-    final swap = BridgeSwap(
+    // The swap and its exchange id go to the file before any XMR leaves, so that no lock, quit, or crash after the
+    // payment can lose them.
+    final waiting = BridgeSwap(
       direction: SwapDirection.pay,
       id: created.id,
       asset: review.asset,
@@ -291,24 +341,44 @@ final class PayController extends ChangeNotifier {
       payoutAddress: created.payoutAddress,
       subaddressIndex: review.refund.index,
       refundAddress: review.refund.address,
-      depositHash: sent.transactionId,
       createdAt: DateTime.now(),
       stage: SwapStage.waiting,
       validUntil: validUntil,
       fixedRate: review.rate == PayRate.fixed,
     );
+    await _record(waiting);
+    final SentPayment sent;
+    try {
+      // The engine checks the deadline again right before the send, so that time spent in the queue counts too.
+      sent = await _wallet.confirmSend(review.prepared, password: password, deadline: deadline);
+    } on WalletException catch (failure) {
+      // wallet2 sent nothing, so the swap goes again; the exchanger lets its payment run out.
+      await _forget(waiting.id);
+      if (failure.failure == WalletFailure.deadlinePassed) {
+        _review = null;
+        notifyListeners();
+        throw const BridgeException(BridgeFailure.rateExpired, 'The fixed rate ran out before the payment left.');
+      }
+      if (failure.failure == WalletFailure.paymentChanged || failure.failure == WalletFailure.walletClosed) {
+        _review = null;
+        notifyListeners();
+      }
+      rethrow;
+    }
     _review = null;
     _recipient = '';
     _xmrText = '';
     _quote.follow(null);
-    await _record(swap);
+    final swap = waiting.withDeposit(sent.transactionId);
+    await _update(swap);
     return swap;
   }
 
   /// Drops the payment under review. The XMR payment never leaves, and the payment at the exchanger runs out.
   Future<void> cancelReview() async {
-    if (_review == null) return;
-    await _wallet.cancelSend();
+    final review = _review;
+    if (review == null) return;
+    await _wallet.cancelSend(review.prepared);
     _review = null;
     notifyListeners();
   }
@@ -332,6 +402,7 @@ final class PayController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _wallet.removeListener(_followWallet);
     _quote.dispose();
     super.dispose();
   }

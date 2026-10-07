@@ -17,7 +17,7 @@ final class _RecordingBackend implements WalletBackend {
   Future<T> call<T>(WalletRequest request) async {
     requests.add(request);
     final Object? answer = switch (request) {
-      ReadReceiveAddress() => const ReceiveAddress(address: 'sample', index: 1),
+      ReadReceiveAddress() || ReadSubaddress() => const ReceiveAddress(address: 'sample', index: 1),
       ReadHistory() => const <WalletTransfer>[],
       ReadStatus() => WalletStatus.unknown,
       _ => null,

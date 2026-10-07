@@ -92,10 +92,12 @@ final class ReceiveAddress {
   final int index;
 }
 
-/// A payment that wallet2 has built but not sent. The user sees its fee before the app sends it.
+/// A payment that wallet2 has built but not sent. The user sees its fee before the app sends it. [id] names it, so
+/// that a confirm sends this payment and no other.
 final class PreparedSend {
-  const PreparedSend({required this.address, required this.amount, required this.fee});
+  const PreparedSend({required this.id, required this.address, required this.amount, required this.fee});
 
+  final int id;
   final String address;
   final XmrAmount amount;
   final XmrAmount fee;

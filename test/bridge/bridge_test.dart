@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +11,7 @@ import 'package:kranox_wallet/bridge/store.dart';
 import 'package:kranox_wallet/config/app_config.dart';
 import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
+import 'package:kranox_wallet/wallet/failure.dart';
 import 'package:kranox_wallet/wallet/models.dart';
 import 'package:kranox_wallet/wallet/requests.dart';
 import 'package:kranox_wallet/wallet/storage.dart';
@@ -21,24 +24,40 @@ const _xmrDeposit = '48PFnHrr8bVGx463yo8SMXGZUp7PyYPgwZJR4MnpgjKCDXpw3XvK6UTbarK
 /// A recipient on Robinhood Chain in the mixed case of EIP-55, from the examples of EIP-55.
 const _recipient = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
 
+/// A deposit address of the exchanger on Robinhood Chain for the sample swaps, in lowercase, which carries no checksum.
+const _chainDeposit = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984';
+
 /// A wallet engine that opens every wallet, hands out subaddresses with rising indexes, and builds and sends payments
 /// with a fixed fee.
 final class _SampleWallet implements WalletBackend {
   int _index = 1;
+  int _builtId = 0;
   final List<WalletRequest> requests = [];
   PreparedSend? _prepared;
+
+  /// Holds a send in the wallet until the test completes it, as a long commit of wallet2 does.
+  Completer<void>? holdConfirm;
+
+  /// The refusal of wallet2 for the next send, when a test wants one.
+  WalletException? confirmFailure;
 
   @override
   Future<T> call<T>(WalletRequest request) async {
     requests.add(request);
+    if (request is ConfirmSend) {
+      await holdConfirm?.future;
+      if (confirmFailure case final failure?) throw failure;
+    }
     final Object? answer = switch (request) {
       ReadReceiveAddress(:final createNew) => ReceiveAddress(
         address: 'subaddress-${createNew ? ++_index : _index}',
         index: _index,
       ),
+      ReadSubaddress(:final index) => ReceiveAddress(address: 'subaddress-$index', index: index),
       ReadHistory() => const <WalletTransfer>[],
       ReadStatus() => WalletStatus.unknown,
       PrepareSend(:final address, :final amountUnits) => _prepared = PreparedSend(
+        id: ++_builtId,
         address: address,
         amount: XmrAmount(amountUnits),
         fee: XmrAmount.parse('0.00003'),
@@ -69,6 +88,17 @@ final class _SampleBridge implements BridgeClient {
   /// The XMR of a payment that the exchanger makes, when it makes one for another amount.
   double? xmrOverride;
 
+  /// Holds a new payment at the exchanger until the test completes it, as a slow relay does.
+  Completer<void>? holdCreatePay;
+
+  /// Whether the exchanger leaves out the time of its fixed rate.
+  bool noValidUntil = false;
+
+  /// Faults of the exchanger in a new swap of receive: another deposit address, payout address, or amount.
+  String? swapDepositOverride;
+  String? swapPayoutOverride;
+  double? swapAmountOverride;
+
   @override
   Future<BridgeQuote> quote(BridgeAsset asset, String amount) async {
     final value = double.parse(amount);
@@ -92,10 +122,10 @@ final class _SampleBridge implements BridgeClient {
     created.add(address);
     return CreatedSwap(
       id: 'swap${created.length}',
-      amount: double.parse(amount),
+      amount: swapAmountOverride ?? double.parse(amount),
       estimatedXmr: double.parse(amount) * 5,
-      depositAddress: '0xdeposit',
-      payoutAddress: address,
+      depositAddress: swapDepositOverride ?? _chainDeposit,
+      payoutAddress: swapPayoutOverride ?? address,
     );
   }
 
@@ -138,6 +168,7 @@ final class _SampleBridge implements BridgeClient {
     required String refundAddress,
     required String? rateId,
   }) async {
+    await holdCreatePay?.future;
     paid.add((address, refundAddress));
     paidRates.add((rate, rateId));
     return CreatedPay(
@@ -151,7 +182,7 @@ final class _SampleBridge implements BridgeClient {
 
   @override
   Future<SwapState> readSwap(String id) async =>
-      SwapState(stage: stage, amountOut: 0.0274, validUntil: DateTime.now().add(payWindow));
+      SwapState(stage: stage, amountOut: 0.0274, validUntil: noValidUntil ? null : DateTime.now().add(payWindow));
 
   bool online = true;
 
@@ -172,6 +203,68 @@ void main() {
     expect(SwapStage.refunded.isFinal, isTrue);
     expect(SwapStage.exchanging.isFinal, isFalse);
     expect(() => SwapStage.fromStatus('lost'), throwsFormatException);
+  });
+
+  test('reads the time of a fixed rate only with its zone', () {
+    SwapState read(String? validUntil) => SwapState.fromJson({'status': 'waiting', 'validUntil': validUntil});
+    expect(read('2026-10-07T10:00:00.000Z').validUntil, DateTime.utc(2026, 10, 7, 10));
+    expect(read('2026-10-07T12:00:00+02:00').validUntil, DateTime.utc(2026, 10, 7, 10));
+    expect(read('2026-10-07T10:00:00').validUntil, isNull, reason: 'a time without a zone would read as local time');
+    expect(read(null).validUntil, isNull);
+  });
+
+  test('keeps the swaps that it can read from a damaged file, and moves the file aside', () async {
+    final root = Directory.systemTemp.createTempSync('kranox-bridge-damaged');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final path = '${root.path}/bridge.json';
+    final good = BridgeSwap(
+      id: 'good1',
+      asset: BridgeAsset.eth,
+      amount: 0.0055,
+      xmrAmount: 0.0275,
+      depositAddress: _chainDeposit,
+      payoutAddress: 'subaddress-3',
+      subaddressIndex: 3,
+      createdAt: DateTime.utc(2026, 10, 7),
+      stage: SwapStage.waiting,
+    ).toJson();
+    final newer = {...good, 'id': 'newer1', 'direction': 'swap-of-a-newer-release'};
+    File(path).writeAsStringSync(jsonEncode([good, newer, 'no object']));
+    final store = BridgeStore(path);
+    final swaps = await store.read();
+    expect(swaps.map((swap) => swap.id), ['good1']);
+    expect(store.recoveredFrom, isNotNull);
+    expect(File(store.recoveredFrom!).existsSync(), isTrue, reason: 'the damaged file stays for support');
+    expect((await BridgeStore(path).read()).single.id, 'good1', reason: 'the file now holds what the app read');
+
+    File(path).writeAsStringSync('[{"id": "cut in the mid');
+    final cut = BridgeStore(path);
+    expect(await cut.read(), isEmpty, reason: 'a file cut by a crash still lets the app start');
+    expect(cut.recoveredFrom, isNotNull);
+  });
+
+  test('writes the swaps one at a time, in the order of the calls, without a temporary file left', () async {
+    final root = Directory.systemTemp.createTempSync('kranox-bridge-writes');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final store = BridgeStore('${root.path}/bridge.json');
+    BridgeSwap swap(String id) => BridgeSwap(
+      id: id,
+      asset: BridgeAsset.usdg,
+      amount: 15,
+      xmrAmount: 0.03,
+      depositAddress: _chainDeposit,
+      payoutAddress: 'subaddress-4',
+      subaddressIndex: 4,
+      createdAt: DateTime.utc(2026, 10, 7),
+      stage: SwapStage.waiting,
+    );
+    await Future.wait([
+      store.write([swap('a')]),
+      store.write([swap('a'), swap('b')]),
+      store.write([swap('c')]),
+    ]);
+    expect((await store.read()).map((saved) => saved.id), ['c']);
+    expect(File('${root.path}/bridge.json.tmp').existsSync(), isFalse);
   });
 
   test('takes amounts above zero with at most the allowed decimals', () {
@@ -378,10 +471,15 @@ void main() {
       expect(bridge.checkedAt, isNull);
       bridge.setAmount('0.0055');
       await _quoteSettles();
+      final shown = wallet.receiveAddress!;
       final swap = await bridge.createSwap();
       expect(engine.requests.whereType<ReadReceiveAddress>().last.createNew, isTrue);
-      expect(exchanger.created.single, wallet.receiveAddress!.address);
-      expect(swap.subaddressIndex, wallet.receiveAddress!.index);
+      // The payout goes to a new subaddress that the wallet writes to its file at once, and the receive page keeps
+      // its own address, which the exchanger never sees.
+      expect(engine.requests.last, isA<StoreWallet>());
+      expect(exchanger.created.single, 'subaddress-${swap.subaddressIndex}');
+      expect(swap.subaddressIndex, greaterThan(shown.index));
+      expect(wallet.receiveAddress!.address, shown.address);
       expect(bridge.activeSwap?.id, swap.id);
       expect(bridge.amount, isEmpty);
 
@@ -475,15 +573,18 @@ void main() {
       pay.setXmr('0.16');
       await _quoteSettles();
       final review = await pay.startReview();
-      expect(exchanger.paid.single, (_recipient, wallet.receiveAddress!.address));
-      expect(review.refund.index, wallet.receiveAddress!.index);
+      // The refund goes to a subaddress of its own, not to the address that the receive page shows.
+      expect(exchanger.paid.single, (_recipient, review.refund.address));
+      expect(review.refund.address, isNot(wallet.receiveAddress!.address));
       expect(review.prepared.address, _xmrDeposit);
       expect(review.prepared.amount, XmrAmount.parse('0.16'));
       expect(review.validUntil, isNotNull);
       expect(pay.canReview, isFalse, reason: 'a payment is under review');
 
-      final swap = await pay.confirm();
+      final swap = await pay.confirm(password: 'password');
       expect(engine.requests.whereType<ConfirmSend>(), hasLength(1));
+      // The send carries the password of the wallet, which the engine checks before anything leaves.
+      expect(engine.requests.whereType<ConfirmSend>().single.password, 'password');
       expect(swap.direction, SwapDirection.pay);
       expect(swap.fixedRate, isTrue);
       expect(exchanger.paidRates.single, (PayRate.fixed, 'rate-0.16'));
@@ -525,7 +626,7 @@ void main() {
       final review = await pay.startReview();
       expect(review.rate, PayRate.floating);
       expect(exchanger.paidRates.single, (PayRate.floating, null));
-      final swap = await pay.confirm();
+      final swap = await pay.confirm(password: 'password');
       expect(swap.fixedRate, isFalse);
       // The first read of the new payment is on its way; the test ends after it.
       await bridge.refresh();
@@ -566,13 +667,112 @@ void main() {
       await _quoteSettles();
       await pay.startReview();
       await expectLater(
-        pay.confirm(),
+        pay.confirm(password: 'password'),
         throwsA(isA<BridgeException>().having((error) => error.failure, 'failure', BridgeFailure.rateExpired)),
       );
       expect(engine.requests.whereType<ConfirmSend>(), isEmpty);
       expect(engine.requests.whereType<CancelSend>(), hasLength(1));
       expect(pay.review, isNull);
       expect(bridge.swapsOf(SwapDirection.pay), isEmpty);
+    });
+
+    test('makes no swap of receive that the exchanger made other than the form', () async {
+      for (final fault in <void Function()>[
+        () => exchanger.swapDepositOverride = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq',
+        () => exchanger.swapPayoutOverride = 'subaddress-of-someone-else',
+        () => exchanger.swapAmountOverride = 0.0056,
+      ]) {
+        exchanger
+          ..swapDepositOverride = null
+          ..swapPayoutOverride = null
+          ..swapAmountOverride = null;
+        fault();
+        bridge.setAmount('0.0055');
+        await _quoteSettles();
+        await expectLater(
+          bridge.createSwap(),
+          throwsA(isA<BridgeException>().having((error) => error.failure, 'failure', BridgeFailure.failed)),
+        );
+        bridge.setAmount('');
+      }
+      expect(bridge.swaps, isEmpty, reason: 'no deposit address of a faulty swap reaches the screen');
+    });
+
+    test('keeps the choice of the way closed while a review is on its way', () async {
+      final pay = bridge.pay;
+      exchanger.holdCreatePay = Completer<void>();
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.16');
+      await _quoteSettles();
+      expect(pay.canReview, isTrue);
+      final reviewing = pay.startReview();
+      await pumpEventQueue();
+      expect(pay.preparing, isTrue);
+      expect(pay.canReview, isFalse, reason: 'a second press of Enter starts no second review');
+      exchanger.holdCreatePay!.complete();
+      await reviewing;
+      expect(pay.preparing, isFalse);
+    });
+
+    test('takes no fixed rate without its time', () async {
+      final pay = bridge.pay;
+      exchanger.noValidUntil = true;
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.16');
+      await _quoteSettles();
+      await expectLater(
+        pay.startReview(),
+        throwsA(isA<BridgeException>().having((error) => error.failure, 'failure', BridgeFailure.failed)),
+      );
+      expect(engine.requests.whereType<PrepareSend>(), isEmpty);
+    });
+
+    test('keeps a payment in its file before its XMR leaves, and adds the deposit after', () async {
+      final pay = bridge.pay;
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.16');
+      await _quoteSettles();
+      final review = await pay.startReview();
+      engine.holdConfirm = Completer<void>();
+      final confirming = pay.confirm(password: 'password');
+      await pumpEventQueue();
+      final before = (await BridgeStore(storage.bridgePath).read()).single;
+      expect(before.id, review.created.id, reason: 'a quit now keeps the exchange id');
+      expect(before.depositHash, isNull);
+      engine.holdConfirm!.complete();
+      final swap = await confirming;
+      final after = (await BridgeStore(storage.bridgePath).read()).single;
+      expect(after.id, swap.id);
+      expect(after.depositHash, 'c4f27a91');
+    });
+
+    test('drops the kept payment when the wallet sends nothing', () async {
+      final pay = bridge.pay;
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.16');
+      await _quoteSettles();
+      await pay.startReview();
+      engine.confirmFailure = const WalletException(WalletFailure.notEnoughUnlocked, 'not enough money');
+      await expectLater(pay.confirm(password: 'password'), throwsA(isA<WalletException>()));
+      expect(bridge.swapsOf(SwapDirection.pay), isEmpty);
+      expect(await BridgeStore(storage.bridgePath).read(), isEmpty);
+    });
+
+    test('drops the review when the wallet locks, because the wallet drops its payment', () async {
+      final pay = bridge.pay;
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.16');
+      await _quoteSettles();
+      await pay.startReview();
+      await wallet.lock();
+      expect(pay.review, isNull);
+      await wallet.unlock('password');
+    });
+
+    test('reads no amount of XMR that the wallet cannot hold', () {
+      bridge.pay.setXmr('10000000');
+      expect(bridge.pay.xmr, isNull);
+      expect(bridge.pay.canReview, isFalse);
     });
 
     test('offers nothing on a test network', () async {

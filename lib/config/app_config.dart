@@ -32,6 +32,14 @@ abstract final class AppConfig {
   /// The app reads the state of the open wallet this often.
   static const Duration statusInterval = Duration(seconds: 2);
 
+  /// An open wallet locks itself after this long without a key or a move of the pointer, the default of the desktop
+  /// wallet of Monero (CHECKED 7 Oct 2026, monero-gui main.qml: lockOnUserInActivity with 10 minutes). The app reads
+  /// the clock of the Mac, so a Mac that slept for longer finds its wallet locked.
+  static const Duration idleLockAfter = Duration(minutes: 10);
+
+  /// The app compares the time of the last use with the clock this often.
+  static const Duration idleCheckInterval = Duration(seconds: 15);
+
   /// wallet2 asks the node for new blocks this often while the wallet is open.
   static const Duration autoRefreshInterval = Duration(seconds: 20);
 
@@ -74,6 +82,10 @@ abstract final class AppConfig {
 
   /// An amount in the bridge form has at most this many decimals.
   static const int bridgeAmountDecimals = 8;
+
+  /// An amount field takes at most this many characters. The largest amount of XMR with its 12 decimals takes 20, so
+  /// the limit leaves room and keeps a pasted run of digits from slowing the form.
+  static const int amountFieldMaxLength = 24;
 
   /// Pay sends its XMR only while the fixed rate holds at least this much longer, so that the deposit reaches the
   /// exchanger in time. CHECKED 5 Oct 2026: ChangeNOW holds a fixed rate for 10 minutes after it makes a payment.

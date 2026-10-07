@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../bridge/client.dart';
 import '../../config/app_config.dart';
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
+import '../../core/evm_address.dart';
 import '../../wallet/failure.dart';
 import '../copy.dart';
 import '../format.dart';
@@ -17,9 +19,6 @@ import '../widgets/qr_card.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/swap_box.dart';
 import '../widgets/swap_steps.dart';
-
-/// An address on Robinhood Chain, an EVM chain: 0x and 40 hex digits.
-final RegExp _evmAddress = RegExp(r'^0x[0-9a-fA-F]{40}$');
 
 /// Receive from Robinhood Chain: the user sends ETH or USDG there, and ChangeNOW turns it into XMR for a new
 /// subaddress of this wallet. The part of the receive page under the choice "From Robinhood Chain", in the form of a
@@ -58,10 +57,17 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
   }
 
   Future<void> _create() async {
-    final refund = _refund.text.trim();
-    if (refund.isNotEmpty && !_evmAddress.hasMatch(refund)) {
-      setState(() => _refundError = Copy.bridgeRefundInvalid);
-      return;
+    final text = _refund.text.trim();
+    // The refund address gets the checksum of EIP-55 too, as the recipient of pay does: a typo in an address of
+    // mixed case would send a refund nowhere.
+    String? refund;
+    if (text.isNotEmpty) {
+      try {
+        refund = checkEvmAddress(text);
+      } on EvmAddressException {
+        setState(() => _refundError = Copy.bridgeRefundInvalid);
+        return;
+      }
     }
     setState(() {
       _refundError = null;
@@ -69,13 +75,16 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
       _creating = true;
     });
     try {
-      await widget.bridge.createSwap(refundAddress: refund.isEmpty ? null : refund);
+      await widget.bridge.createSwap(refundAddress: refund);
       _amount.clear();
       _another = false;
     } on BridgeException catch (error) {
       setState(() => _error = bridgeFailureText(error));
     } on WalletException catch (error) {
       setState(() => _error = failureText(error));
+    } on Object {
+      setState(() => _error = Copy.unexpectedFailure);
+      rethrow;
     } finally {
       if (mounted) setState(() => _creating = false);
     }
@@ -144,7 +153,10 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
                 controller: _amount,
                 onSubmitted: (_) => bridge.canSwap ? _create() : null,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                inputFormatters: [AmountInputFormatter(decimals: AppConfig.bridgeAmountDecimals)],
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(AppConfig.amountFieldMaxLength),
+                  AmountInputFormatter(decimals: AppConfig.bridgeAmountDecimals),
+                ],
                 style: KranoxType.swapFigure.copyWith(color: palette.ink),
                 cursorColor: palette.accent,
                 decoration: InputDecoration(

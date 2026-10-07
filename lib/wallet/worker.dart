@@ -43,7 +43,12 @@ final class WalletWorker implements WalletBackend {
     return switch (answer) {
       _Value(:final value) => value as T,
       _Failure(:final failure, :final detail) => throw WalletException(failure, detail),
-      _Crash(:final message) => throw StateError('The wallet engine failed: $message'),
+      // An error that the engine did not expect still reaches the caller as a failure of the wallet, so that every
+      // screen shows it. The first line names it; the stack stays out of the screen.
+      _Crash(:final message) => throw WalletException(
+        WalletFailure.native,
+        'The wallet engine failed: ${message.split('\n').first}',
+      ),
     };
   }
 

@@ -89,7 +89,15 @@ final class CreatedSwap {
     final estimate = data['estimatedXmr'];
     final deposit = data['depositAddress'];
     final payout = data['payoutAddress'];
-    if (id is! String || amount is! num || deposit is! String || payout is! String) {
+    if (id is! String ||
+        id.isEmpty ||
+        amount is! num ||
+        !amount.isFinite ||
+        (estimate != null && (estimate is! num || !estimate.isFinite)) ||
+        deposit is! String ||
+        deposit.isEmpty ||
+        payout is! String ||
+        payout.isEmpty) {
       throw const FormatException('The relay answered a new swap without its id, amount, or addresses.');
     }
     return CreatedSwap(
@@ -128,7 +136,16 @@ final class CreatedPay {
     final xmr = data['xmrAmount'];
     final deposit = data['depositAddress'];
     final payout = data['payoutAddress'];
-    if (id is! String || amount is! num || xmr is! num || deposit is! String || payout is! String) {
+    if (id is! String ||
+        id.isEmpty ||
+        amount is! num ||
+        !amount.isFinite ||
+        xmr is! num ||
+        !xmr.isFinite ||
+        deposit is! String ||
+        deposit.isEmpty ||
+        payout is! String ||
+        payout.isEmpty) {
       throw const FormatException('The relay answered a new payment without its id, amounts, or addresses.');
     }
     return CreatedPay(
