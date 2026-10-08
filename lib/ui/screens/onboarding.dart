@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show appBuildName;
 
+import '../../config/app_config.dart';
 import '../../config/network.dart';
 import '../../core/block_height.dart';
 import '../../core/seed.dart';
@@ -436,6 +437,7 @@ class _UnlockScreenState extends State<UnlockScreen> {
 
 /// The version of the app in small quiet type below the unlock form, which the owner asked for on 5 Oct 2026. It is
 /// `version` in `pubspec.yaml` before the `+`: the Flutter tool passes it to every build, and `appBuildName` reads it.
+/// A beta build says so after it.
 class _Version extends StatelessWidget {
   const _Version();
 
@@ -446,7 +448,7 @@ class _Version extends StatelessWidget {
       throw StateError('pubspec.yaml holds no version, so the unlock screen has none to show.');
     }
     return Text(
-      Copy.version(name),
+      Copy.version(name, beta: AppConfig.betaBuild),
       textAlign: TextAlign.center,
       style: KranoxType.small.copyWith(color: context.palette.inkFaint),
     );
