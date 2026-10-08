@@ -228,6 +228,23 @@ final class WalletController extends ChangeNotifier {
 
   /// Saves another node for the network of the app and connects the wallet to it. Throws a [NodeAddressException]
   /// for an address of the wrong form.
+  /// The SOCKS proxy to the node of every network, or null when the wallet reaches the node straight.
+  String? get proxy => _settings.proxy;
+
+  /// Saves the proxy, such as Tor at 127.0.0.1:9050, or no proxy for empty text, and connects the wallet through it.
+  /// Throws a [NodeAddressException] for an address of the wrong form.
+  Future<void> changeProxy(String text) async {
+    final proxy = text.trim().isEmpty ? null : parseNodeAddress(text);
+    if (proxy == _settings.proxy) return;
+    _settings = _settings.withProxy(proxy);
+    await _storage.writeSettings(_settings);
+    if (_phase == WalletPhase.open) {
+      await _connect();
+      await _readState(withHistory: false);
+    }
+    notifyListeners();
+  }
+
   Future<void> changeNode(String text) async {
     final node = parseNodeAddress(text);
     _settings = _settings.withNode(network, node);
@@ -241,7 +258,7 @@ final class WalletController extends ChangeNotifier {
 
   Future<void> _connect() async {
     try {
-      await _worker.call<void>(ConnectNode(address: node));
+      await _worker.call<void>(ConnectNode(address: node, proxy: proxy));
     } on WalletException catch (error) {
       if (error.failure != WalletFailure.nodeUnreachable) rethrow;
     }

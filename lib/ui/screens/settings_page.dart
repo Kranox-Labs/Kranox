@@ -34,8 +34,10 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late final _node = TextEditingController(text: widget.controller.node);
+  late final _proxy = TextEditingController(text: widget.controller.proxy ?? '');
   final _password = TextEditingController();
   String? _nodeError;
+  String? _proxyError;
   String? _nodeNote;
   bool _savingNode = false;
   bool _switchingNetwork = false;
@@ -52,17 +54,26 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void dispose() {
     _node.dispose();
+    _proxy.dispose();
     _password.dispose();
     super.dispose();
   }
 
+  /// Saves the proxy first, so that the new node never sees a request without it, then the node.
   Future<void> _saveNode() async {
     setState(() {
       _nodeError = null;
+      _proxyError = null;
       _nodeNote = null;
       _savingNode = true;
     });
     try {
+      try {
+        await widget.controller.changeProxy(_proxy.text);
+      } on NodeAddressException {
+        setState(() => _proxyError = Copy.proxyInvalid);
+        return;
+      }
       await widget.controller.changeNode(_node.text);
       setState(() => _nodeNote = Copy.nodeSaved);
     } on NodeAddressException {
@@ -131,6 +142,15 @@ class _SettingsPageState extends State<SettingsPage> {
                         hint: Copy.nodeHint,
                         error: _nodeError,
                         note: _nodeNote,
+                        onSubmitted: (_) => _saveNode(),
+                      ),
+                      const SizedBox(height: Metrics.gap),
+                      LabeledField(
+                        label: Copy.proxyField,
+                        controller: _proxy,
+                        hint: Copy.proxyHint,
+                        error: _proxyError,
+                        note: Copy.proxyNote,
                         onSubmitted: (_) => _saveNode(),
                       ),
                       const SizedBox(height: Metrics.gap),

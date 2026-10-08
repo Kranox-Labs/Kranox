@@ -140,6 +140,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
     final now = DateTime.now();
     final report = checkWallet(
       node: controller.node,
+      proxy: controller.proxy,
       transfers: controller.transfers,
       swaps: widget.bridge.swaps,
       balance: controller.status.balance,
@@ -171,23 +172,27 @@ class _PrivacyPageState extends State<PrivacyPage> {
     ];
   }
 
-  PrivacyCheck _nodeCheck(WalletPrivacyReport report) => report.ownNode
-      ? PrivacyCheck(
-          title: Copy.privacyNodeTitle,
-          state: CheckState.good,
-          line: Copy.privacyNodeOwnLine,
-          detail: Copy.privacyNodeOwn(report.node),
-        )
-      : PrivacyCheck(
-          title: Copy.privacyNodeTitle,
-          state: CheckState.warning,
-          line: Copy.privacyNodePublicLine,
-          detail: Copy.privacyNodePublic(report.node),
-          action: SmallPillButton(
-            label: Copy.privacyChangeNode,
-            onPressed: () => widget.onNavigate(WalletPage.settings),
-          ),
-        );
+  PrivacyCheck _nodeCheck(WalletPrivacyReport report) => switch (report) {
+    WalletPrivacyReport(ownNode: true) => PrivacyCheck(
+      title: Copy.privacyNodeTitle,
+      state: CheckState.good,
+      line: Copy.privacyNodeOwnLine,
+      detail: Copy.privacyNodeOwn(report.node),
+    ),
+    WalletPrivacyReport(:final proxy?) => PrivacyCheck(
+      title: Copy.privacyNodeTitle,
+      state: CheckState.good,
+      line: Copy.privacyNodeProxyLine,
+      detail: Copy.privacyNodeProxy(report.node, proxy),
+    ),
+    _ => PrivacyCheck(
+      title: Copy.privacyNodeTitle,
+      state: CheckState.warning,
+      line: Copy.privacyNodePublicLine,
+      detail: Copy.privacyNodePublic(report.node),
+      action: SmallPillButton(label: Copy.privacyChangeNode, onPressed: () => widget.onNavigate(WalletPage.settings)),
+    ),
+  };
 
   PrivacyCheck _subaddressCheck(List<ReusedSubaddress> reused) => PrivacyCheck(
     title: Copy.privacySubaddressTitle,

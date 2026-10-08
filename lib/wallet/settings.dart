@@ -2,13 +2,22 @@ import '../config/app_config.dart';
 import '../config/network.dart';
 
 /// The choices of the user that the app keeps between runs: the network, a node for each network where the user
-/// chose one, and the subaddress that the receive page shows on each network. A network without a choice uses its
-/// default node.
+/// chose one, the subaddress that the receive page shows on each network, and a proxy to the nodes. A network without
+/// a choice uses its default node.
 final class AppSettings {
-  const AppSettings({this.network = AppConfig.defaultNetwork, this.nodes = const {}, this.receiveIndexes = const {}});
+  const AppSettings({
+    this.network = AppConfig.defaultNetwork,
+    this.nodes = const {},
+    this.receiveIndexes = const {},
+    this.proxy,
+  });
 
   final MoneroNetwork network;
   final Map<MoneroNetwork, String> nodes;
+
+  /// The SOCKS proxy, such as Tor at 127.0.0.1:9050, through which the wallet reaches the node of every network, or
+  /// null to reach it straight (K-11 of the security review of 0.2.0).
+  final String? proxy;
 
   /// The index of the subaddress that the receive page shows. The bridge makes subaddresses of its own for the
   /// exchanger, so the newest subaddress of a wallet is not always one that the user may hand out.
@@ -19,18 +28,31 @@ final class AppSettings {
   int? receiveIndexOf(MoneroNetwork network) => receiveIndexes[network];
 
   AppSettings withNetwork(MoneroNetwork network) =>
-      AppSettings(network: network, nodes: nodes, receiveIndexes: receiveIndexes);
+      AppSettings(network: network, nodes: nodes, receiveIndexes: receiveIndexes, proxy: proxy);
 
-  AppSettings withNode(MoneroNetwork network, String node) =>
-      AppSettings(network: this.network, nodes: {...nodes, network: node}, receiveIndexes: receiveIndexes);
+  AppSettings withNode(MoneroNetwork network, String node) => AppSettings(
+    network: this.network,
+    nodes: {...nodes, network: node},
+    receiveIndexes: receiveIndexes,
+    proxy: proxy,
+  );
 
-  AppSettings withReceiveIndex(MoneroNetwork network, int index) =>
-      AppSettings(network: this.network, nodes: nodes, receiveIndexes: {...receiveIndexes, network: index});
+  AppSettings withReceiveIndex(MoneroNetwork network, int index) => AppSettings(
+    network: this.network,
+    nodes: nodes,
+    receiveIndexes: {...receiveIndexes, network: index},
+    proxy: proxy,
+  );
+
+  /// The settings with [proxy], or without one when it is null.
+  AppSettings withProxy(String? proxy) =>
+      AppSettings(network: network, nodes: nodes, receiveIndexes: receiveIndexes, proxy: proxy);
 
   Map<String, Object?> toJson() => {
     _networkKey: network.name,
     _nodesKey: {for (final entry in nodes.entries) entry.key.name: entry.value},
     _receiveIndexesKey: {for (final entry in receiveIndexes.entries) entry.key.name: entry.value},
+    _proxyKey: proxy,
   };
 
   /// Reads the settings from their JSON. Throws a [FormatException] for a value of the wrong form.
@@ -72,10 +94,15 @@ final class AppSettings {
       throw const FormatException('The settings hold receive indexes that are no object.');
     }
     final network = data[_networkKey];
+    final proxy = data[_proxyKey];
+    if (proxy != null && proxy is! String) {
+      throw const FormatException('The settings hold a proxy that is no text.');
+    }
     return AppSettings(
       network: network is String ? _networkNamed(network) : AppConfig.defaultNetwork,
       nodes: nodes,
       receiveIndexes: receiveIndexes,
+      proxy: proxy as String?,
     );
   }
 
@@ -88,4 +115,5 @@ final class AppSettings {
   static const String _nodesKey = 'nodes';
   static const String _legacyNodeKey = 'node';
   static const String _receiveIndexesKey = 'receiveIndexes';
+  static const String _proxyKey = 'proxy';
 }

@@ -112,11 +112,27 @@ abstract final class AppConfig {
   /// The seed of a new wallet has words of this language.
   static const String seedLanguage = 'English';
 
+  /// Robinhood Chain and its coin USDG, for the payment link in the code of a deposit (K-22 of the security review of
+  /// 0.2.0). CHECKED 8 Oct 2026, rpc.mainnet.chain.robinhood.com: eth_chainId gives 4663, and the contract of USDG,
+  /// from the list of ChangeNOW on 7 Oct 2026, gives the symbol USDG and 6 decimals.
+  static const int robinhoodChainId = 4663;
+  static const String usdgContract = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168';
+  static const int usdgDecimals = 6;
+  static const int ethDecimals = 18;
+
   /// The relay of Kranox for the bridge. It holds the API key of the exchanger, so that the key never sits in the
   /// app; apps/relay holds its code. From 5 Oct 2026 it runs on the server of the site, apart from the site, at its
   /// own name. A build for development can point at a relay on the machine:
   /// fvm flutter run -d macos --dart-define=BRIDGE_RELAY=http://127.0.0.1:8787
   static const String bridgeRelay = String.fromEnvironment('BRIDGE_RELAY', defaultValue: 'https://relay.kranox.cash');
+
+  /// The public keys of the relay, which signs each of its answers, as uncompressed points of P-256 in base64: the app
+  /// trusts no answer without a signature under one of them (K-10 of the security review of 0.2.0). The private key
+  /// lies in secret/relay-signing.pem of the owner, and the deploy of the relay names its public key.
+  static const List<String> relaySigningKeys = [
+    // The key of 8 Oct 2026, which the owner made in secret/relay-signing.pem.
+    'BB4chM66jqZnchD0UpwidNxMraJruYq9wtklECLjmxfO16kSU1zwaytcXxw/Pe7ZgELErnFzgLtqHLenYTnzZPk=',
+  ];
 
   /// A call to the relay that takes longer than this fails.
   static const Duration bridgeRequestTimeout = Duration(seconds: 30);

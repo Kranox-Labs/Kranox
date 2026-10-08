@@ -62,11 +62,13 @@ BridgeSwap _swap(
 
 WalletPrivacyReport _check({
   String node = _publicNode,
+  String? proxy,
   List<WalletTransfer> transfers = const [],
   List<BridgeSwap> swaps = const [],
   String balance = '10',
 }) => checkWallet(
   node: node,
+  proxy: proxy,
   transfers: transfers,
   swaps: swaps,
   // The parser refuses an amount of 0, which a balance can be.
@@ -103,6 +105,14 @@ void main() {
     for (final node in outside) {
       expect(isOwnNode(node), isFalse, reason: node);
     }
+  });
+
+  test('a public node reached through a proxy such as Tor sees no IP address, so it is nothing to improve (K-11)', () {
+    final straight = _check();
+    final throughTor = _check(proxy: '127.0.0.1:9050');
+    expect(straight.nodeSeesYou, isTrue);
+    expect(throughTor.nodeSeesYou, isFalse);
+    expect(throughTor.toImprove, straight.toImprove - 1);
   });
 
   test('a public node is something to improve, and a node of its own network is not', () {

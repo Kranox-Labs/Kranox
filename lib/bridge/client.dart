@@ -1,9 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
 import 'chain_scan.dart';
 import 'models.dart';
+import 'relay_signature.dart';
 
 /// The ways in which a call of the bridge can fail. The screens show a sentence for each one.
 enum BridgeFailure {
@@ -182,15 +186,27 @@ String? _readToken(Map<String, Object?> data) => switch (data['readToken']) {
   _ => throw const FormatException('The relay answered a read token that is no text.'),
 };
 
-/// The headers of the key of a creation and of the read token of a swap, as the relay reads them.
+/// The headers of the key of a creation, of the read token of a swap, of the nonce of a request, and of the signature
+/// of an answer, as the relay reads and writes them.
 const String _creationKeyHeader = 'Idempotency-Key';
 const String _swapTokenHeader = 'Kranox-Swap-Token';
+const String _nonceHeader = 'Kranox-Nonce';
+const String _signatureHeader = 'Kranox-Signature';
 
 /// The bridge through the relay of Kranox, over HTTP, and the scan of an address on Robinhood Chain through it.
 final class RelayBridgeClient implements BridgeClient, ChainScanClient {
-  RelayBridgeClient({String baseUrl = AppConfig.bridgeRelay}) : _base = Uri.parse(baseUrl);
+  /// A release talks to its relay over HTTPS only, and trusts an answer only with a signature under [signingKeys].
+  RelayBridgeClient({String baseUrl = AppConfig.bridgeRelay, List<String> signingKeys = AppConfig.relaySigningKeys})
+    : _base = Uri.parse(baseUrl),
+      _signature = RelaySignature(signingKeys) {
+    if (kReleaseMode && _base.scheme != 'https') {
+      throw StateError('A release of the app talks to its relay over HTTPS only, not at $baseUrl.');
+    }
+  }
 
   final Uri _base;
+  final RelaySignature _signature;
+  final Random _random = Random.secure();
   final HttpClient _http = HttpClient()..connectionTimeout = AppConfig.bridgeRequestTimeout;
 
   @override
@@ -275,10 +291,12 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     // The relay may sit under a path of its address, so the path of the call follows it.
     final basePath = _base.path.endsWith('/') ? _base.path.substring(0, _base.path.length - 1) : _base.path;
     final uri = _base.replace(path: '$basePath$path', queryParameters: query);
+    final nonce = [for (var i = 0; i < 16; i++) _random.nextInt(256).toRadixString(16).padLeft(2, '0')].join();
     final HttpClientResponse response;
     final String text;
     try {
       final request = await _http.openUrl(method, uri).timeout(AppConfig.bridgeRequestTimeout);
+      request.headers.set(_nonceHeader, nonce);
       headers.forEach(request.headers.set);
       if (body != null) {
         request.headers.contentType = ContentType.json;
@@ -290,6 +308,13 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
       throw BridgeException(BridgeFailure.relayDown, error.message);
     } on Object catch (error) {
       throw BridgeException(BridgeFailure.relayDown, '$error');
+    }
+    // An answer counts only with the signature of the relay over this request and its body, an error too.
+    if (!_signature.verifies(nonce: nonce, body: text, signature: response.headers.value(_signatureHeader))) {
+      throw BridgeException(
+        BridgeFailure.failed,
+        'The relay answered ${response.statusCode} without a valid signature.',
+      );
     }
     final Object? data;
     try {
