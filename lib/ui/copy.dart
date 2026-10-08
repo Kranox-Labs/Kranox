@@ -60,7 +60,7 @@ abstract final class Copy {
   static const String unlockTitle = 'Welcome back';
   static const String unlockLead = 'Enter your password to open the wallet.';
   static const String unlockAction = 'Unlock';
-  static String version(String name) => 'Version $name';
+  static String version(String name, {required bool beta}) => beta ? 'Version $name beta' : 'Version $name';
 
   // Navigation.
   static const String navHome = 'Home';

@@ -2,6 +2,11 @@ import 'network.dart';
 
 /// The settings of this build of the app. Each value that can change has its one definition here.
 abstract final class AppConfig {
+  /// Whether this build is a beta, which the unlock screen names after the version: the owner asked on 8 Oct 2026 for
+  /// the word in the app too, not only on the release page. The version stays digits in `pubspec.yaml`, because macOS
+  /// takes only digits and points in the version of an app. Set it to false for a main release.
+  static const bool betaBuild = true;
+
   /// The network of the app until the user chooses another one. The owner chose mainnet on 5 Oct 2026, with a choice
   /// of stagenet and testnet in the app. Each network keeps its own wallet and its own node.
   static const MoneroNetwork defaultNetwork = MoneroNetwork.mainnet;
