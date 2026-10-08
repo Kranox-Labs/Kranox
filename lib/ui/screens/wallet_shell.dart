@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../bridge/controller.dart';
 import '../../privacy/chain_scans.dart';
 import '../../wallet/controller.dart';
+import '../theme/metrics.dart';
 import '../widgets/backdrop.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/toast.dart';
@@ -15,10 +16,13 @@ import 'settings_page.dart';
 
 /// The open wallet: the sidebar at the left and the chosen page at the right.
 class WalletShell extends StatefulWidget {
-  const WalletShell({super.key, required this.controller, required this.bridge});
+  const WalletShell({super.key, required this.controller, required this.bridge, this.notice});
 
   final WalletController controller;
   final BridgeController bridge;
+
+  /// A notice that floats at the foot of every page until the user closes it, such as a damaged file moved aside.
+  final Widget? notice;
 
   @override
   State<WalletShell> createState() => _WalletShellState();
@@ -76,25 +80,47 @@ class _WalletShellState extends State<WalletShell> {
             Expanded(
               // A toast such as "Copied" floats at the foot of the page, in the middle beside the sidebar.
               child: ToastHost(
-                child: switch (_page) {
-                  WalletPage.home => HomePage(controller: controller, onNavigate: _go),
-                  WalletPage.send => SendPage(
-                    controller: controller,
-                    bridge: widget.bridge,
-                    scans: _scans,
-                    startOnPay: _startOnPay,
-                  ),
-                  WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
-                  WalletPage.activity => ActivityPage(controller: controller),
-                  WalletPage.privacy => PrivacyPage(
-                    controller: controller,
-                    bridge: widget.bridge,
-                    onNavigate: _go,
-                    onPayNewAddress: _payNewAddress,
-                    scans: _scans,
-                  ),
-                  WalletPage.settings => SettingsPage(controller: controller, bridge: widget.bridge, onLock: _lock),
-                },
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: switch (_page) {
+                        WalletPage.home => HomePage(controller: controller, onNavigate: _go),
+                        WalletPage.send => SendPage(
+                          controller: controller,
+                          bridge: widget.bridge,
+                          scans: _scans,
+                          startOnPay: _startOnPay,
+                        ),
+                        WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
+                        WalletPage.activity => ActivityPage(controller: controller),
+                        WalletPage.privacy => PrivacyPage(
+                          controller: controller,
+                          bridge: widget.bridge,
+                          onNavigate: _go,
+                          onPayNewAddress: _payNewAddress,
+                          scans: _scans,
+                        ),
+                        WalletPage.settings => SettingsPage(
+                          controller: controller,
+                          bridge: widget.bridge,
+                          onLock: _lock,
+                        ),
+                      },
+                    ),
+                    if (widget.notice case final notice?)
+                      Positioned(
+                        left: Metrics.pagePaddingX,
+                        right: Metrics.pagePaddingX,
+                        bottom: Metrics.toastBottom,
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: Metrics.formWidth),
+                            child: notice,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],

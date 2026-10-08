@@ -36,12 +36,14 @@ abstract interface class BridgeClient {
   Future<BridgeQuote> quote(BridgeAsset asset, String amount);
 
   /// Asks the exchanger for a swap of [amount] of [asset] into XMR for [address]. The answer carries the deposit
-  /// address on Robinhood Chain.
+  /// address on Robinhood Chain. A second call with the same [creationKey] and the same request gets the swap of the
+  /// first, so that a try after a lost answer makes no second swap.
   Future<CreatedSwap> createSwap({
     required BridgeAsset asset,
     required String amount,
     required String address,
     String? refundAddress,
+    required String creationKey,
   });
 
   /// Asks the exchanger for the range of the XMR of one payment into [asset] at [rate].
@@ -52,7 +54,8 @@ abstract interface class BridgeClient {
 
   /// Asks the exchanger for a payment of [xmrAmount] into [asset] for [address] on Robinhood Chain at [rate], with a
   /// refund of the XMR to [refundAddress] of this wallet. A fixed rate holds the rate of [rateId]; a floating rate
-  /// takes none. The answer carries the Monero address of the deposit and the amount that the recipient gets.
+  /// takes none. The answer carries the Monero address of the deposit and the amount that the recipient gets. The
+  /// [creationKey] works as for a swap.
   Future<CreatedPay> createPay({
     required BridgeAsset asset,
     required PayRate rate,
@@ -60,9 +63,12 @@ abstract interface class BridgeClient {
     required String address,
     required String refundAddress,
     required String? rateId,
+    required String creationKey,
   });
 
-  Future<SwapState> readSwap(String id);
+  /// Reads the state of the swap [id], with the [token] that the relay gave at its creation. A swap of a release
+  /// before 0.3.1 has no token.
+  Future<SwapState> readSwap(String id, {String? token});
 
   /// Whether the relay answers. A relay that does not answer gives false, not an error.
   Future<bool> isOnline();
@@ -76,6 +82,7 @@ final class CreatedSwap {
     required this.estimatedXmr,
     required this.depositAddress,
     required this.payoutAddress,
+    this.readToken,
   });
 
   final String id;
@@ -83,6 +90,9 @@ final class CreatedSwap {
   final double? estimatedXmr;
   final String depositAddress;
   final String payoutAddress;
+
+  /// The token that reads the state of the swap at the relay; null from a relay before 8 Oct 2026.
+  final String? readToken;
 
   factory CreatedSwap.fromJson(Map<String, Object?> data) {
     final id = data['id'];
@@ -107,6 +117,7 @@ final class CreatedSwap {
       estimatedXmr: estimate is num ? estimate.toDouble() : null,
       depositAddress: deposit,
       payoutAddress: payout,
+      readToken: _readToken(data),
     );
   }
 }
@@ -119,6 +130,7 @@ final class CreatedPay {
     required this.xmrAmount,
     required this.depositAddress,
     required this.payoutAddress,
+    this.readToken,
   });
 
   final String id;
@@ -130,6 +142,9 @@ final class CreatedPay {
   final double xmrAmount;
   final String depositAddress;
   final String payoutAddress;
+
+  /// The token that reads the state of the payment at the relay; null from a relay before 8 Oct 2026.
+  final String? readToken;
 
   factory CreatedPay.fromJson(Map<String, Object?> data) {
     final id = data['id'];
@@ -155,9 +170,21 @@ final class CreatedPay {
       xmrAmount: xmr.toDouble(),
       depositAddress: deposit,
       payoutAddress: payout,
+      readToken: _readToken(data),
     );
   }
 }
+
+/// The read token of a new swap or payment: text when the relay gives one, null from an older relay.
+String? _readToken(Map<String, Object?> data) => switch (data['readToken']) {
+  null => null,
+  final String token when token.isNotEmpty => token,
+  _ => throw const FormatException('The relay answered a read token that is no text.'),
+};
+
+/// The headers of the key of a creation and of the read token of a swap, as the relay reads them.
+const String _creationKeyHeader = 'Idempotency-Key';
+const String _swapTokenHeader = 'Kranox-Swap-Token';
 
 /// The bridge through the relay of Kranox, over HTTP, and the scan of an address on Robinhood Chain through it.
 final class RelayBridgeClient implements BridgeClient, ChainScanClient {
@@ -176,11 +203,13 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     required String amount,
     required String address,
     String? refundAddress,
+    required String creationKey,
   }) async => CreatedSwap.fromJson(
     await _call(
       'POST',
       '/v1/receive/swaps',
       body: {'asset': asset.code, 'amount': amount, 'address': address, 'refundAddress': ?refundAddress},
+      headers: {_creationKeyHeader: creationKey},
     ),
   );
 
@@ -201,6 +230,7 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     required String address,
     required String refundAddress,
     required String? rateId,
+    required String creationKey,
   }) async => CreatedPay.fromJson(
     await _call(
       'POST',
@@ -213,12 +243,14 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
         'refundAddress': refundAddress,
         'rateId': ?rateId,
       },
+      headers: {_creationKeyHeader: creationKey},
     ),
   );
 
   @override
-  Future<SwapState> readSwap(String id) async =>
-      SwapState.fromJson(await _call('GET', '/v1/swaps/${Uri.encodeComponent(id)}'));
+  Future<SwapState> readSwap(String id, {String? token}) async => SwapState.fromJson(
+    await _call('GET', '/v1/swaps/${Uri.encodeComponent(id)}', headers: {_swapTokenHeader: ?token}),
+  );
 
   @override
   Future<ChainScan> scanAddress(String address) async =>
@@ -238,6 +270,7 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     String path, {
     Map<String, String>? query,
     Map<String, Object?>? body,
+    Map<String, String> headers = const {},
   }) async {
     // The relay may sit under a path of its address, so the path of the call follows it.
     final basePath = _base.path.endsWith('/') ? _base.path.substring(0, _base.path.length - 1) : _base.path;
@@ -246,6 +279,7 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     final String text;
     try {
       final request = await _http.openUrl(method, uri).timeout(AppConfig.bridgeRequestTimeout);
+      headers.forEach(request.headers.set);
       if (body != null) {
         request.headers.contentType = ContentType.json;
         request.write(jsonEncode(body));

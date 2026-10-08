@@ -192,6 +192,7 @@ final class _Relay implements BridgeClient {
     required String address,
     required String refundAddress,
     required String? rateId,
+    required String creationKey,
   }) async => CreatedPay(
     id: 'pay1',
     amount: double.parse(xmrAmount) * 500,
@@ -201,7 +202,7 @@ final class _Relay implements BridgeClient {
   );
 
   @override
-  Future<SwapState> readSwap(String id) async =>
+  Future<SwapState> readSwap(String id, {String? token}) async =>
       SwapState(stage: SwapStage.waiting, validUntil: DateTime.now().toUtc().add(const Duration(minutes: 10)));
 
   @override
@@ -220,6 +221,7 @@ final class _Relay implements BridgeClient {
     required String amount,
     required String address,
     String? refundAddress,
+    required String creationKey,
   }) => throw UnimplementedError('The test makes no swap of receive.');
 
   @override

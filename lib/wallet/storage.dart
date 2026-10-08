@@ -19,9 +19,13 @@ String moneroLibraryPath() {
 
 /// The files of the app in its support folder: one wallet for each network, and the settings.
 final class AppStorage {
-  const AppStorage(this.root);
+  AppStorage(this.root);
 
   final String root;
+
+  /// Where the last read moved a settings file that it could not read, or null.
+  String? get settingsRecoveredFrom => _settingsRecoveredFrom;
+  String? _settingsRecoveredFrom;
 
   static Future<AppStorage> locate() async => AppStorage((await getApplicationSupportDirectory()).path);
 
@@ -47,7 +51,9 @@ final class AppStorage {
     try {
       return AppSettings.fromJson(jsonDecode(await file.readAsString()));
     } on FormatException {
-      await file.rename('$_settingsPath.unreadable-${DateTime.now().toUtc().millisecondsSinceEpoch}');
+      final aside = '$_settingsPath.unreadable-${DateTime.now().toUtc().millisecondsSinceEpoch}';
+      await file.rename(aside);
+      _settingsRecoveredFrom = aside;
       return const AppSettings();
     }
   }

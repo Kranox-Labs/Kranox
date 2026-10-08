@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -7,6 +8,7 @@ import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/evm_address.dart';
 import '../wallet/controller.dart';
+import 'attempt.dart';
 import 'chain_scan.dart';
 import 'client.dart';
 import 'live_quote.dart';
@@ -33,6 +35,10 @@ final class BridgeController extends ChangeNotifier {
     onChanged: _quoteChanged,
   );
   final Map<BridgeAsset, double> _minimums = {};
+
+  // The creation of a swap whose answer has not come back, for a second try of the same form.
+  CreationAttempt? _receiveAttempt;
+  final Random _random = Random.secure();
   List<BridgeSwap> _swaps = const [];
   bool? _relayOnline;
   bool _checkingRelay = false;
@@ -52,6 +58,9 @@ final class BridgeController extends ChangeNotifier {
   PayController? _pay;
 
   ChainScanClient? get scanner => _scanner;
+
+  /// Where the start moved a file of swaps that it could not read whole, or null, so that the screens can say so.
+  String? get recoveredFrom => _store.recoveredFrom;
   BridgeAsset get asset => _asset;
   String get amount => _amount;
   BridgeQuote? get quote => _quote.value;
@@ -177,7 +186,15 @@ final class BridgeController extends ChangeNotifier {
     if (!canSwap) throw StateError('The bridge form holds no quoted amount.');
     final asset = _asset;
     final amount = _amount;
-    final address = await _wallet.newBridgeAddress();
+    // A second try of the same form reuses the subaddress and the key of the first, whose answer may have been lost.
+    final attempt = await attemptFor(
+      [asset.code, amount, refundAddress ?? ''].join('|'),
+      _receiveAttempt,
+      _wallet.newBridgeAddress,
+      _random,
+    );
+    _receiveAttempt = attempt;
+    final address = attempt.address;
     final CreatedSwap created;
     try {
       created = await _client.createSwap(
@@ -185,10 +202,12 @@ final class BridgeController extends ChangeNotifier {
         amount: amount,
         address: address.address,
         refundAddress: refundAddress,
+        creationKey: attempt.key,
       );
     } on FormatException catch (failure) {
       throw BridgeException(BridgeFailure.failed, failure.message);
     }
+    _receiveAttempt = null;
     _checkCreated(created, address: address.address, amount: amount);
     final swap = BridgeSwap(
       id: created.id,
@@ -201,6 +220,7 @@ final class BridgeController extends ChangeNotifier {
       createdAt: DateTime.now(),
       stage: SwapStage.waiting,
       refundAddress: refundAddress,
+      readToken: created.readToken,
     );
     _amount = '';
     _quote.follow(null);
@@ -272,7 +292,7 @@ final class BridgeController extends ChangeNotifier {
     var answered = false;
     for (final swap in _swaps.where((swap) => swap.watched).toList()) {
       try {
-        final updated = swap.withState(await _client.readSwap(swap.id));
+        final updated = swap.withState(await _client.readSwap(swap.id, token: swap.readToken));
         answered = true;
         if (jsonEncode(updated.toJson()) != jsonEncode(swap.toJson())) next[swap.id] = updated;
       } on BridgeException {

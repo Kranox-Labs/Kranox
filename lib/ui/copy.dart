@@ -56,6 +56,16 @@ abstract final class Copy {
   static const String restoreAction = 'Restore wallet';
   static const String restoring = 'Restoring…';
 
+  // The notice after the start moved a file that it could not read aside, K-09 of the security review of 0.2.0.
+  static const String recoveryTitle = 'Kranox moved a damaged file aside';
+  static String recoverySettings(String file) =>
+      'It could not read its settings, so it started with the defaults. Check your network and node in Settings. '
+      'The old file stays as $file.';
+  static String recoverySwaps(String file) =>
+      'It could not read every saved swap. The swaps that it could read stay, and the old file stays as $file.';
+  static const String recoveryWalletsSafe = 'Your wallets and their keys live in other files, which did not change.';
+  static const String recoveryDismiss = 'Got it';
+
   // Unlock.
   static const String unlockTitle = 'Welcome back';
   static const String unlockLead = 'Enter your password to open the wallet.';
@@ -611,6 +621,9 @@ abstract final class Copy {
   static const String walletClosed = 'The wallet locked before this step. Unlock it and try again.';
   static const String paymentChanged = 'This payment changed before it left. Nothing was sent; review it again.';
   static const String deadlinePassed = 'The time for this payment passed. Nothing was sent; review it again.';
+  static String feeTooHigh(String fee, String most) =>
+      'The node asks for a network fee of $fee XMR, above the most that Kranox pays, $most XMR. Nothing was sent. '
+      'Choose another node in Settings, or try again later.';
   // A failure that the app does not name. A payment may have left before it, so the user looks first.
   static const String unexpectedFailure = 'Something went wrong. Check Activity before you try again.';
 

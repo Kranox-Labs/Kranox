@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kranox_wallet/config/app_config.dart';
 import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
@@ -28,6 +29,7 @@ final class _QueueWallet implements WalletBackend {
   final Map<int, String> subaddresses = {1: 'subaddress-1'};
   bool open = false;
   Completer<void>? holdCommit;
+  PreparedSend prepared = _prepared;
   WalletException? readFailure;
   Future<void> _tail = Future<void>.value();
 
@@ -48,6 +50,11 @@ final class _QueueWallet implements WalletBackend {
         open = false;
         return null;
       case ConnectNode():
+        return null;
+      case PrepareSend():
+        _requireOpen();
+        return prepared;
+      case CancelSend():
         return null;
       case ConfirmSend():
         _requireOpen();
@@ -106,6 +113,29 @@ void main() {
   tearDown(() {
     controller.dispose();
     root.deleteSync(recursive: true);
+  });
+
+  test('a network fee above the most that the app pays drops the payment, and nothing leaves (K-11)', () async {
+    final amount = XmrAmount.parse('1');
+    engine.prepared = PreparedSend(
+      id: 2,
+      address: 'an-address',
+      amount: amount,
+      fee: XmrAmount(AppConfig.maxNetworkFee.units + 1),
+    );
+    await expectLater(
+      controller.prepareSend(address: 'an-address', amount: amount),
+      throwsA(isA<WalletException>().having((error) => error.failure, 'failure', WalletFailure.feeTooHigh)),
+    );
+    expect(engine.handled, containsAllInOrder([PrepareSend, CancelSend]));
+    expect(engine.handled, isNot(contains(ConfirmSend)));
+
+    engine.prepared = PreparedSend(id: 3, address: 'an-address', amount: amount, fee: AppConfig.maxNetworkFee);
+    expect(
+      (await controller.prepareSend(address: 'an-address', amount: amount)).id,
+      3,
+      reason: 'the most still goes',
+    );
   });
 
   test('a lock during a send waits for it, and the send reports the payment that left', () async {
@@ -173,9 +203,11 @@ void main() {
   test('a damaged settings file lets the app start with the defaults, and stays for support', () async {
     final path = '${root.path}/settings.json';
     File(path).writeAsStringSync('{"network": "mainnet", "nodes": {"mainnet": 4');
-    final settings = await AppStorage(root.path).readSettings();
+    final storage = AppStorage(root.path);
+    final settings = await storage.readSettings();
     expect(settings.network, MoneroNetwork.mainnet);
     expect(File(path).existsSync(), isFalse);
+    expect(storage.settingsRecoveredFrom, contains('settings.json.unreadable-'), reason: 'the screens can say so');
     expect(
       root.listSync().whereType<File>().where((file) => file.path.contains('settings.json.unreadable-')),
       hasLength(1),
