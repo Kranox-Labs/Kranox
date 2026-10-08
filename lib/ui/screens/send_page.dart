@@ -9,6 +9,7 @@ import '../../config/app_config.dart';
 import '../../bridge/models.dart';
 import '../../core/address.dart';
 import '../../core/amount.dart';
+import '../../privacy/chain_scans.dart';
 import '../../privacy/privacy_check.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
@@ -36,10 +37,17 @@ enum _SendWay { monero, robinhood }
 /// The send page: a payment in XMR in three steps, the form, the review with the fee, and the receipt; or pay to
 /// Robinhood Chain.
 class SendPage extends StatefulWidget {
-  const SendPage({super.key, required this.controller, required this.bridge});
+  const SendPage({super.key, required this.controller, required this.bridge, this.scans, this.startOnPay = false});
 
   final WalletController controller;
   final BridgeController bridge;
+
+  /// The addresses on Robinhood Chain that the user scanned in the menu Privacy, which the check of the recipient of
+  /// pay counts as the user's own.
+  final ChainScans? scans;
+
+  /// Whether the page opens on pay, such as from the way to a clean start of the menu Privacy.
+  final bool startOnPay;
 
   @override
   State<SendPage> createState() => _SendPageState();
@@ -51,7 +59,8 @@ const int _shortestAddress = 95;
 class _SendPageState extends State<SendPage> {
   // A payment on its way, under review, or in preparation brings the user back to pay.
   late _SendWay _way =
-      widget.bridge.activeSwapOf(SwapDirection.pay) == null &&
+      !widget.startOnPay &&
+          widget.bridge.activeSwapOf(SwapDirection.pay) == null &&
           widget.bridge.pay.review == null &&
           !widget.bridge.pay.preparing
       ? _SendWay.monero
@@ -292,7 +301,7 @@ class _SendPageState extends State<SendPage> {
         children: [
           ways,
           const SizedBox(height: Metrics.gap),
-          SendToChain(bridge: widget.bridge, wallet: widget.controller),
+          SendToChain(bridge: widget.bridge, wallet: widget.controller, scans: widget.scans),
         ],
       );
     }

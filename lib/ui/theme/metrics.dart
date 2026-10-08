@@ -45,6 +45,18 @@ abstract final class Metrics {
   /// A page in the center starts below the strip of the window buttons, with room above its title. The owner found
   /// the title of the send page too close to the top on 5 Oct 2026.
   static const EdgeInsets centeredPagePadding = EdgeInsets.fromLTRB(pagePaddingX, 64, pagePaddingX, pagePaddingY);
+
+  /// The board of the menu Privacy, a dashboard in the middle of the page that the owner chose on 8 Oct 2026: its
+  /// column, the least width for its two columns of tiles, and the room inside a tile.
+  static const double boardWidth = 760;
+  static const double boardTwoColumns = 560;
+  static const double tilePadding = 18;
+
+  /// The ring at the head of a board, with one part for each check: its size, its stroke, and the room between two
+  /// parts.
+  static const double ringSize = 84;
+  static const double ringStroke = 7;
+  static const double ringGap = 5;
   static const double transferIcon = 40;
   static const double roundButton = 46;
   static const double smallRound = 30;

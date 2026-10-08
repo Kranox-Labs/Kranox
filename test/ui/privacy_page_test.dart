@@ -139,6 +139,7 @@ void main() {
   late WalletController wallet;
   late BridgeController bridge;
   final opened = <WalletPage>[];
+  var paid = 0;
 
   Future<void> start(List<int> indexes) async {
     root = Directory.systemTemp.createTempSync('kranox-privacy-page');
@@ -151,6 +152,7 @@ void main() {
     await wallet.unlock('password');
     bridge = BridgeController(client: _NoRelay(), store: BridgeStore(storage.bridgePath), wallet: wallet);
     opened.clear();
+    paid = 0;
   }
 
   tearDown(() async {
@@ -168,7 +170,13 @@ void main() {
       MaterialApp(
         theme: KranoxTheme.build(Palette.of(activeLook)),
         home: Scaffold(
-          body: PrivacyPage(controller: wallet, bridge: bridge, onNavigate: opened.add, scans: scans),
+          body: PrivacyPage(
+            controller: wallet,
+            bridge: bridge,
+            onNavigate: opened.add,
+            onPayNewAddress: () => paid++,
+            scans: scans,
+          ),
         ),
       ),
     );
@@ -181,7 +189,17 @@ void main() {
     await tester.runAsync(() => start([1, 1, 1, 2]));
     await show(tester);
     expect(find.text(Copy.privacyToImprove(2)), findsOneWidget);
+    expect(find.text(Copy.privacyRingCount(4, 6)), findsOneWidget);
+    expect(find.text(Copy.privacySubaddressLine(1, 3)), findsOneWidget);
+
+    // The longer text of a check shows when the user opens its tile, and goes when the user closes it.
+    expect(find.text(Copy.privacySubaddressOne(1, 3)), findsNothing);
+    await tester.tap(find.text(Copy.privacySubaddressTitle));
+    await tester.pump();
     expect(find.text(Copy.privacySubaddressOne(1, 3)), findsOneWidget);
+    await tester.tap(find.text(Copy.privacySubaddressTitle));
+    await tester.pump();
+    expect(find.text(Copy.privacySubaddressOne(1, 3)), findsNothing);
 
     await tester.tap(find.text(Copy.privacyChangeNode));
     expect(opened, [WalletPage.settings]);
@@ -208,8 +226,12 @@ void main() {
     });
     await show(tester);
     expect(find.text(Copy.privacyClear), findsOneWidget);
+    expect(find.text(Copy.privacyRingCount(6, 6)), findsOneWidget);
     expect(find.text(Copy.privacyChangeNode), findsNothing);
     expect(find.text(Copy.privacyNewSubaddress), findsNothing);
+    expect(find.text(Copy.privacyNodeOwnLine), findsOneWidget);
+    await tester.tap(find.text(Copy.privacyNodeTitle));
+    await tester.pump();
     expect(find.text(Copy.privacyNodeOwn('192.168.1.5:18089')), findsOneWidget);
   });
 
@@ -219,7 +241,13 @@ void main() {
     final scans = ChainScans(scanner);
     addTearDown(scans.dispose);
     await show(tester, scans: scans);
-    expect(find.text(Copy.privacyChainHeading), findsOneWidget);
+    expect(find.text(Copy.privacyFundingPending), findsNothing);
+
+    // The scan has a tab of its own, whose tiles say what each check reads before the first scan.
+    await tester.tap(find.text(Copy.privacyChainTab.toUpperCase()));
+    await tester.pump();
+    expect(find.text(Copy.privacyFundingPending), findsOneWidget);
+    expect(find.text(Copy.privacyExposurePending), findsOneWidget);
 
     // An address of the wrong form never reaches the relay.
     await tester.enterText(find.byType(TextField), '0x123');
@@ -235,9 +263,22 @@ void main() {
     }
     expect(scanner.asked, [_address]);
     expect(find.text(Copy.privacyChainResult(shortText(_address))), findsOneWidget);
+    expect(find.text(Copy.privacyToImprove(2)), findsOneWidget);
+    expect(find.text(Copy.privacyRingCount(3, 5)), findsOneWidget);
+    expect(find.text(Copy.privacyFundingNamedLine('Big Exchange')), findsOneWidget);
+    expect(find.text(Copy.privacyLookAlikeLine(1)), findsOneWidget);
+    expect(find.text(Copy.privacyStatCount(3)), findsOneWidget);
+    expect(find.text(Copy.privacyFundingPending), findsNothing);
+
+    await tester.tap(find.text(Copy.privacyFundingTitle));
+    await tester.tap(find.text(Copy.privacyLookAlikeTitle));
+    await tester.pump();
     expect(find.textContaining('Big Exchange funded it first'), findsOneWidget);
     expect(find.textContaining('$_fakeShop looks like $_shop'), findsOneWidget);
-    expect(find.textContaining(Copy.privacyToImprove(2)), findsOneWidget);
+
+    // Things to improve come with the way to a clean start: pay to a new address of the user.
+    await tester.tap(find.text(Copy.privacyPayNewAddress));
+    expect(paid, 1);
   });
 
   testWidgets('a wallet on another network than mainnet shows no scan of Robinhood Chain', (tester) async {
@@ -248,6 +289,7 @@ void main() {
     final scans = ChainScans(_Scanner());
     addTearDown(scans.dispose);
     await show(tester, scans: scans);
-    expect(find.text(Copy.privacyChainHeading), findsNothing);
+    expect(find.text(Copy.privacyChainTab.toUpperCase()), findsNothing);
+    expect(find.text(Copy.privacyChainTitle), findsNothing);
   });
 }

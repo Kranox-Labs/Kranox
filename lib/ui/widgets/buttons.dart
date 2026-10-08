@@ -31,7 +31,7 @@ class PillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (background, foreground) = _colors(context.palette);
+    final (background, foreground) = _pillColors(context.palette, tone);
     final button = FilledButton(
       onPressed: busy ? null : onPressed,
       style: FilledButton.styleFrom(
@@ -60,15 +60,65 @@ class PillButton extends StatelessWidget {
     );
     return expand ? SizedBox(width: double.infinity, child: button) : button;
   }
-
-  (Color, Color) _colors(Palette palette) => switch (tone) {
-    PillTone.accent => (palette.accent, palette.onAccent),
-    PillTone.heroMain => (palette.heroMain, palette.heroMainInk),
-    PillTone.heroAlt => (palette.heroAlt, palette.heroAltInk),
-    PillTone.solid => (palette.solid, palette.solidInk),
-    PillTone.quiet => (palette.field, palette.ink),
-  };
 }
+
+/// A small rounded button with a short label, for a card or the inside of a field, such as a way to improve a check
+/// of the menu Privacy. While [busy], it shows a small spinner and [busyLabel], and takes no tap.
+class SmallPillButton extends StatelessWidget {
+  const SmallPillButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.tone = PillTone.quiet,
+    this.busy = false,
+    this.busyLabel,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final PillTone tone;
+  final bool busy;
+  final String? busyLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final (background, foreground) = _pillColors(context.palette, tone);
+    return FilledButton(
+      onPressed: busy ? null : onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        disabledBackgroundColor: background.withValues(alpha: background.a * 0.5),
+        disabledForegroundColor: foreground.withValues(alpha: 0.7),
+        shape: const StadiumBorder(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        textStyle: KranoxType.smallStrong,
+        elevation: 0,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (busy) ...[
+            SizedBox.square(dimension: 11, child: CircularProgressIndicator(strokeWidth: 1.6, color: foreground)),
+            const SizedBox(width: Metrics.gapTiny),
+          ],
+          Text(busy ? busyLabel ?? label : label),
+        ],
+      ),
+    );
+  }
+}
+
+/// The ground and the text of a pill button of [tone].
+(Color, Color) _pillColors(Palette palette, PillTone tone) => switch (tone) {
+  PillTone.accent => (palette.accent, palette.onAccent),
+  PillTone.heroMain => (palette.heroMain, palette.heroMainInk),
+  PillTone.heroAlt => (palette.heroAlt, palette.heroAltInk),
+  PillTone.solid => (palette.solid, palette.solidInk),
+  PillTone.quiet => (palette.field, palette.ink),
+};
 
 /// A round button with an icon, such as the arrow on the balance card and the copy buttons.
 class RoundButton extends StatelessWidget {

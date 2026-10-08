@@ -39,7 +39,18 @@ class _WalletShellState extends State<WalletShell> {
     super.dispose();
   }
 
-  void _go(WalletPage page) => setState(() => _page = page);
+  // The send page opens on pay once, after the way to a clean start of the menu Privacy.
+  bool _startOnPay = false;
+
+  void _go(WalletPage page) => setState(() {
+    _page = page;
+    _startOnPay = false;
+  });
+
+  void _payNewAddress() => setState(() {
+    _page = WalletPage.send;
+    _startOnPay = true;
+  });
 
   Future<void> _lock() => widget.controller.lock();
 
@@ -67,13 +78,19 @@ class _WalletShellState extends State<WalletShell> {
               child: ToastHost(
                 child: switch (_page) {
                   WalletPage.home => HomePage(controller: controller, onNavigate: _go),
-                  WalletPage.send => SendPage(controller: controller, bridge: widget.bridge),
+                  WalletPage.send => SendPage(
+                    controller: controller,
+                    bridge: widget.bridge,
+                    scans: _scans,
+                    startOnPay: _startOnPay,
+                  ),
                   WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
                   WalletPage.activity => ActivityPage(controller: controller),
                   WalletPage.privacy => PrivacyPage(
                     controller: controller,
                     bridge: widget.bridge,
                     onNavigate: _go,
+                    onPayNewAddress: _payNewAddress,
                     scans: _scans,
                   ),
                   WalletPage.settings => SettingsPage(controller: controller, bridge: widget.bridge, onLock: _lock),

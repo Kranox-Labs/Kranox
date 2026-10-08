@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../bridge/chain_scan.dart';
 import '../../bridge/client.dart';
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
@@ -11,6 +12,8 @@ import '../../config/app_config.dart';
 import '../../core/amount.dart';
 import '../../core/evm_address.dart';
 import '../../core/unlock.dart';
+import '../../privacy/chain_privacy.dart';
+import '../../privacy/chain_scans.dart';
 import '../../privacy/privacy_check.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
@@ -24,6 +27,7 @@ import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
 import '../widgets/privacy_check.dart';
+import '../widgets/recipient_check.dart';
 import '../widgets/review_line.dart';
 import '../widgets/send_password.dart';
 import '../widgets/surfaces.dart';
@@ -37,10 +41,13 @@ const int _evmAddressLength = 42;
 /// the recipient there, and ChangeNOW turns the XMR of this wallet into exactly that amount. The part of the send page
 /// under the choice "To Robinhood Chain", in the form of a swap, as the owner showed on 6 Oct 2026.
 class SendToChain extends StatefulWidget {
-  const SendToChain({super.key, required this.bridge, required this.wallet});
+  const SendToChain({super.key, required this.bridge, required this.wallet, this.scans});
 
   final BridgeController bridge;
   final WalletController wallet;
+
+  /// The addresses that the user scanned in the menu Privacy, which the check of the recipient counts as the user's.
+  final ChainScans? scans;
 
   @override
   State<SendToChain> createState() => _SendToChainState();
@@ -61,6 +68,12 @@ class _SendToChainState extends State<SendToChain> {
   PayReview? _checked;
   PrivacyReport? _privacy;
   final Random _random = Random.secure();
+
+  // The check of the recipient, for the review that it belongs to: what the scan found, or why it failed.
+  PayReview? _recipientFor;
+  ChainPrivacyReport? _recipientReport;
+  String? _recipientError;
+  bool _checkingRecipient = false;
 
   PayController get _pay => widget.bridge.pay;
 
@@ -130,6 +143,40 @@ class _SendToChainState extends State<SendToChain> {
     return report;
   }
 
+  /// Scans the recipient of [review] through the relay. The scan stays out of the scans of the menu Privacy, because the
+  /// recipient may be someone else.
+  Future<void> _checkRecipient(PayReview review, ChainScanClient scanner) async {
+    setState(() {
+      _recipientFor = review;
+      _recipientReport = null;
+      _recipientError = null;
+      _checkingRecipient = true;
+    });
+    try {
+      final scan = await readScan(scanner, review.created.payoutAddress);
+      final report = analyzeChain(scan, swaps: widget.bridge.swaps, ownAddresses: widget.scans?.scanned ?? const []);
+      if (mounted && identical(_recipientFor, review)) setState(() => _recipientReport = report);
+    } on BridgeException catch (error) {
+      if (mounted && identical(_recipientFor, review)) setState(() => _recipientError = bridgeFailureText(error));
+    } finally {
+      if (mounted) setState(() => _checkingRecipient = false);
+    }
+  }
+
+  /// The check of the recipient on [review], when the relay of the app offers the scan.
+  Widget? _recipientCheck(PayReview review) {
+    final scanner = widget.bridge.scanner;
+    if (scanner == null) return null;
+    final mine = identical(_recipientFor, review);
+    return RecipientCheck(
+      report: mine ? _recipientReport : null,
+      checking: mine && _checkingRecipient,
+      error: mine ? _recipientError : null,
+      onCheck: _busy || _checkingRecipient ? null : () => _checkRecipient(review, scanner),
+      now: DateTime.now(),
+    );
+  }
+
   /// Leaves the review and puts the suggested amount of the privacy check into the form. Pay quotes it again, and the
   /// user reviews the new amount.
   Future<void> _useSuggestion(XmrAmount amount) async {
@@ -181,6 +228,7 @@ class _SendToChainState extends State<SendToChain> {
             _Review(
               review: review,
               privacy: _privacyOf(review),
+              recipientCheck: _recipientCheck(review),
               onUseSuggestion: _useSuggestion,
               password: _password,
               busy: _busy,
@@ -536,12 +584,13 @@ class _QuoteNote extends StatelessWidget {
   };
 }
 
-/// The review of a payment: what the recipient gets and where, the XMR that leaves with its fee, until when the rate
-/// holds, and where a refund goes.
+/// The review of a payment: what the recipient gets and where, with the check of the recipient, the XMR that leaves with
+/// its fee, until when the rate holds, and where a refund goes.
 class _Review extends StatelessWidget {
   const _Review({
     required this.review,
     required this.privacy,
+    required this.recipientCheck,
     required this.onUseSuggestion,
     required this.password,
     required this.busy,
@@ -552,6 +601,7 @@ class _Review extends StatelessWidget {
 
   final PayReview review;
   final PrivacyReport privacy;
+  final Widget? recipientCheck;
   final ValueChanged<XmrAmount> onUseSuggestion;
   final TextEditingController password;
   final bool busy;
@@ -616,6 +666,12 @@ class _Review extends StatelessWidget {
                   Text(Copy.payTo.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
                   const SizedBox(height: Metrics.gapTiny),
                   SelectableText(created.payoutAddress, style: KranoxType.mono.copyWith(color: palette.ink)),
+                  if (recipientCheck case final check?) ...[
+                    const SizedBox(height: Metrics.gapSmall),
+                    Divider(height: 1, color: palette.line),
+                    const SizedBox(height: Metrics.gapSmall),
+                    check,
+                  ],
                 ],
               ),
             ),

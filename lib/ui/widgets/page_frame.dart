@@ -5,8 +5,8 @@ import '../theme/metrics.dart';
 import '../theme/typography.dart';
 
 /// A page of the open wallet: a title, a short line below it, chips at the right, and the content below. A [centered]
-/// page puts all of it in one narrow column in the middle, with the chips under the line, after the home of Vizor; the
-/// owner asked for it on the send page on 5 Oct 2026.
+/// page puts all of it in one column of [width] in the middle, with the chips under the line, after the home of Vizor;
+/// the owner asked for it on the send page on 5 Oct 2026.
 class PageFrame extends StatelessWidget {
   const PageFrame({
     super.key,
@@ -15,6 +15,7 @@ class PageFrame extends StatelessWidget {
     required this.children,
     this.chips = const [],
     this.centered = false,
+    this.width = Metrics.centerColumnWidth,
   });
 
   final String title;
@@ -22,6 +23,9 @@ class PageFrame extends StatelessWidget {
   final List<Widget> chips;
   final List<Widget> children;
   final bool centered;
+
+  /// The width of the column of a [centered] page.
+  final double width;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +35,7 @@ class PageFrame extends StatelessWidget {
         padding: Metrics.centeredPagePadding,
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: Metrics.centerColumnWidth),
+            constraints: BoxConstraints(maxWidth: width),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
