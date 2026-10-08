@@ -206,6 +206,7 @@ final class BridgeSwap {
     this.validUntil,
     this.fixedRate = false,
     this.closed = false,
+    this.readToken,
   }) : reached = reached ?? stage;
 
   final SwapDirection direction;
@@ -254,6 +255,9 @@ final class BridgeSwap {
 
   /// Whether the user closed the card of the ended swap. An ended swap shows until the user closes it.
   final bool closed;
+
+  /// The token that reads the state of the swap at the relay; null for a swap of a release before 0.3.1.
+  final String? readToken;
 
   /// The swap with the state that the exchanger reported. The XMR of a payment stays as the wallet sent it.
   BridgeSwap withState(SwapState state) {
@@ -322,6 +326,7 @@ final class BridgeSwap {
     updatedAt: updatedAt ?? this.updatedAt,
     validUntil: validUntil ?? this.validUntil,
     closed: closed ?? this.closed,
+    readToken: readToken,
   );
 
   Map<String, Object?> toJson() => {
@@ -346,6 +351,7 @@ final class BridgeSwap {
     'validUntil': validUntil?.toUtc().toIso8601String(),
     'fixedRate': fixedRate,
     'closed': closed,
+    'readToken': readToken,
   };
 
   /// Reads a saved swap. A swap saved before a field existed reads without it: a swap of the release 0.1.0 is a
@@ -381,6 +387,7 @@ final class BridgeSwap {
         _ => direction == SwapDirection.pay.name,
       },
       closed: data['closed'] == true,
+      readToken: _stringOrNull(data, 'readToken'),
     );
   }
 

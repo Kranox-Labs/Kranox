@@ -10,6 +10,7 @@ import 'ui/screens/wallet_shell.dart';
 import 'ui/theme/kranox_theme.dart';
 import 'ui/theme/palette.dart';
 import 'ui/widgets/backdrop.dart';
+import 'ui/widgets/recovery_notice.dart';
 import 'bridge/controller.dart';
 import 'wallet/controller.dart';
 import 'wallet/idle_lock.dart';
@@ -26,6 +27,8 @@ class KranoxApp extends StatefulWidget {
 }
 
 class _KranoxAppState extends State<KranoxApp> {
+  // The notice of a damaged file that the start moved aside stays until the user closes it, also across locks.
+  late bool _noticeOpen = widget.controller.settingsRecoveredFrom != null || widget.bridge.recoveredFrom != null;
   late final AppLifecycleListener _lifecycle;
   late final IdleLock _idle = IdleLock(
     isOpen: () => widget.controller.phase == WalletPhase.open,
@@ -87,7 +90,17 @@ class _KranoxAppState extends State<KranoxApp> {
           WalletPhase.starting => const Backdrop(child: Center(child: CircularProgressIndicator())),
           WalletPhase.noWallet => OnboardingFlow(controller: widget.controller),
           WalletPhase.locked => UnlockScreen(controller: widget.controller),
-          WalletPhase.open => WalletShell(controller: widget.controller, bridge: widget.bridge),
+          WalletPhase.open => WalletShell(
+            controller: widget.controller,
+            bridge: widget.bridge,
+            notice: _noticeOpen
+                ? RecoveryNotice(
+                    settingsFile: widget.controller.settingsRecoveredFrom,
+                    swapsFile: widget.bridge.recoveredFrom,
+                    onDismiss: () => setState(() => _noticeOpen = false),
+                  )
+                : null,
+          ),
         },
       ),
     ),

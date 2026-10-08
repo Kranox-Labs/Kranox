@@ -88,6 +88,7 @@ String failureText(WalletException error) => switch (error.failure) {
   WalletFailure.walletClosed => Copy.walletClosed,
   WalletFailure.paymentChanged => Copy.paymentChanged,
   WalletFailure.deadlinePassed => Copy.deadlinePassed,
+  WalletFailure.feeTooHigh => Copy.feeTooHigh(error.detail, AppConfig.maxNetworkFee.toExact()),
   WalletFailure.native => Copy.walletReported(error.detail),
 };
 

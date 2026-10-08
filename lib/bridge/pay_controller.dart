@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -10,6 +11,7 @@ import '../core/evm_address.dart';
 import '../wallet/controller.dart';
 import '../wallet/failure.dart';
 import '../wallet/models.dart';
+import 'attempt.dart';
 import 'client.dart';
 import 'live_quote.dart';
 import 'models.dart';
@@ -83,6 +85,10 @@ final class PayController extends ChangeNotifier {
 
   // A range on its way when the page goes away must not reach a controller that is gone.
   bool _disposed = false;
+
+  // The creation of a payment whose answer has not come back, for a second try of the same form.
+  CreationAttempt? _payAttempt;
+  final Random _random = Random.secure();
 
   BridgeAsset get asset => _asset;
   PayRate get rate => _rate;
@@ -274,8 +280,17 @@ final class PayController extends ChangeNotifier {
   }
 
   Future<PayReview> _prepareReview(PayQuote quote, String recipient) async {
-    // A new subaddress takes a refund, so that the exchanger sees an address that no payer has seen.
-    final refund = await _wallet.newBridgeAddress();
+    final rateId = quote.rate == PayRate.fixed ? quote.rateId : null;
+    // A new subaddress takes a refund, so that the exchanger sees an address that no payer has seen. A second try of
+    // the same form reuses the subaddress and the key of the first, whose answer may have been lost.
+    final attempt = await attemptFor(
+      [quote.asset.code, quote.rate.name, quote.xmrAmount, recipient, rateId ?? ''].join('|'),
+      _payAttempt,
+      _wallet.newBridgeAddress,
+      _random,
+    );
+    _payAttempt = attempt;
+    final refund = attempt.address;
     final CreatedPay created;
     try {
       created = await _client.createPay(
@@ -284,17 +299,21 @@ final class PayController extends ChangeNotifier {
         xmrAmount: quote.xmrAmount,
         address: recipient,
         refundAddress: refund.address,
-        rateId: quote.rate == PayRate.fixed ? quote.rateId : null,
+        rateId: rateId,
+        creationKey: attempt.key,
       );
     } on FormatException catch (failure) {
       throw BridgeException(BridgeFailure.failed, failure.message);
     }
+    // The app knows the payment now, so the next review makes a new one: a second payment to the same recipient must
+    // never reuse the deposit address of the first.
+    _payAttempt = null;
     final xmr = XmrAmount.parse(quote.xmrAmount);
     _checkCreated(created, recipient: recipient, xmr: xmr);
     // The state of the new payment gives the time until which a fixed rate waits for the deposit.
     final SwapState state;
     try {
-      state = await _client.readSwap(created.id);
+      state = await _client.readSwap(created.id, token: created.readToken);
     } on FormatException catch (failure) {
       throw BridgeException(BridgeFailure.failed, failure.message);
     }
@@ -345,6 +364,7 @@ final class PayController extends ChangeNotifier {
       stage: SwapStage.waiting,
       validUntil: validUntil,
       fixedRate: review.rate == PayRate.fixed,
+      readToken: created.readToken,
     );
     await _record(waiting);
     final SentPayment sent;

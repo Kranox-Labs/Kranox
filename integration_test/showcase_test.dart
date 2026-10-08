@@ -229,6 +229,7 @@ final class _SampleBridge implements BridgeClient {
     required String amount,
     required String address,
     String? refundAddress,
+    required String creationKey,
   }) async => CreatedSwap(
     id: '9f4e2c71b03ad${++_swaps}',
     amount: double.parse(amount),
@@ -292,6 +293,7 @@ final class _SampleBridge implements BridgeClient {
     required String address,
     required String refundAddress,
     required String? rateId,
+    required String creationKey,
   }) async => CreatedPay(
     id: '7b2d91e04c5fa${++_swaps}',
     amount: double.parse(xmrAmount) / _payXmrPerCoin[asset]!,
@@ -301,7 +303,7 @@ final class _SampleBridge implements BridgeClient {
   );
 
   @override
-  Future<SwapState> readSwap(String id) async => state;
+  Future<SwapState> readSwap(String id, {String? token}) async => state;
 
   @override
   Future<bool> isOnline() async => true;

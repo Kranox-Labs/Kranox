@@ -102,6 +102,7 @@ final class _SlowRelay implements BridgeClient {
     required String address,
     required String refundAddress,
     required String? rateId,
+    required String creationKey,
   }) async {
     asked = true;
     await answer.future;
@@ -115,7 +116,7 @@ final class _SlowRelay implements BridgeClient {
   }
 
   @override
-  Future<SwapState> readSwap(String id) async =>
+  Future<SwapState> readSwap(String id, {String? token}) async =>
       SwapState(stage: SwapStage.waiting, validUntil: DateTime.now().add(const Duration(minutes: 10)));
 
   @override
@@ -134,6 +135,7 @@ final class _SlowRelay implements BridgeClient {
     required String amount,
     required String address,
     String? refundAddress,
+    required String creationKey,
   }) => throw UnimplementedError('The send page makes no swap of receive.');
 
   @override

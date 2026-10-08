@@ -13,6 +13,10 @@ enum WalletFailure {
 
   /// The time until which a payment had to leave has passed: nothing was sent.
   deadlinePassed,
+
+  /// The node asked for a network fee above the most that the app pays; the wallet dropped the payment: nothing was
+  /// sent. The detail holds the fee in XMR.
+  feeTooHigh,
   native,
 }
 

@@ -51,6 +51,9 @@ final class WalletController extends ChangeNotifier {
   String get node => _settings.nodeOf(network);
   String get walletFolder => _storage.walletFolder(network);
 
+  /// Where the start moved a settings file that it could not read, or null, so that the screens can say so.
+  String? get settingsRecoveredFrom => _storage.settingsRecoveredFrom;
+
   Future<void> start() async {
     _settings = await _storage.readSettings();
     await _showWalletOfNetwork();
@@ -175,8 +178,15 @@ final class WalletController extends ChangeNotifier {
     return address;
   }
 
-  Future<PreparedSend> prepareSend({required String address, required XmrAmount amount}) =>
-      _worker.call<PreparedSend>(PrepareSend(address: address.trim(), amountUnits: amount.units));
+  Future<PreparedSend> prepareSend({required String address, required XmrAmount amount}) async {
+    final prepared = await _worker.call<PreparedSend>(PrepareSend(address: address.trim(), amountUnits: amount.units));
+    // A fee above the most that the app pays drops the payment before any review shows it.
+    if (prepared.fee > AppConfig.maxNetworkFee) {
+      await cancelSend(prepared);
+      throw WalletException(WalletFailure.feeTooHigh, prepared.fee.toExact());
+    }
+    return prepared;
+  }
 
   /// Sends [prepared], the payment of the review on screen, and no other, with the [password] of the wallet. With
   /// [deadline], the payment leaves only before that time. Throws a [WalletException] when nothing left the wallet.

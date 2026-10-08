@@ -1,3 +1,4 @@
+import '../core/amount.dart';
 import 'network.dart';
 
 /// The settings of this build of the app. Each value that can change has its one definition here.
@@ -97,6 +98,13 @@ abstract final class AppConfig {
 
   /// The priority of a payment. 0 lets wallet2 choose its default priority, which sets the fee.
   static const int sendPriority = 0;
+
+  /// The highest network fee that a payment may carry: the node sets the fee per byte, so a node of bad faith could
+  /// make a payment burn much more (K-11 of the security review of 0.2.0). CHECKED 8 Oct 2026, get_fee_estimate of
+  /// xmr-node.cakewallet.com:18081 at the height 3,779,462: 20,000, 80,000, 320,000, and 4,000,000 piconero a byte
+  /// for the four priorities, so a usual payment of about 1,500 bytes pays 0.00003 XMR at the lowest, and one that
+  /// spends a hundred outputs, about 70,000 bytes, pays about 0.0056 XMR at the second. 0.01 XMR leaves room for both.
+  static const XmrAmount maxNetworkFee = XmrAmount(10000000000);
 
   /// The app uses the first account of the wallet.
   static const int accountIndex = 0;

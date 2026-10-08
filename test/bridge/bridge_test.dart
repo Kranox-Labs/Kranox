@@ -94,6 +94,20 @@ final class _SampleBridge implements BridgeClient {
   /// Whether the exchanger leaves out the time of its fixed rate.
   bool noValidUntil = false;
 
+  /// The keys of the creations, and the tokens of the reads, in the order of the calls.
+  final List<String> creationKeys = [];
+  final List<String?> readTokens = [];
+
+  /// A failure that the next creation throws after the exchanger made it, as when its answer is lost on the way.
+  BridgeException? loseNextAnswer;
+
+  /// Throws [loseNextAnswer] once.
+  void _maybeLoseAnswer() {
+    final lost = loseNextAnswer;
+    loseNextAnswer = null;
+    if (lost != null) throw lost;
+  }
+
   /// Faults of the exchanger in a new swap of receive: another deposit address, payout address, or amount.
   String? swapDepositOverride;
   String? swapPayoutOverride;
@@ -118,14 +132,18 @@ final class _SampleBridge implements BridgeClient {
     required String amount,
     required String address,
     String? refundAddress,
+    required String creationKey,
   }) async {
     created.add(address);
+    creationKeys.add(creationKey);
+    _maybeLoseAnswer();
     return CreatedSwap(
       id: 'swap${created.length}',
       amount: swapAmountOverride ?? double.parse(amount),
       estimatedXmr: double.parse(amount) * 5,
       depositAddress: swapDepositOverride ?? _chainDeposit,
       payoutAddress: swapPayoutOverride ?? address,
+      readToken: 'token-swap${created.length}',
     );
   }
 
@@ -167,22 +185,28 @@ final class _SampleBridge implements BridgeClient {
     required String address,
     required String refundAddress,
     required String? rateId,
+    required String creationKey,
   }) async {
     await holdCreatePay?.future;
     paid.add((address, refundAddress));
     paidRates.add((rate, rateId));
+    creationKeys.add(creationKey);
+    _maybeLoseAnswer();
     return CreatedPay(
       id: 'pay${paid.length}',
       amount: double.parse(xmrAmount) * _coinsPerXmr(rate),
       xmrAmount: xmrOverride ?? double.parse(xmrAmount),
       depositAddress: _xmrDeposit,
       payoutAddress: payoutOverride ?? address.toLowerCase(),
+      readToken: 'token-pay${paid.length}',
     );
   }
 
   @override
-  Future<SwapState> readSwap(String id) async =>
-      SwapState(stage: stage, amountOut: 0.0274, validUntil: noValidUntil ? null : DateTime.now().add(payWindow));
+  Future<SwapState> readSwap(String id, {String? token}) async {
+    readTokens.add(token);
+    return SwapState(stage: stage, amountOut: 0.0274, validUntil: noValidUntil ? null : DateTime.now().add(payWindow));
+  }
 
   bool online = true;
 
@@ -497,6 +521,38 @@ void main() {
       expect(saved.single.stage, SwapStage.finished);
     });
 
+    test('tries a lost swap again with its subaddress and its key, and a new swap with new ones (K-14)', () async {
+      bridge.setAmount('0.0055');
+      await _quoteSettles();
+      exchanger.loseNextAnswer = const BridgeException(BridgeFailure.relayDown, 'The answer was lost on the way.');
+      await expectLater(bridge.createSwap(), throwsA(isA<BridgeException>()));
+      final swap = await bridge.createSwap();
+      expect(exchanger.created, hasLength(2));
+      expect(exchanger.created.toSet(), hasLength(1), reason: 'the second try names the same subaddress');
+      expect(
+        exchanger.creationKeys.toSet(),
+        hasLength(1),
+        reason: 'and the same key, so the relay makes no second swap',
+      );
+      expect(exchanger.created.last, 'subaddress-${swap.subaddressIndex}');
+
+      bridge.setAmount('0.0055');
+      await _quoteSettles();
+      await bridge.createSwap();
+      expect(exchanger.created.toSet(), hasLength(2), reason: 'a swap that the app knows is never tried again');
+      expect(exchanger.creationKeys.toSet(), hasLength(2));
+    });
+
+    test('keeps the read token of a swap, sends it with each read, and keeps it in the file (K-18)', () async {
+      bridge.setAmount('0.0055');
+      await _quoteSettles();
+      final swap = await bridge.createSwap();
+      expect(swap.readToken, 'token-swap1');
+      await bridge.refresh();
+      expect(exchanger.readTokens.last, 'token-swap1');
+      expect((await BridgeStore(storage.bridgePath).read()).single.readToken, 'token-swap1');
+    });
+
     test('shows an ended swap until its card closes', () async {
       bridge.setAmount('0.0055');
       await _quoteSettles();
@@ -607,6 +663,26 @@ void main() {
       final saved = (await BridgeStore(storage.bridgePath).read()).single;
       expect(saved.direction, SwapDirection.pay);
       expect(saved.stage, SwapStage.finished);
+    });
+
+    test('tries a lost payment again with its refund subaddress and its key, never a known one (K-14, K-18)', () async {
+      final pay = bridge.pay;
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.16');
+      await _quoteSettles();
+      exchanger.loseNextAnswer = const BridgeException(BridgeFailure.relayDown, 'The answer was lost on the way.');
+      await expectLater(pay.startReview(), throwsA(isA<BridgeException>()));
+      final review = await pay.startReview();
+      expect(exchanger.paid.map((payment) => payment.$2).toSet(), {review.refund.address});
+      expect(exchanger.creationKeys.toSet(), hasLength(1));
+      expect(exchanger.readTokens.last, 'token-pay2', reason: 'the read of its time carries its token');
+
+      // The app knows that payment now: a second review of the same form makes a new one.
+      await pay.cancelReview();
+      await pay.startReview();
+      expect(exchanger.creationKeys.toSet(), hasLength(2));
+      final swap = await pay.confirm(password: 'password');
+      expect(swap.readToken, 'token-pay3');
     });
 
     test('offers a floating rate below the minimum of a fixed one, and pays at it without a rate id', () async {
