@@ -5,6 +5,7 @@ import '../../bridge/client.dart';
 import '../../config/app_config.dart';
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
+import '../../bridge/payment_link.dart';
 import '../../core/evm_address.dart';
 import '../../wallet/failure.dart';
 import '../copy.dart';
@@ -408,27 +409,50 @@ class _SwapCard extends StatelessWidget {
   }
 }
 
-/// The deposit while the swap waits for it: the address on Robinhood Chain as a code to scan and as text.
-class _Deposit extends StatelessWidget {
+/// The deposit while the swap waits for it: the address on Robinhood Chain as a code to scan and as text. The code
+/// holds a payment link that names the chain, the coin, and the amount, or the address alone for a wallet that cannot
+/// read such a link.
+class _Deposit extends StatefulWidget {
   const _Deposit({required this.swap});
 
   final BridgeSwap swap;
 
   @override
+  State<_Deposit> createState() => _DepositState();
+}
+
+class _DepositState extends State<_Deposit> {
+  bool _addressOnly = false;
+
+  @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final swap = widget.swap;
+    final amount = formatDecimal(swap.amount, decimals: 8);
+    final code = _addressOnly
+        ? swap.depositAddress
+        : depositLink(asset: swap.asset, address: swap.depositAddress, amount: amount);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          Copy.bridgeDepositLead(formatDecimal(swap.amount, decimals: 8), swap.asset),
+          Copy.bridgeDepositLead(amount, swap.asset),
           style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft),
         ),
         const SizedBox(height: Metrics.gapSmall),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            QrCard(data: swap.depositAddress, size: Metrics.bridgeQrSize, padding: Metrics.bridgeQrPadding),
+            Column(
+              children: [
+                QrCard(data: code, size: Metrics.bridgeQrSize, padding: Metrics.bridgeQrPadding),
+                const SizedBox(height: Metrics.gapTiny),
+                SmallPillButton(
+                  label: _addressOnly ? Copy.bridgePaymentLink : Copy.bridgeAddressOnly,
+                  onPressed: () => setState(() => _addressOnly = !_addressOnly),
+                ),
+              ],
+            ),
             const SizedBox(width: Metrics.gap),
             Expanded(
               child: Column(
@@ -442,6 +466,10 @@ class _Deposit extends StatelessWidget {
                     onPressed: () => copyToClipboard(context, swap.depositAddress),
                   ),
                   const SizedBox(height: Metrics.gapSmall),
+                  if (!_addressOnly) ...[
+                    Text(Copy.bridgeLinkNote(swap.asset), style: KranoxType.small.copyWith(color: palette.inkSoft)),
+                    const SizedBox(height: Metrics.gapTiny),
+                  ],
                   Text(Copy.bridgeOnlyAsset(swap.asset), style: KranoxType.small.copyWith(color: palette.danger)),
                 ],
               ),

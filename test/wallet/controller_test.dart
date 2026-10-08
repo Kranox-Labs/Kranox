@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kranox_wallet/config/app_config.dart';
 import 'package:kranox_wallet/config/network.dart';
+import 'package:kranox_wallet/core/node_address.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
 import 'package:kranox_wallet/wallet/models.dart';
 import 'package:kranox_wallet/wallet/requests.dart';
@@ -103,5 +104,19 @@ void main() {
     expect(controller.node, AppConfig.defaultNode(MoneroNetwork.stagenet));
     await controller.switchNetwork(MoneroNetwork.mainnet);
     expect(controller.node, 'my.node:18081');
+  });
+
+  test('connects through a proxy such as Tor, and straight again without one (K-11)', () async {
+    final controller = await started();
+    await controller.unlock('password');
+    await controller.changeProxy(' 127.0.0.1:9050 ');
+    expect(controller.proxy, '127.0.0.1:9050');
+    expect(backend.requests.whereType<ConnectNode>().last.proxy, '127.0.0.1:9050');
+    await controller.changeNode('my.node:18081');
+    expect(backend.requests.whereType<ConnectNode>().last.proxy, '127.0.0.1:9050', reason: 'a new node keeps it');
+    expect(() => controller.changeProxy('tor'), throwsA(isA<NodeAddressException>()));
+    await controller.changeProxy('');
+    expect(controller.proxy, isNull);
+    expect(backend.requests.whereType<ConnectNode>().last.proxy, isNull);
   });
 }

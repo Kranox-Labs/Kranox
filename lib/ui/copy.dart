@@ -195,8 +195,12 @@ abstract final class Copy {
   static String privacyNodeOwn(String node) =>
       'Your wallet uses the node at $node in your own network, so no outside node sees what it asks.';
   static String privacyNodePublic(String node) =>
-      'Your wallet syncs and sends through $node. That node sees your IP address and when you send. A node of your '
-      'own keeps this to you.';
+      'Your wallet syncs and sends through $node. That node sees your IP address and when you send, and the '
+      'connection is not encrypted, so your network can watch it too. A node of your own, or a proxy such as Tor in '
+      'Settings, keeps this to you.';
+  static String privacyNodeProxy(String node, String proxy) =>
+      'Your wallet reaches $node through the proxy at $proxy, so the node sees the proxy and not your IP address.';
+  static const String privacyNodeProxyLine = 'Through a proxy';
   static const String privacyChangeNode = 'Change node';
   static const String privacySubaddressTitle = 'Subaddresses';
   static const String privacySubaddressClear = 'Each subaddress took one payment at most.';
@@ -385,6 +389,12 @@ abstract final class Copy {
       'You can close Kranox: ChangeNOW carries on, and this card catches up when you open the app again.';
   static String bridgeDepositLead(String amount, BridgeAsset asset) =>
       'Send exactly $amount ${asset.label} on Robinhood Chain to this address.';
+  // The code of a deposit holds a payment link that names the chain, the coin, and the amount; a wallet that cannot
+  // read such a link scans the address alone.
+  static String bridgeLinkNote(BridgeAsset asset) =>
+      'The code also names Robinhood Chain, ${asset.label}, and the amount.';
+  static const String bridgeAddressOnly = 'Address only';
+  static const String bridgePaymentLink = 'Payment link';
   static String bridgeOnlyAsset(BridgeAsset asset) =>
       'Send only ${asset.label} on Robinhood Chain. Another coin or another chain does not arrive.';
   static const String bridgeSwapId = 'Swap ID';
@@ -565,6 +575,12 @@ abstract final class Copy {
   static const String nodeHint = 'host:port';
   static const String saveNode = 'Save node';
   static const String nodeSaved = 'The wallet uses the new node.';
+  static const String proxyField = 'Proxy, such as Tor (optional)';
+  static const String proxyHint = '127.0.0.1:9050';
+  static const String proxyNote =
+      'With Tor on this Mac, 127.0.0.1:9050 carries the traffic to the node through Tor. Leave it empty to reach the '
+      'node straight.';
+  static const String proxyInvalid = 'Enter the proxy as host:port, such as 127.0.0.1:9050.';
   static const String relayTitle = 'Relay';
   static const String relayLead =
       'The service of Kranox that talks to ChangeNOW when you receive from Robinhood Chain. It never sees your keys '

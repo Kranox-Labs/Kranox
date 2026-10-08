@@ -9,13 +9,17 @@ bool isBridgeAmount(String text) => _amountPattern.hasMatch(text) && double.pars
 /// The coins on Robinhood Chain that the bridge takes in for XMR and pays out from XMR. [code] is their name at the
 /// relay.
 enum BridgeAsset {
-  eth(code: 'eth', label: 'ETH'),
-  usdg(code: 'usdg', label: 'USDG');
+  eth(code: 'eth', label: 'ETH', decimals: AppConfig.ethDecimals, contract: null),
+  usdg(code: 'usdg', label: 'USDG', decimals: AppConfig.usdgDecimals, contract: AppConfig.usdgContract);
 
-  const BridgeAsset({required this.code, required this.label});
+  const BridgeAsset({required this.code, required this.label, required this.decimals, required this.contract});
 
   final String code;
   final String label;
+
+  /// The decimals of the coin on Robinhood Chain, and the contract of a token; ETH, the coin of the chain, has none.
+  final int decimals;
+  final String? contract;
 
   static BridgeAsset fromCode(String code) => BridgeAsset.values.firstWhere(
     (asset) => asset.code == code,

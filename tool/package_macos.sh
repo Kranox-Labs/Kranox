@@ -19,6 +19,10 @@ MONERO_C_VERSION="$(sed -n 's/^VERSION="\(.*\)"$/\1/p' "${ROOT}/tool/fetch_moner
 MONERO_COMMIT="dbcc7d212c094bd1a45f7291dbb99a4b4627a96d"
 APP="${ROOT}/build/macos/Build/Products/Release/Kranox.app"
 LIBRARY="${APP}/Contents/Frameworks/libmonero_wallet2_api_c.dylib"
+APP_CODE="${APP}/Contents/Frameworks/App.framework/App"
+# The relay of a release, the default of AppConfig.bridgeRelay: a build with BRIDGE_RELAY of a relay for development
+# carries another address and must not ship (K-10 of the security review of 0.2.0).
+RELEASE_RELAY="https://relay.kranox.cash"
 RELEASE="${ROOT}/tool/release"
 FONT_LICENSE="${ROOT}/assets/fonts/archivo/OFL.txt"
 OUT="${ROOT}/build/release/${VERSION}"
@@ -55,6 +59,12 @@ for binary in "${APP}/Contents/MacOS/Kranox" "${LIBRARY}"; do
     lipo "${binary}" -verify_arch "${arch}" || fail "${binary} has no ${arch} part."
   done
 done
+# The build talks to the relay of Kranox and trusts only answers that its key signs.
+LC_ALL=C grep -aq "${RELEASE_RELAY}" "${APP_CODE}" ||
+  fail "The build talks to another relay than ${RELEASE_RELAY}. Build it without BRIDGE_RELAY."
+if grep -Eq 'relaySigningKeys = (const )?\[\];' "${ROOT}/lib/config/app_config.dart"; then
+  fail "AppConfig.relaySigningKeys holds no public key of the relay, so the app would trust no answer of it."
+fi
 
 rm -rf "${OUT}"
 mkdir -p "${STAGE}"

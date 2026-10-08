@@ -107,7 +107,8 @@ final class WalletEngine {
 
   Null _connect(ConnectNode request) {
     final wallet = _requireWallet();
-    final initialized = monero.Wallet_init(wallet, daemonAddress: request.address);
+    // wallet2 sets the proxy on each init, so an empty one turns a proxy of an earlier connection off.
+    final initialized = monero.Wallet_init(wallet, daemonAddress: request.address, proxyAddress: request.proxy ?? '');
     if (!initialized) {
       throw WalletException(WalletFailure.nodeUnreachable, monero.Wallet_errorString(wallet));
     }

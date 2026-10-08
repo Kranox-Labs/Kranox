@@ -52,6 +52,7 @@ final class NewCoins {
 final class WalletPrivacyReport {
   const WalletPrivacyReport({
     required this.node,
+    required this.proxy,
     required this.ownNode,
     required this.reused,
     required this.pairs,
@@ -60,6 +61,9 @@ final class WalletPrivacyReport {
   });
 
   final String node;
+
+  /// The SOCKS proxy, such as Tor, through which the wallet reaches the node, or null.
+  final String? proxy;
 
   /// Whether the node runs on this Mac or in its own network, so that no outside node sees the requests of the wallet.
   final bool ownNode;
@@ -76,13 +80,18 @@ final class WalletPrivacyReport {
   /// New XMR in the balance. Time alone fixes it, so it counts as a note and not as something to improve.
   final NewCoins? newCoins;
 
-  int get toImprove => [!ownNode, reused.isNotEmpty, pairs.isNotEmpty, links.isNotEmpty].where((found) => found).length;
+  /// Whether the node sees the IP address of the user: a public node reached without a proxy.
+  bool get nodeSeesYou => !ownNode && proxy == null;
+
+  int get toImprove =>
+      [nodeSeesYou, reused.isNotEmpty, pairs.isNotEmpty, links.isNotEmpty].where((found) => found).length;
 }
 
-/// Checks the privacy of the whole wallet: its [node], what came in ([transfers]), the swaps of the bridge ([swaps]),
-/// and the [balance].
+/// Checks the privacy of the whole wallet: its [node] and the [proxy] to it, what came in ([transfers]), the swaps of
+/// the bridge ([swaps]), and the [balance].
 WalletPrivacyReport checkWallet({
   required String node,
+  required String? proxy,
   required List<WalletTransfer> transfers,
   required List<BridgeSwap> swaps,
   required XmrAmount balance,
@@ -94,6 +103,7 @@ WalletPrivacyReport checkWallet({
   ];
   return WalletPrivacyReport(
     node: node,
+    proxy: proxy,
     ownNode: isOwnNode(node),
     reused: _reused(incoming),
     pairs: _pairs(swaps),

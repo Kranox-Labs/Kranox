@@ -27,10 +27,15 @@ void main() {
     final settings = const AppSettings()
         .withNetwork(MoneroNetwork.testnet)
         .withNode(MoneroNetwork.mainnet, 'my.node:18081')
-        .withNode(MoneroNetwork.testnet, 'my.node:28081');
+        .withNode(MoneroNetwork.testnet, 'my.node:28081')
+        .withProxy('127.0.0.1:9050');
     final read = AppSettings.fromJson(jsonDecode(jsonEncode(settings.toJson())));
     expect(read.network, MoneroNetwork.testnet);
     expect(read.nodes, settings.nodes);
+    expect(read.proxy, '127.0.0.1:9050');
+    expect(read.withNode(MoneroNetwork.mainnet, 'other.node:18081').proxy, '127.0.0.1:9050', reason: 'a node keeps it');
+    expect(read.withProxy(null).proxy, isNull);
+    expect(AppSettings.fromJson(const AppSettings().toJson()).proxy, isNull);
   });
 
   test('reads the node of a file from the time of stagenet only as the node of stagenet', () {
@@ -48,6 +53,7 @@ void main() {
       {
         'nodes': {'mainnet': 18081},
       },
+      {'proxy': 9050},
     ]) {
       expect(() => AppSettings.fromJson(data), throwsFormatException, reason: '$data');
     }

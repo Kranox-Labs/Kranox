@@ -41,9 +41,12 @@ final class OpenWallet extends WalletRequest {
 
 /// Connects the open wallet to a node and starts the scan of the chain.
 final class ConnectNode extends WalletRequest {
-  const ConnectNode({required this.address});
+  const ConnectNode({required this.address, this.proxy});
 
   final String address;
+
+  /// The SOCKS proxy to the node, or null to reach the node straight.
+  final String? proxy;
 }
 
 final class ReadStatus extends WalletRequest {
