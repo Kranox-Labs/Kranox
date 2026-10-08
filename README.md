@@ -15,9 +15,9 @@ Robinhood Chain as XMR. ChangeNOW handles each exchange.
 - **Kranox 0.2.0** is the current release. Get it from
   [the latest release](https://github.com/Kranox-Labs/Kranox/releases/latest) or from
   [kranox.cash/downloads](https://kranox.cash/downloads).
-- **Kranox 0.3.0 beta** adds the privacy check and the menu Privacy, and holds the fixes of the
+- **Kranox 0.3.1 beta** holds the privacy check, the menu Privacy, and the fixes of the
   [security review](#audit). Get it from
-  [its release page](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.0), and start with small amounts.
+  [its release page](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.1), and start with small amounts.
 
 Kranox runs on macOS 12 or later, on Apple Silicon and Intel. Apple has not notarized it yet, so macOS blocks it
 the first time. To open it, go to System Settings, then Privacy & Security, and click "Open Anyway" next to the
@@ -47,6 +47,8 @@ The fingerprint of the key is `A874 6F51 F58D 8E30 C23B 8158 439F 7602 F0C5 53D1
 - From 0.3.0, a privacy check on every payment, and a menu Privacy that checks your whole wallet. It can also scan
   an address of yours on Robinhood Chain, or the recipient of a payment, to show what its public history gives
   away.
+- From 0.3.1, reach your node through a proxy such as Tor, and scan the code of a deposit from Robinhood Chain as
+  a payment link that names the chain, the coin, and the amount.
 
 ## The relay
 
@@ -54,7 +56,7 @@ The app reaches ChangeNOW through the [Kranox relay](https://github.com/Kranox-L
 holds the partner key of ChangeNOW, so that the key never sits in the app. The relay keeps no log of a request.
 It sees the addresses and the amounts of a swap, as ChangeNOW does, and never your keys or your balance. For a
 scan of an address on Robinhood Chain, it sees that address and asks the explorer for you, so the explorer never
-sees your IP address.
+sees your IP address. From 0.3.1 the app trusts an answer of the relay only with the signature of its key.
 
 ## Audit
 
@@ -68,9 +70,9 @@ funds or keys from a wallet.
 | Severity | Found | Fixed | Partly fixed | Open |
 |---|---|---|---|---|
 | High | 3 | 3 | 0 | 0 |
-| Medium | 10 | 7 | 1 | 2 |
-| Low | 11 | 8 | 2 | 1 |
-| Total | 24 | 18 | 3 | 3 |
+| Medium | 10 | 9 | 1 | 0 |
+| Low | 11 | 10 | 1 | 0 |
+| Total | 24 | 22 | 2 | 0 |
 
 The three High findings are fixed:
 
@@ -80,8 +82,10 @@ The three High findings are fixed:
 - Anyone could get around the rate limit of the relay and use up the budget of the partner key, which stops the
   bridge for every user.
 
-The fixes of the wallet ship in Kranox 0.2.1 beta, and the relay runs its fixes from 7 Oct 2026. Still open are
-a pinned key for the relay, SSL or Tor for the node with a limit on fees, and a QR code that names the chain.
+The fixes of the wallet ship in Kranox 0.2.1 beta and 0.3.1 beta, and the relay runs all of its fixes from 8 Oct
+2026. Two findings stay partly fixed: the app reaches its node through Tor if you set it, but without SSL,
+because the Monero library accepts any certificate; and the relay still lets the apps before 0.3.1 read a swap
+without its token, until those apps are gone.
 
 The full report gives every finding with its impact and its fix:
 [audit/security-review-0.2.0.md](audit/security-review-0.2.0.md).
