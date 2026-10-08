@@ -49,14 +49,17 @@ The review found 24 distinct findings: 3 High, 10 Medium, and 11 Low.
 | Severity | Found | Fixed | Partly fixed | Open |
 |---|---|---|---|---|
 | High | 3 | 3 | 0 | 0 |
-| Medium | 10 | 7 | 1 | 2 |
-| Low | 11 | 8 | 2 | 1 |
-| Total | 24 | 18 | 3 | 3 |
+| Medium | 10 | 9 | 1 | 0 |
+| Low | 11 | 10 | 1 | 0 |
+| Total | 24 | 22 | 2 | 0 |
 
-The fixes of the wallet are in the commit [`b70aedb`](https://github.com/Kranox-Labs/Kranox/commit/b70aedb) and
-ship in [Kranox 0.2.1 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.2.1). The fixes of the relay
-are in [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay), and the relay runs them from 7 Oct 2026. No
-second review has checked the fixes yet.
+The first fixes of the wallet are in the commit [`b70aedb`](https://github.com/Kranox-Labs/Kranox/commit/b70aedb)
+and ship in [Kranox 0.2.1 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.2.1). The rest, in the
+commits [`76d2179`](https://github.com/Kranox-Labs/Kranox/commit/76d2179) and
+[`aab392a`](https://github.com/Kranox-Labs/Kranox/commit/aab392a), ship in
+[Kranox 0.3.1 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.1). The fixes of the relay are in
+[Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay), and the relay runs all of them from 8 Oct 2026. Two
+findings stay partly fixed, K-11 and K-18. No second review has checked the fixes yet.
 
 ## Findings
 
@@ -65,25 +68,25 @@ second review has checked the fixes yet.
 | K-01 | High | A sent payment could come back as a failure | Wallet | Fixed in 0.2.1 |
 | K-02 | High | Send and pay shared one built payment | Wallet | Fixed in 0.2.1 |
 | K-03 | High | The rate limit of the relay took a key that the client chose | Relay | Fixed |
-| K-04 | Medium | The rate limit could not protect the shared budget of the partner key | Relay | Partly fixed |
+| K-04 | Medium | The rate limit could not protect the shared budget of the partner key | Relay | Fixed |
 | K-05 | Medium | Any web page could create exchanges through the browsers of its visitors | Relay | Fixed |
 | K-06 | Medium | Receive used the answer of ChangeNOW without a check | Relay and wallet | Fixed |
 | K-07 | Medium | Failures on the screens that move money showed no message | Wallet | Fixed in 0.2.1 |
 | K-08 | Medium | The deadline of a fixed rate failed open | Wallet | Fixed in 0.2.1 |
-| K-09 | Medium | A damaged settings file or swap file stopped the app at start | Wallet | Fixed in 0.2.1 |
-| K-10 | Medium | The relay alone decides where bridge money goes | Wallet | Open |
-| K-11 | Medium | Traffic to the node is not encrypted, and node fees have no limit | Wallet | Open |
+| K-09 | Medium | A damaged settings file or swap file stopped the app at start | Wallet | Fixed in 0.2.1 and 0.3.1 |
+| K-10 | Medium | The relay alone decided where bridge money goes | Relay and wallet | Fixed in 0.3.1 |
+| K-11 | Medium | Traffic to the node is not encrypted, and node fees had no limit | Wallet | Partly fixed in 0.3.1 |
 | K-12 | Medium | The subaddress of a swap became the receive address on the screen | Wallet | Fixed in 0.2.1 |
 | K-13 | Medium | The release build had no hardened runtime | Wallet | Fixed in 0.2.1 |
-| K-14 | Low | Creating an exchange is not idempotent | Relay | Partly fixed |
+| K-14 | Low | Creating an exchange was not idempotent | Relay and wallet | Fixed in 0.3.1 |
 | K-15 | Low | The relay passed raw error text of ChangeNOW to any caller | Relay | Fixed |
 | K-16 | Low | `fetch` followed a redirect and kept the partner key | Relay | Fixed |
 | K-17 | Low | The relay could print a misplaced key to the system log | Relay | Fixed |
-| K-18 | Low | The id of an exchange alone read all details of a swap | Relay | Partly fixed |
+| K-18 | Low | The id of an exchange alone read all details of a swap | Relay and wallet | Partly fixed in 0.3.1 |
 | K-19 | Low | An amount of 0 meant "send the whole balance" | Wallet | Fixed in 0.2.1 |
 | K-20 | Low | A very large amount broke the pay screen | Wallet | Fixed in 0.2.1 |
 | K-21 | Low | The refund address of receive got no checksum check | Wallet | Fixed in 0.2.1 |
-| K-22 | Low | The QR code of a receive deposit holds a bare address | Wallet | Open |
+| K-22 | Low | The QR code of a receive deposit held a bare address | Wallet | Fixed in 0.3.1 |
 | K-23 | Low | The GPG signature of a release was optional | Wallet | Fixed in 0.2.1 |
 | K-24 | Low | The wallet never locked itself and sent without a password | Wallet | Fixed in 0.2.1 |
 
@@ -126,15 +129,15 @@ Paths of the wallet point at this repository. Paths of the relay point at
 
 ### K-04: the rate limit could not protect the shared budget of the partner key
 
-- **Severity:** Medium. **Status:** partly fixed.
+- **Severity:** Medium. **Status:** fixed.
 - **What happened:** all routes shared one limit for each client, and the relay put no cap on its own calls to
   ChangeNOW.
 - **Impact:** a few clients could use the whole budget of the partner key, so quotes and swaps failed for every
   user.
 - **Fix:** the relay keeps its calls to ChangeNOW below the budget of the key and answers "busy" above it
   (`src/limiter.mts`). It keeps the minimum of each asset for a minute. The routes that create exchanges have a
-  tight limit for each client.
-- **Still open:** a stricter way to count a client.
+  tight limit for each client. From 8 Oct 2026 the limits count a client of IPv6 by its /64, so a client cannot
+  take a new address of its own block for each request.
 
 ### K-05: any web page could create exchanges through the browsers of its visitors
 
@@ -182,27 +185,34 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Impact:** the app showed no window and no message. The funds stayed safe through the seed, but the user had
   to find and delete a file by hand.
 - **Fix:** the app writes both files through a temporary file and a rename. At start, it moves an unreadable file
-  aside and keeps the swaps that it can read. A notice on the screen is planned.
+  aside and keeps the swaps that it can read. From 0.3.1 a notice on the screen names the file that moved aside and
+  says that the wallets did not change.
 
-### K-10: the relay alone decides where bridge money goes
+### K-10: the relay alone decided where bridge money goes
 
-- **Severity:** Medium. **Status:** open.
-- **What happens:** the app trusts any certificate that the Mac trusts for the relay, and the relay names the
+- **Severity:** Medium. **Status:** fixed in 0.3.1.
+- **What happened:** the app trusted any certificate that the Mac trusts for the relay, and the relay names the
   deposit address of each exchange.
 - **Impact:** a certificate that inspects TLS on the Mac, as some company networks install, or a compromised
   relay could name its own deposit address.
-- **Plan:** a pinned key for the relay, or answers that the relay signs with a key that the app knows. Both need
-  care, because the relay sits behind Cloudflare.
+- **Fix:** the relay signs every answer with ECDSA on P-256 over the nonce of the request and the body, and the
+  app trusts no answer without a signature under the key that it holds, so an interception of the connection
+  cannot answer for the relay, and an old answer cannot answer a new request. A release talks to its relay over
+  HTTPS only, and the release script refuses a build with another relay or without the key. A relay whose server
+  falls still falls with its key.
 
-### K-11: traffic to the node is not encrypted, and node fees have no limit
+### K-11: traffic to the node is not encrypted, and node fees had no limit
 
-- **Severity:** Medium. **Status:** open.
-- **What happens:** the app connects to its Monero node without SSL and without a proxy. It accepts the fee that
-  the node suggests, with no upper limit.
+- **Severity:** Medium. **Status:** partly fixed in 0.3.1.
+- **What happens:** the app connects to its Monero node without SSL. Before 0.3.1 it had no proxy and accepted
+  the fee that the node suggests, with no upper limit.
 - **Impact:** on a shared network, an observer can see that traffic and change the answers of the node, such as
   the fee estimate.
-- **Plan:** SSL nodes, a SOCKS or Tor proxy, a warning for a node without SSL, and a second confirmation above a
-  fee limit.
+- **Fix:** a payment with a network fee above 0.01 XMR stops before its review. Settings take a SOCKS proxy, such
+  as Tor, for the node of every network, and the menu Privacy says of a public node without a proxy that the
+  connection is not encrypted.
+- **Still open:** SSL nodes. The Monero library that the app ships accepts any certificate, so SSL would add no
+  real protection; Tor or a node of your own does.
 
 ### K-12: the subaddress of a swap became the receive address on the screen
 
@@ -233,8 +243,8 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Impact:** exchanges under the partner key that nobody funds or follows. No funds moved, because the app pays
   only after it has the id.
 - **Fix:** the relay reads the whole answer inside its error handling, and a refused exchange comes back with its
-  id.
-- **Still open:** an idempotency key from the app, so that a retry never creates a second exchange.
+  id. From 0.3.1 the app sends an idempotency key with each creation and reuses it on a second try of the same
+  request, and the relay makes one exchange for each key.
 
 ### K-15: the relay passed raw error text of ChangeNOW to any caller
 
@@ -263,8 +273,10 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Severity:** Low. **Status:** partly fixed.
 - **What happened:** the id of an exchange alone read all its details through the relay, both addresses included.
   The app shows the id and asks users to send it to support.
-- **Fix:** the status route of the relay returns no address.
-- **Still open:** a read token for each swap, so that the id alone reads nothing.
+- **Fix:** the status route of the relay returns no address. From 0.3.1 each new swap gets a read token, and the
+  relay refuses a read with the token of another swap.
+- **Still open:** a read without a token still passes, so that the apps before 0.3.1 keep following their swaps.
+  The relay will refuse it once those apps are gone.
 
 ### K-19: an amount of 0 meant "send the whole balance"
 
@@ -287,13 +299,14 @@ Paths of the wallet point at this repository. Paths of the relay point at
   wrong.
 - **Fix:** the refund address gets the EIP-55 check.
 
-### K-22: the QR code of a receive deposit holds a bare address
+### K-22: the QR code of a receive deposit held a bare address
 
-- **Severity:** Low. **Status:** open.
-- **What happens:** the code carries no chain, token, or amount, so a wallet that scans it may propose a send on
-  another chain. The screen shows the amount next to the code.
-- **Plan:** a link of EIP-681 with the chain id of Robinhood Chain, after tests with the wallets that people use
-  there.
+- **Severity:** Low. **Status:** fixed in 0.3.1.
+- **What happened:** the code carried no chain, token, or amount, so a wallet that scans it could propose a send
+  on another chain. The screen shows the amount next to the code.
+- **Fix:** the code holds a link of EIP-681 with the chain id of Robinhood Chain, for USDG its contract and the
+  amount, for ETH the amount in wei. "Address only" shows the bare address for a wallet that cannot read such a
+  link.
 
 ### K-23: the GPG signature of a release was optional
 
@@ -348,5 +361,6 @@ The skills checked these leads and found them safe, each with the line that show
 ## Tests after the fixes
 
 The wallet gained 28 unit tests, among them the regression tests of K-01, K-02, K-06, K-08, K-09, K-12, and K-20.
-One widget test drives the real send page. The relay gained 9 tests. Every test passes at the commits that this
-report names.
+One widget test drives the real send page. The relay gained 9 tests. For the fixes of 0.3.1, the wallet gained
+tests of K-09, K-10, K-11, K-14, K-18, and K-22, and the relay tests of K-10, K-14, and K-18. Every test passes at
+the commits that this report names.
