@@ -156,13 +156,31 @@ abstract final class Copy {
       'You gave it as the refund address of a receive on $day. Paying it from XMR links both sides.';
   static const String privacyNote = 'The check runs on this Mac. You can still send.';
 
-  // The menu Privacy: the whole wallet, from its history on this Mac.
+  // The menu Privacy: the whole wallet, from its history on this Mac. Each check has a tile with one line, and the
+  // longer text shows when the user opens the tile.
   static const String privacyPageTitle = 'Privacy';
   static const String privacyPageLead = 'How private your wallet is, worked out on this Mac from your own history.';
+  static const String privacyMoneroTab = 'Monero';
+  static const String privacyChainTab = 'Robinhood Chain';
+  static String privacyRingCount(int clear, int total) => '$clear/$total';
+  static const String privacyRingLabel = 'Clear';
   static String privacyToImprove(int count) => count == 1 ? '1 thing to improve' : '$count things to improve';
   static const String privacyAllClearLead = 'Your wallet gives nothing away that this page can find.';
-  static const String privacyToImproveLead = 'Each card below says what shows and what you can do about it.';
+  static const String privacyToImproveLead = 'Click a check to see what it found and what you can do.';
   static const String privacyPageNote = 'Everything on this page comes from this Mac. Nothing leaves it.';
+  static const String privacyNodeOwnLine = 'Your own node';
+  static const String privacyNodePublicLine = 'A public node sees your IP address';
+  static const String privacySubaddressClearLine = 'One payment each at most';
+  static String privacySubaddressLine(int index, int payments) => 'Subaddress #$index took $payments payments';
+  static String privacySubaddressManyLine(int count) => '$count subaddresses took several payments';
+  static const String privacySwapsClearLine = 'No swaps sit close';
+  static String privacySwapsLine(int count) => count == 1 ? '1 pair can be matched' : '$count pairs can be matched';
+  static const String privacyRefundClearLine = 'None paid from XMR';
+  static String privacyRefundLine(int count) =>
+      count == 1 ? '1 address links both sides' : '$count addresses link both sides';
+  static String privacyNewCoinsClearLine(int hours) => 'All older than $hours hours';
+  static String privacyNewCoinsLine(String amount, int hours) => '$amount XMR from the last $hours hours';
+  static String privacyLockLine(int minutes) => 'Locks after $minutes minutes';
   static const String privacyNodeTitle = 'Node';
   static String privacyNodeOwn(String node) =>
       'Your wallet uses the node at $node in your own network, so no outside node sees what it asks.';
@@ -203,17 +221,45 @@ abstract final class Copy {
       'it is older from $moment.';
   static const String privacyLockTitle = 'Lock and password';
 
-  // The scan of an address on Robinhood Chain in the menu Privacy.
-  static const String privacyChainHeading = 'Robinhood Chain';
+  // The scan of an address on Robinhood Chain in the menu Privacy. Before a scan, each tile says what its check reads.
   static const String privacyChainTitle = 'Scan an address of yours';
-  static const String privacyChainLead =
-      'See what the public history of an address on Robinhood Chain gives away. Kranox asks the explorer through its '
-      'relay, so the explorer never sees your IP address, and the relay keeps no record.';
+  static const String privacyChainLead = 'See what the public history of an address on Robinhood Chain gives away.';
+  static const String privacyChainNote =
+      'Kranox asks the explorer through its relay, so the explorer never sees your IP address, and the relay keeps no '
+      'record.';
   static const String privacyChainField = 'Your address on Robinhood Chain';
   static const String privacyChainScan = 'Scan';
   static const String privacyChainScanning = 'Scanning…';
   static String privacyChainResult(String address) => 'What $address shows';
+  static const String privacyChainClearLead = 'Its public history ties it to nothing of yours that Kranox knows.';
   static const String privacyCleanStart = 'To start clean, pay a new address of yours from XMR with Kranox.';
+  static const String privacyPayNewAddress = 'Pay a new address';
+  static const String privacyFundingPending = 'Who sent it its first coins';
+  static const String privacyOwnPending = 'Direct transfers with your other addresses';
+  static const String privacyLookAlikePending = 'Senders that mimic an address it paid';
+  static const String privacyKranoxPending = 'Its part in your swaps in Kranox';
+  static const String privacyExposurePending = 'Its counts, first day, tokens, and busiest hours';
+  static const String privacyFundingNoneLine = 'No first funding found';
+  static const String privacyFundingOwnLine = 'Funded by an address of yours';
+  static String privacyFundingNamedLine(String name) => 'Funded by $name';
+  static const String privacyFundingPlainLine = 'Funded by an address without a name';
+  static const String privacyOwnClearLine = 'No direct link to your addresses';
+  static String privacyOwnLine(int count) =>
+      count == 1 ? 'Linked to 1 address of yours' : 'Linked to $count addresses of yours';
+  static const String privacyLookAlikeClearLine = 'No look-alike senders';
+  static String privacyLookAlikeLine(int count) => count == 1 ? '1 look-alike sender' : '$count look-alike senders';
+  static const String privacyKranoxClearLine = 'In none of your swaps';
+  static String privacyKranoxLine(int count) => count == 1 ? 'In 1 of your swaps' : 'In $count of your swaps';
+  static const String privacyExposureEmptyLine = 'No public history yet';
+  static const String privacyExposureLine = 'Anyone can look this up';
+  static String privacyExposureHoldsLine(String tokens) => 'Holds $tokens';
+  static const String privacyStatTransactions = 'Transactions';
+  static const String privacyStatTokenTransfers = 'Token transfers';
+  static const String privacyStatFirstSeen = 'First seen';
+  static const String privacyStatHours = 'Busiest hours';
+  // The source of the scan may count only what it read, so a count above 0 is a floor.
+  static String privacyStatCount(int count) => count == 0 ? '0' : '$count+';
+  static String privacyStatHourRange(String from, String to) => '$from–$to UTC';
   static const String privacyFundingTitle = 'First funding';
   static const String privacyFundingNone = 'Kranox found no transfer that first funded this address.';
   static String privacyFundingOwn(String sender, String day) =>
@@ -249,7 +295,7 @@ abstract final class Copy {
   static String privacyExposureSince(String day) => 'Active since $day.';
   static String privacyExposureTokens(String tokens) => 'It holds $tokens.';
   static String privacyExposureHours(String from, String to) =>
-      'Most of its activity falls between $from and $to UTC, which hints at your time zone.';
+      'Most of its activity falls between $from:00 and $to:00 UTC, which hints at your time zone.';
   static String privacyLock(int minutes) =>
       'The wallet locks after $minutes minutes without use, and each send asks for your password.';
 
@@ -439,6 +485,24 @@ abstract final class Copy {
   static String payAboveMaximum(String xmr) => 'Above the maximum payment of $xmr XMR.';
   static const String payPreparing = 'Asking ChangeNOW…';
   static const String payTo = 'To, on Robinhood Chain';
+  // The check of the recipient on the review of pay, from 8 Oct 2026: the scan of the menu Privacy, for an address that
+  // may be one of the user's own.
+  static const String payCheckRecipient = 'Check this address';
+  static const String payCheckingRecipient = 'Checking…';
+  static const String payCheckRecipientLead = 'Is it yours? See what it already shows on Robinhood Chain.';
+  static const String payRecipientFresh = 'No public history yet';
+  static const String payRecipientFreshNote = 'A clean start, if this address is yours.';
+  static String payRecipientFundedNamed(String name, String day) => 'First funded by $name on $day';
+  static String payRecipientFundedOwn(String address, String day) =>
+      'First funded by $address, an address of yours, on $day';
+  static String payRecipientFundedPlain(String day) => 'First funded on $day by an address without a name';
+  static String payRecipientOwn(String address) => 'Dealt directly with $address, another address of yours';
+  static String payRecipientOwnMany(int count) => 'Dealt directly with $count other addresses of yours';
+  // The source of the scan may count only what it read, so the count is a floor.
+  static String payRecipientHistory(int transactions, String? since) =>
+      since == null ? 'At least $transactions transactions' : 'At least $transactions transactions since $since';
+  static const String payRecipientApart =
+      'If this address is yours, paying a new one keeps this payment apart from you.';
   static const String payYouSend = 'You pay';
   static const String payRateHolds = 'Rate holds until';
   static const String payRefundLabel = 'Refund';

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kranox_wallet/bridge/chain_scan.dart';
 import 'package:kranox_wallet/bridge/client.dart';
 import 'package:kranox_wallet/bridge/controller.dart';
 import 'package:kranox_wallet/bridge/models.dart';
@@ -10,6 +11,7 @@ import 'package:kranox_wallet/config/app_config.dart';
 import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/ui/copy.dart';
+import 'package:kranox_wallet/ui/format.dart';
 import 'package:kranox_wallet/ui/screens/send_page.dart';
 import 'package:kranox_wallet/ui/theme/kranox_theme.dart';
 import 'package:kranox_wallet/ui/theme/palette.dart';
@@ -28,6 +30,89 @@ const _plainRecipient =
 
 /// A recipient on Robinhood Chain, from the examples of EIP-55.
 const _chainRecipient = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+
+/// Two more addresses from the examples of EIP-55: an exchange, and an address of the user.
+const _exchange = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
+const _ownAddress = '0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB';
+
+/// The relay with the scan that [answer] makes for each address, and the addresses that it was asked for.
+final class _Scanner implements ChainScanClient {
+  _Scanner(this.answer);
+
+  final ChainScan Function(String address) answer;
+  final List<String> asked = [];
+
+  @override
+  Future<ChainScan> scanAddress(String address) async {
+    asked.add(address);
+    return answer(address);
+  }
+}
+
+ChainParty _party(String address, {String? label}) => ChainParty(address: address, label: label, isContract: false);
+
+/// An address without any history on Robinhood Chain.
+ChainScan _freshScan(String address) => ChainScan(
+  address: address,
+  isContract: false,
+  balanceWei: BigInt.zero,
+  transactionCount: 0,
+  tokenTransferCount: 0,
+  firstTransaction: null,
+  firstTokenTransfer: null,
+  transactions: const [],
+  tokenTransfers: const [],
+  holdings: const [],
+);
+
+/// An address that an exchange with a public name funded first, and that sent ETH to [_ownAddress] later.
+ChainScan _linkedScan(String address) {
+  final start = DateTime.now().subtract(const Duration(days: 20));
+  return ChainScan(
+    address: address,
+    isContract: false,
+    balanceWei: BigInt.zero,
+    transactionCount: 7,
+    tokenTransferCount: 0,
+    firstTransaction: ChainTransfer(
+      hash: '0xfirst',
+      from: _party(_exchange, label: 'Big Exchange'),
+      to: _party(address),
+      value: BigInt.from(5),
+      token: null,
+      time: start,
+    ),
+    firstTokenTransfer: null,
+    transactions: [
+      ChainTransfer(
+        hash: '0xmine',
+        from: _party(address),
+        to: _party(_ownAddress),
+        value: BigInt.one,
+        token: null,
+        time: start.add(const Duration(days: 3)),
+      ),
+    ],
+    tokenTransfers: const [],
+    holdings: const [],
+  );
+}
+
+/// A finished receive from Robinhood Chain whose refund address was [refundAddress].
+BridgeSwap _receive(String refundAddress) => BridgeSwap(
+  id: 'receive1',
+  asset: BridgeAsset.usdg,
+  amount: 25,
+  xmrAmount: null,
+  depositAddress: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
+  payoutAddress: 'subaddress-3',
+  subaddressIndex: 3,
+  createdAt: DateTime.now().subtract(const Duration(days: 5)),
+  stage: SwapStage.finished,
+  depositHash: '0xdeposit',
+  refundAddress: refundAddress,
+  closed: true,
+);
 
 /// A synced wallet of 10 XMR that received 0.5 XMR 30 hours ago, so that a payment of 0.5 XMR matches it.
 final class _Wallet implements WalletBackend {
@@ -147,7 +232,7 @@ void main() {
   late WalletController wallet;
   late BridgeController bridge;
 
-  Future<void> start({List<BridgeSwap> swaps = const []}) async {
+  Future<void> start({List<BridgeSwap> swaps = const [], ChainScanClient? scanner}) async {
     root = Directory.systemTemp.createTempSync('kranox-privacy');
     final storage = AppStorage(root.path);
     await storage.prepareWalletFolder(MoneroNetwork.mainnet);
@@ -158,7 +243,7 @@ void main() {
     wallet = WalletController(worker: engine, storage: storage);
     await wallet.start();
     await wallet.unlock('password');
-    bridge = BridgeController(client: _Relay(), store: store, wallet: wallet);
+    bridge = BridgeController(client: _Relay(), store: store, wallet: wallet, scanner: scanner);
     await bridge.start();
   }
 
@@ -169,14 +254,14 @@ void main() {
     root.deleteSync(recursive: true);
   });
 
-  Future<void> showSendPage(WidgetTester tester) async {
+  Future<void> showSendPage(WidgetTester tester, {bool startOnPay = false}) async {
     await tester.binding.setSurfaceSize(const Size(1400, 2600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
         theme: KranoxTheme.build(Palette.of(activeLook)),
         home: Scaffold(
-          body: SendPage(controller: wallet, bridge: bridge),
+          body: SendPage(controller: wallet, bridge: bridge, startOnPay: startOnPay),
         ),
       ),
     );
@@ -187,6 +272,21 @@ void main() {
     for (var round = 0; round < 6; round++) {
       await tester.pump();
     }
+  }
+
+  /// Opens pay, asks for 0.16 XMR to [_chainRecipient], and reviews the payment.
+  Future<void> reviewPay(WidgetTester tester) async {
+    await showSendPage(tester);
+    await tester.tap(find.text(Copy.sendChainTab.toUpperCase()));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField).at(0), '0.16');
+    await tester.enterText(find.byType(TextField).at(1), _chainRecipient);
+    await tester.pump(AppConfig.bridgeQuoteDelay + const Duration(milliseconds: 200));
+    await settle(tester);
+    expect(bridge.pay.canReview, isTrue);
+    await tester.tap(find.text(Copy.review));
+    await settle(tester);
+    expect(bridge.pay.review, isNotNull);
   }
 
   testWidgets('a plain send of an amount that came in lately gets a warning and a suggestion that clears it', (
@@ -218,41 +318,49 @@ void main() {
   });
 
   testWidgets('pay to an address that the user gave as a refund address warns about the link', (tester) async {
-    await tester.runAsync(
-      () => start(
-        swaps: [
-          BridgeSwap(
-            id: 'receive1',
-            asset: BridgeAsset.usdg,
-            amount: 25,
-            xmrAmount: null,
-            depositAddress: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
-            payoutAddress: 'subaddress-3',
-            subaddressIndex: 3,
-            createdAt: DateTime.now().subtract(const Duration(days: 5)),
-            stage: SwapStage.finished,
-            depositHash: '0xdeposit',
-            refundAddress: _chainRecipient,
-            closed: true,
-          ),
-        ],
-      ),
-    );
-    await showSendPage(tester);
-    await tester.tap(find.text(Copy.sendChainTab.toUpperCase()));
-    await tester.pump();
-    await tester.enterText(find.byType(TextField).at(0), '0.16');
-    await tester.enterText(find.byType(TextField).at(1), _chainRecipient);
-    await tester.pump(AppConfig.bridgeQuoteDelay + const Duration(milliseconds: 200));
-    await settle(tester);
-    expect(bridge.pay.canReview, isTrue);
+    await tester.runAsync(() => start(swaps: [_receive(_chainRecipient)]));
+    await reviewPay(tester);
 
-    await tester.tap(find.text(Copy.review));
-    await settle(tester);
-
-    expect(bridge.pay.review, isNotNull);
+    // Without the scan of the relay, the review offers no check of the recipient.
+    expect(find.text(Copy.payCheckRecipient), findsNothing);
     expect(find.text(Copy.privacyAddressLabel), findsOneWidget);
     expect(find.textContaining('refund address of a receive'), findsOneWidget);
     expect(find.text(Copy.privacyWarnings(1)), findsOneWidget);
+  });
+
+  testWidgets('pay checks a recipient without a history on Robinhood Chain and calls it a clean start', (tester) async {
+    final scanner = _Scanner(_freshScan);
+    await tester.runAsync(() => start(scanner: scanner));
+    await reviewPay(tester);
+    expect(find.text(Copy.payCheckRecipient), findsOneWidget);
+    expect(scanner.asked, isEmpty, reason: 'the check waits for the user');
+
+    await tester.tap(find.text(Copy.payCheckRecipient));
+    await settle(tester);
+    expect(scanner.asked, [_chainRecipient.toLowerCase()]);
+    expect(find.text(Copy.payRecipientFresh), findsOneWidget);
+    expect(find.text(Copy.payRecipientFreshNote), findsOneWidget);
+    expect(find.text(Copy.payCheckRecipient), findsNothing);
+  });
+
+  testWidgets('pay checks a recipient that an exchange funded and that dealt with an address of the user', (
+    tester,
+  ) async {
+    await tester.runAsync(() => start(swaps: [_receive(_ownAddress)], scanner: _Scanner(_linkedScan)));
+    await reviewPay(tester);
+    await tester.tap(find.text(Copy.payCheckRecipient));
+    await settle(tester);
+
+    expect(find.textContaining(Copy.payRecipientFundedNamed('Big Exchange', '')), findsOneWidget);
+    expect(find.text(Copy.payRecipientOwn(shortText(_ownAddress))), findsOneWidget);
+    expect(find.textContaining('At least 7 transactions'), findsOneWidget);
+    expect(find.text(Copy.payRecipientApart), findsOneWidget);
+  });
+
+  testWidgets('the send page opens on pay when asked, as the way to a clean start does', (tester) async {
+    await tester.runAsync(start);
+    await showSendPage(tester, startOnPay: true);
+    expect(find.text(Copy.payLead), findsOneWidget);
+    expect(find.text(Copy.sendLead), findsNothing);
   });
 }

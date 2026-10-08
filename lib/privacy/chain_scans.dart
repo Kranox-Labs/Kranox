@@ -31,15 +31,13 @@ final class ChainScans extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final result = await _client.scanAddress(address);
+      final result = await readScan(_client, address);
       final key = result.address.toLowerCase();
       _scans.remove(key);
       _scans[key] = result;
       _current = key;
     } on BridgeException catch (error) {
       _error = error;
-    } on FormatException catch (error) {
-      _error = BridgeException(BridgeFailure.failed, error.message);
     } finally {
       _scanning = false;
       if (!_disposed) notifyListeners();
@@ -50,5 +48,15 @@ final class ChainScans extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     super.dispose();
+  }
+}
+
+/// Asks [client] for the scan of [address], and turns an answer of the wrong form into a failure of the bridge, so that
+/// a caller catches one kind of failure.
+Future<ChainScan> readScan(ChainScanClient client, String address) async {
+  try {
+    return await client.scanAddress(address);
+  } on FormatException catch (error) {
+    throw BridgeException(BridgeFailure.failed, error.message);
   }
 }

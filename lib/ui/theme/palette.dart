@@ -43,6 +43,9 @@ final class Palette {
     required this.inkFaint,
     required this.accent,
     required this.onAccent,
+    required this.accentTint,
+    required this.dangerTint,
+    required this.dangerLine,
     required this.navActive,
     required this.navActiveInk,
     required this.navTile,
@@ -98,6 +101,14 @@ final class Palette {
 
   final Color accent;
   final Color onAccent;
+
+  /// The ground of a round mark in the accent or in the danger color, such as the state of a check in the menu
+  /// Privacy.
+  final Color accentTint;
+  final Color dangerTint;
+
+  /// The edge of a card that warns, such as a check of the menu Privacy with something to improve.
+  final Color dangerLine;
 
   /// The active link of the sidebar.
   final Color navActive;
@@ -163,6 +174,9 @@ final class Palette {
     inkFaint: Color(0x59F6F3EC),
     accent: BrandColors.orange,
     onAccent: Color(0xFF0F0D0C),
+    accentTint: Color(0x2EF26822),
+    dangerTint: Color(0x2EFF8A7A),
+    dangerLine: Color(0x59FF8A7A),
     navActive: BrandColors.orange,
     navActiveInk: Color(0xFF0F0D0C),
     navTile: Color(0xFF3A3532),
@@ -203,6 +217,9 @@ final class Palette {
     inkFaint: Color(0x59211D1A),
     accent: BrandColors.orange,
     onAccent: BrandColors.coal,
+    accentTint: Color(0x24F26822),
+    dangerTint: Color(0x1FC8372D),
+    dangerLine: Color(0x4DC8372D),
     navActive: BrandColors.coal,
     navActiveInk: BrandColors.cream,
     navTile: Color(0xFFE2DED7),

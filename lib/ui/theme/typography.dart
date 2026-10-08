@@ -32,6 +32,9 @@ abstract final class KranoxType {
   static final TextStyle swapFigure = _style(36, 250, tracking: -0.03, height: 1.15);
 
   static final TextStyle pageTitle = _style(26, 500, tracking: -0.02, height: 1.15);
+
+  /// The headline of a board in the menu Privacy, such as the count of things to improve.
+  static final TextStyle boardTitle = _style(20, 500, tracking: -0.015, height: 1.2);
   static final TextStyle onboardingTitle = _style(34, 500, tracking: -0.025, height: 1.1);
   static final TextStyle cardTitle = _style(15, 600);
   static final TextStyle body = _style(14, 500);

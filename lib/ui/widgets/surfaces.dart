@@ -7,10 +7,18 @@ import '../theme/metrics.dart';
 
 /// A card of the look: frosted glass over the drawing of the dark ground, white on the light ground.
 class Surface extends StatelessWidget {
-  const Surface({super.key, required this.child, this.padding = const EdgeInsets.all(Metrics.cardPadding)});
+  const Surface({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(Metrics.cardPadding),
+    this.border,
+  });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
+
+  /// The color of the edge; the hairline of the look when null.
+  final Color? border;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +32,7 @@ class Surface extends StatelessWidget {
           decoration: BoxDecoration(
             color: palette.surface,
             borderRadius: radius,
-            border: Border.all(color: palette.line),
+            border: Border.all(color: border ?? palette.line),
           ),
           child: Padding(padding: padding, child: child),
         ),
