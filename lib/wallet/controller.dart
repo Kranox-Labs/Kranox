@@ -226,9 +226,7 @@ final class WalletController extends ChangeNotifier {
 
   Future<List<String>> readSeed(String password) => _worker.call<List<String>>(ReadSeed(password: password));
 
-  /// Saves another node for the network of the app and connects the wallet to it. Throws a [NodeAddressException]
-  /// for an address of the wrong form.
-  /// The SOCKS proxy to the node of every network, or null when the wallet reaches the node straight.
+  /// The SOCKS proxy to the node of every network and to the relay, or null when the wallet reaches both straight.
   String? get proxy => _settings.proxy;
 
   /// Saves the proxy, such as Tor at 127.0.0.1:9050, or no proxy for empty text, and connects the wallet through it.
@@ -245,6 +243,8 @@ final class WalletController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Saves another node for the network of the app and connects the wallet to it. Throws a [NodeAddressException]
+  /// for an address of the wrong form.
   Future<void> changeNode(String text) async {
     final node = parseNodeAddress(text);
     _settings = _settings.withNode(network, node);

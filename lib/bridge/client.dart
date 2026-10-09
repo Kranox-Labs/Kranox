@@ -8,6 +8,7 @@ import '../config/app_config.dart';
 import 'chain_scan.dart';
 import 'models.dart';
 import 'relay_signature.dart';
+import 'socks.dart';
 
 /// The ways in which a call of the bridge can fail. The screens show a sentence for each one.
 enum BridgeFailure {
@@ -196,18 +197,24 @@ const String _signatureHeader = 'Kranox-Signature';
 /// The bridge through the relay of Kranox, over HTTP, and the scan of an address on Robinhood Chain through it.
 final class RelayBridgeClient implements BridgeClient, ChainScanClient {
   /// A release talks to its relay over HTTPS only, and trusts an answer only with a signature under [signingKeys].
-  RelayBridgeClient({String baseUrl = AppConfig.bridgeRelay, List<String> signingKeys = AppConfig.relaySigningKeys})
-    : _base = Uri.parse(baseUrl),
-      _signature = RelaySignature(signingKeys) {
+  /// Each call goes through the SOCKS proxy that `proxy` gives at that moment, such as Tor, or straight without one.
+  RelayBridgeClient({
+    required this._proxy,
+    String baseUrl = AppConfig.bridgeRelay,
+    List<String> signingKeys = AppConfig.relaySigningKeys,
+  }) : _base = Uri.parse(baseUrl),
+       _signature = RelaySignature(signingKeys) {
     if (kReleaseMode && _base.scheme != 'https') {
       throw StateError('A release of the app talks to its relay over HTTPS only, not at $baseUrl.');
     }
   }
 
+  final String? Function() _proxy;
   final Uri _base;
   final RelaySignature _signature;
   final Random _random = Random.secure();
-  final HttpClient _http = HttpClient()..connectionTimeout = AppConfig.bridgeRequestTimeout;
+  HttpClient? _http;
+  String? _httpProxy;
 
   @override
   Future<BridgeQuote> quote(BridgeAsset asset, String amount) async =>
@@ -281,6 +288,31 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     }
   }
 
+  /// The HTTP client of [proxy]. Another proxy closes the client of the old one, so that no open connection of the old
+  /// way carries a later call (O-001 of the second security review).
+  HttpClient _httpFor(String? proxy) {
+    if (_http case final http? when proxy == _httpProxy) return http;
+    _http?.close();
+    _httpProxy = proxy;
+    final http = HttpClient()..connectionTimeout = AppConfig.bridgeRequestTimeout;
+    if (proxy != null) {
+      // Every connection opens through the SOCKS proxy, so no HTTP proxy of the environment comes between.
+      http
+        ..findProxy = ((_) => 'DIRECT')
+        ..connectionFactory = (uri, _, _) => _throughProxy(proxy, uri);
+    }
+    return _http = http;
+  }
+
+  /// A connection to the relay through [proxy]. The proxy carries HTTPS only, and a proxy that fails fails the call:
+  /// the app never falls back to a straight connection.
+  static Future<ConnectionTask<Socket>> _throughProxy(String proxy, Uri uri) async {
+    if (!uri.isScheme('https')) {
+      throw StateError('The proxy carries the relay over HTTPS only, not at $uri.');
+    }
+    return connectTlsThroughSocks(proxy: proxy, host: uri.host, port: uri.port);
+  }
+
   Future<Map<String, Object?>> _call(
     String method,
     String path, {
@@ -295,7 +327,7 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     final HttpClientResponse response;
     final String text;
     try {
-      final request = await _http.openUrl(method, uri).timeout(AppConfig.bridgeRequestTimeout);
+      final request = await _httpFor(_proxy()).openUrl(method, uri).timeout(AppConfig.bridgeRequestTimeout);
       request.headers.set(_nonceHeader, nonce);
       headers.forEach(request.headers.set);
       if (body != null) {
@@ -305,6 +337,8 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
       response = await request.close().timeout(AppConfig.bridgeRequestTimeout);
       text = await response.transform(utf8.decoder).join().timeout(AppConfig.bridgeRequestTimeout);
     } on SocketException catch (error) {
+      throw BridgeException(BridgeFailure.relayDown, error.message);
+    } on SocksException catch (error) {
       throw BridgeException(BridgeFailure.relayDown, error.message);
     } on Object catch (error) {
       throw BridgeException(BridgeFailure.relayDown, '$error');

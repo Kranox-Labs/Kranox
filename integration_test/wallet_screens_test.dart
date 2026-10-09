@@ -78,7 +78,7 @@ void main() {
     final controller = WalletController(worker: worker, storage: AppStorage(root.path));
     await controller.start();
     final bridge = BridgeController(
-      client: RelayBridgeClient(),
+      client: RelayBridgeClient(proxy: () => controller.proxy),
       store: BridgeStore(AppStorage(root.path).bridgePath),
       wallet: controller,
     );
@@ -222,10 +222,11 @@ void main() {
     await shoot('08-settings');
     await tester.ensureVisible(find.text(Copy.networkLead));
     await shoot('08-settings-network');
-    await enter(1, 'wrong-password');
+    // The fields of the settings page: the node, the proxy, then the password of the seed.
+    await enter(2, 'wrong-password');
     await tapText(Copy.showSeed);
     await waitFor(find.text(Copy.wrongPassword));
-    await enter(1, _password);
+    await enter(2, _password);
     await tapText(Copy.showSeed);
     await waitFor(find.byType(SeedGrid));
     expect(tester.widget<SeedGrid>(find.byType(SeedGrid)).words, createdSeed);

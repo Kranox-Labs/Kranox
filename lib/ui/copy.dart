@@ -578,8 +578,8 @@ abstract final class Copy {
   static const String proxyField = 'Proxy, such as Tor (optional)';
   static const String proxyHint = '127.0.0.1:9050';
   static const String proxyNote =
-      'With Tor on this Mac, 127.0.0.1:9050 carries the traffic to the node through Tor. Leave it empty to reach the '
-      'node straight.';
+      'With Tor on this Mac, 127.0.0.1:9050 carries the traffic to the node and to the relay through Tor. Leave it '
+      'empty to reach both straight.';
   static const String proxyInvalid = 'Enter the proxy as host:port, such as 127.0.0.1:9050.';
   static const String relayTitle = 'Relay';
   static const String relayLead =

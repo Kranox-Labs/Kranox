@@ -22,3 +22,14 @@ String parseNodeAddress(String text) {
   }
   return value;
 }
+
+/// The host and the port of an address that [parseNodeAddress] accepts, an IPv6 address without its brackets.
+({String host, int port}) splitNodeAddress(String text) {
+  final value = parseNodeAddress(text);
+  final colon = value.lastIndexOf(':');
+  final host = value.substring(0, colon);
+  return (
+    host: host.startsWith('[') ? host.substring(1, host.length - 1) : host,
+    port: int.parse(value.substring(colon + 1)),
+  );
+}
