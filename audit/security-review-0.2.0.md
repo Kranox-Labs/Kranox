@@ -59,7 +59,9 @@ commits [`76d2179`](https://github.com/Kranox-Labs/Kranox/commit/76d2179) and
 [`aab392a`](https://github.com/Kranox-Labs/Kranox/commit/aab392a), ship in
 [Kranox 0.3.1 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.1). The fixes of the relay are in
 [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay), and the relay runs all of them from 8 Oct 2026. Two
-findings stay partly fixed, K-11 and K-18. No second review has checked the fixes yet.
+findings stay partly fixed, K-11 and K-18. A second review, of 0.3.1, ran on 8 Oct 2026 with another skill. It lists
+K-11 and K-18 again, and it found a gap next to K-10:
+[security-review-consensys-0.3.1.md](security-review-consensys-0.3.1.md).
 
 ## Findings
 
@@ -200,6 +202,9 @@ Paths of the wallet point at this repository. Paths of the relay point at
   cannot answer for the relay, and an old answer cannot answer a new request. A release talks to its relay over
   HTTPS only, and the release script refuses a build with another relay or without the key. A relay whose server
   falls still falls with its key.
+- **After the fix:** the second review found that the signature does not bind the request that it answers, so an
+  interception of TLS can still pass on the answer to another request. That report tracks the gap as
+  [wallet O-003](security-review-consensys-0.3.1.md#wallet-o-003-the-signature-of-an-answer-does-not-bind-the-request).
 
 ### K-11: traffic to the node is not encrypted, and node fees had no limit
 
