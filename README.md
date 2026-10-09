@@ -15,7 +15,7 @@ Robinhood Chain as XMR. ChangeNOW handles each exchange.
 - **Kranox 0.2.0** is the current release. Get it from
   [the latest release](https://github.com/Kranox-Labs/Kranox/releases/latest) or from
   [kranox.cash/downloads](https://kranox.cash/downloads).
-- **Kranox 0.3.1 beta** holds the privacy check, the menu Privacy, and the fixes of the
+- **Kranox 0.3.1 beta** holds the privacy check, the menu Privacy, and the fixes of the first
   [security review](#audit). Get it from
   [its release page](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.1), and start with small amounts.
 
@@ -56,9 +56,16 @@ The app reaches ChangeNOW through the [Kranox relay](https://github.com/Kranox-L
 holds the partner key of ChangeNOW, so that the key never sits in the app. The relay keeps no log of a request.
 It sees the addresses and the amounts of a swap, as ChangeNOW does, and never your keys or your balance. For a
 scan of an address on Robinhood Chain, it sees that address and asks the explorer for you, so the explorer never
-sees your IP address. From 0.3.1 the app trusts an answer of the relay only with the signature of its key.
+sees your IP address. From 0.3.1 the app trusts an answer of the relay only with the signature of its key. The
+proxy in Settings covers the node only, so the relay still sees your IP address, as the
+[second review](#second-review-kranox-031) notes.
 
 ## Audit
+
+Kranox has two security reviews, each made with the skills of a different firm. Neither review is an audit by that
+firm.
+
+### First review: Kranox 0.2.0
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 7 Oct 2026, at the commit `10bc27f`
 of Kranox 0.2.0. Not an audit by Trail of Bits.
@@ -89,6 +96,35 @@ without its token, until those apps are gone.
 
 The full report gives every finding with its impact and its fix:
 [audit/security-review-0.2.0.md](audit/security-review-0.2.0.md).
+
+### Second review: Kranox 0.3.1
+
+Scanned with [repo-security-review](https://github.com/Consensys/repo-security-review), a skill of Consensys, on
+8 Oct 2026, at the commit `56d16b3` of Kranox 0.3.1 beta and the commit `ef0cdc5` of the relay. Not an audit by
+Consensys.
+
+Claude ran the skill in Claude Code on the wallet and on the relay, and wrote every finding. No person at Consensys
+or at another firm read the code. The skill calls itself experimental, and its repository has no license.
+
+The review found no secret, no package with a known CVE, and nothing Critical or High. Of its 17 findings, 9 are
+new. None of them lets an attacker on the internet take funds or keys from a wallet.
+
+| Severity | Found | New | Known |
+|---|---|---|---|
+| Medium | 9 | 4 | 5 |
+| Low | 7 | 5 | 2 |
+| No severity | 1 | 0 | 1 |
+| Total | 17 | 9 | 8 |
+
+The new Medium findings are open:
+
+- The app reaches the relay without the proxy of Settings, so Tor hides your IP address from the node only.
+- The signature of an answer of the relay does not bind the request that it answers. The review found this gap in
+  the wallet and in the relay.
+- The file of your swaps on the Mac is not encrypted.
+
+The full report gives every finding with its impact and its plan:
+[audit/security-review-consensys-0.3.1.md](audit/security-review-consensys-0.3.1.md).
 
 ## Build from source
 
