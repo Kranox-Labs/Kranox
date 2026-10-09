@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -155,6 +156,7 @@ final class _Wallet implements WalletBackend {
         amount: XmrAmount(amountUnits),
         fee: XmrAmount.parse('0.00003'),
       ),
+      ReadFileKey() => Uint8List(32),
       _ => null,
     };
     return answer as T;
@@ -199,6 +201,7 @@ final class _Relay implements BridgeClient {
     xmrAmount: double.parse(xmrAmount),
     depositAddress: _deposit,
     payoutAddress: address.toLowerCase(),
+    refundAddress: refundAddress,
   );
 
   @override
@@ -240,6 +243,7 @@ void main() {
     await storage.prepareWalletFolder(MoneroNetwork.mainnet);
     File('${storage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
     final store = BridgeStore(storage.bridgePath);
+    await store.read(Uint8List(32));
     await store.write(swaps);
     engine = _Wallet();
     wallet = WalletController(worker: engine, storage: storage);

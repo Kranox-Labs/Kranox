@@ -1,6 +1,7 @@
 // Runs the wallet without a window, with the real Monero library and a stagenet node: it makes a wallet, waits
 // until the wallet has caught up with the node, makes a subaddress, tries a payment that the balance does not cover,
-// reads the seed, locks the wallet and opens it again, and restores a second wallet from the same seed.
+// reads the seed and the key of its files, locks the wallet and opens it again, and restores a second wallet from the
+// same seed, which gives the same key.
 //
 // Run in apps/wallet, after sh tool/fetch_monero_c.sh: fvm flutter test integration_test/wallet_engine_test.dart
 import 'dart:io';
@@ -91,6 +92,10 @@ void main() {
     await controller.unlock(_password);
     expect(controller.phase, WalletPhase.open);
     final nodeHeight = controller.status.nodeHeight;
+    // The key of the files of the wallet, which seals the swaps of the bridge (O-007), comes from its view key.
+    final fileKey = await controller.readFileKey();
+    expect(fileKey, hasLength(32));
+    expect(await controller.readFileKey(), fileKey);
     await controller.shutdown();
 
     // A wallet restored from the seed derives the same subaddresses.
@@ -99,6 +104,7 @@ void main() {
     await restored.restore(seed: seed, restoreHeight: nodeHeight, password: _password);
     expect(restored.phase, WalletPhase.open);
     expect(restored.receiveAddress!.address, first.address);
+    expect(await restored.readFileKey(), fileKey, reason: 'the swaps of the bridge open again after a restore');
     await restored.shutdown();
 
     root.deleteSync(recursive: true);

@@ -226,6 +226,10 @@ final class WalletController extends ChangeNotifier {
 
   Future<List<String>> readSeed(String password) => _worker.call<List<String>>(ReadSeed(password: password));
 
+  /// The key of the files of the app that belong to the open wallet, such as the swaps of the bridge (wallet O-007
+  /// of the second security review).
+  Future<Uint8List> readFileKey() => _worker.call<Uint8List>(const ReadFileKey());
+
   /// The SOCKS proxy to the node of every network and to the relay, or null when the wallet reaches both straight.
   String? get proxy => _settings.proxy;
 

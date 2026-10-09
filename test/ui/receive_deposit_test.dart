@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +38,7 @@ final class _Wallet implements WalletBackend {
       ReadHistory() => const <WalletTransfer>[],
       ReadReceiveAddress() => const ReceiveAddress(address: 'subaddress-1', index: 1),
       ReadSubaddress(:final index) => ReceiveAddress(address: 'subaddress-$index', index: index),
+      ReadFileKey() => Uint8List(32),
       _ => null,
     };
     return answer as T;
@@ -69,6 +71,7 @@ void main() {
     await storage.prepareWalletFolder(MoneroNetwork.mainnet);
     File('${storage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
     final store = BridgeStore(storage.bridgePath);
+    await store.read(Uint8List(32));
     await store.write([
       BridgeSwap(
         id: 'swap1',

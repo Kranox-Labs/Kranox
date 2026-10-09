@@ -27,8 +27,10 @@ class KranoxApp extends StatefulWidget {
 }
 
 class _KranoxAppState extends State<KranoxApp> {
-  // The notice of a damaged file that the start moved aside stays until the user closes it, also across locks.
-  late bool _noticeOpen = widget.controller.settingsRecoveredFrom != null || widget.bridge.recoveredFrom != null;
+  // The notice of a damaged file that the app moved aside stays until the user closes it, also across locks. The start
+  // reads the settings; the swaps open with the wallet, so their notice can come later.
+  late bool _noticeOpen = widget.controller.settingsRecoveredFrom != null;
+  String? _swapsNoticed;
   late final AppLifecycleListener _lifecycle;
   late final IdleLock _idle = IdleLock(
     isOpen: () => widget.controller.phase == WalletPhase.open,
@@ -51,12 +53,22 @@ class _KranoxAppState extends State<KranoxApp> {
     // Each key counts as use; the handler lets every key through.
     HardwareKeyboard.instance.addHandler(_onKey);
     widget.controller.addListener(_onPhase);
+    widget.bridge.addListener(_onBridge);
     _idle.start();
   }
 
   bool _onKey(KeyEvent event) {
     _idle.touch();
     return false;
+  }
+
+  void _onBridge() {
+    final recovered = widget.bridge.recoveredFrom;
+    if (recovered == null || recovered == _swapsNoticed) return;
+    setState(() {
+      _swapsNoticed = recovered;
+      _noticeOpen = true;
+    });
   }
 
   // The time without use starts again when the wallet opens, so that a wallet never locks right after its unlock.
@@ -68,6 +80,7 @@ class _KranoxAppState extends State<KranoxApp> {
   void dispose() {
     _idle.stop();
     widget.controller.removeListener(_onPhase);
+    widget.bridge.removeListener(_onBridge);
     HardwareKeyboard.instance.removeHandler(_onKey);
     _lifecycle.dispose();
     super.dispose();

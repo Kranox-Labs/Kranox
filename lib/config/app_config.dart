@@ -32,8 +32,10 @@ abstract final class AppConfig {
   static const String walletsFolderName = 'wallets';
   static const String settingsFileName = 'settings.json';
 
-  /// A password has at least this many characters. The password encrypts the key file of the wallet.
-  static const int minPasswordLength = 8;
+  /// A new password has at least this many characters. The password encrypts the key file of the wallet, which wallet2
+  /// stretches with one round of its key function, so the length carries the strength (wallet O-004 of the second
+  /// security review). Until 9 Oct 2026 it was 8; a wallet made before keeps its password.
+  static const int minPasswordLength = 12;
 
   /// The app reads the state of the open wallet this often.
   static const Duration statusInterval = Duration(seconds: 2);
@@ -136,6 +138,11 @@ abstract final class AppConfig {
 
   /// A call to the relay that takes longer than this fails.
   static const Duration bridgeRequestTimeout = Duration(seconds: 30);
+
+  /// The app reads at most this many bytes of an answer of the relay before it checks the signature, so that an
+  /// answer of any size cannot fill its memory (wallet O-006 of the second security review). The largest answer, the
+  /// scan of an address with its recent transfers, is far smaller.
+  static const int relayAnswerMaxBytes = 1024 * 1024;
 
   /// The bridge form asks for a quote this long after the last change of the amount.
   static const Duration bridgeQuoteDelay = Duration(milliseconds: 600);

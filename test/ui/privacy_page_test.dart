@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -61,6 +62,7 @@ final class _Wallet implements WalletBackend {
         index: _subaddress,
       ),
       ReadSubaddress(:final index) => ReceiveAddress(address: 'subaddress-$index', index: index),
+      ReadFileKey() => Uint8List(32),
       _ => null,
     };
     return answer as T;
