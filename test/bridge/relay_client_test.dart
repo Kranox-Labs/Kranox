@@ -78,7 +78,7 @@ void main() {
   tearDown(() => server.close(force: true));
 
   RelayBridgeClient client() =>
-      RelayBridgeClient(baseUrl: 'http://127.0.0.1:${server.port}', signingKeys: [key.publicBase64]);
+      RelayBridgeClient(proxy: () => null, baseUrl: 'http://127.0.0.1:${server.port}', signingKeys: [key.publicBase64]);
 
   test('sends the key of a creation and the token of a read in the headers that the relay reads', () async {
     final created = await client().createPay(
@@ -118,6 +118,85 @@ void main() {
     await refused('a key that the app does not hold');
   });
 
+  group('through a SOCKS proxy such as Tor (O-001 of the second review)', () {
+    late _SocksProxy proxy;
+    late ServerSocket straight;
+    var straightCalls = 0;
+
+    setUp(() async {
+      proxy = await _SocksProxy.start();
+      straightCalls = 0;
+      // The relay at a straight address, which counts every connection that reaches it without the proxy.
+      straight = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      straight.listen((socket) {
+        straightCalls++;
+        socket.destroy();
+      });
+    });
+
+    tearDown(() async {
+      await proxy.close();
+      await straight.close();
+    });
+
+    Matcher relayDown(String detail) => throwsA(
+      isA<BridgeException>()
+          .having((error) => error.failure, 'failure', BridgeFailure.relayDown)
+          .having((error) => error.detail, 'detail', contains(detail)),
+    );
+
+    test('hands the name of the relay to the proxy, which resolves it', () async {
+      final client = RelayBridgeClient(
+        proxy: () => proxy.address,
+        baseUrl: 'https://relay.kranox.invalid',
+        signingKeys: [key.publicBase64],
+      );
+      // The proxy of the test lets the connection through to nothing, so TLS fails after the proxy has seen it.
+      await expectLater(client.readSwap('pay1'), throwsA(isA<BridgeException>()));
+      expect(proxy.greetings, [
+        [5, 1, 0],
+      ], reason: 'SOCKS5 with one method: no user name');
+      expect(proxy.targets, ['relay.kranox.invalid:443'], reason: 'a name that only the proxy could resolve');
+    });
+
+    test('fails a call that the proxy refuses or cannot carry, and never calls the relay straight', () async {
+      final relay = 'https://127.0.0.1:${straight.port}';
+      RelayBridgeClient through(String address) =>
+          RelayBridgeClient(proxy: () => address, baseUrl: relay, signingKeys: [key.publicBase64]);
+
+      proxy.reply = 5;
+      await expectLater(through(proxy.address).readSwap('pay1'), relayDown('SOCKS5 reply 5'));
+      expect(proxy.targets, ['127.0.0.1:${straight.port}']);
+      proxy.method = 0xff;
+      await expectLater(through(proxy.address).readSwap('pay1'), relayDown('without a user name'));
+
+      final down = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final downAddress = '127.0.0.1:${down.port}';
+      await down.close();
+      await expectLater(through(downAddress).readSwap('pay1'), throwsA(isA<BridgeException>()));
+      expect(await through(downAddress).isOnline(), isFalse);
+      expect(straightCalls, 0);
+    });
+
+    test('takes a new proxy at once, without the open connections of the straight way', () async {
+      String? current;
+      final client = RelayBridgeClient(
+        proxy: () => current,
+        baseUrl: 'http://127.0.0.1:${server.port}',
+        signingKeys: [key.publicBase64],
+      );
+      expect((await client.readSwap('pay1')).stage, SwapStage.waiting);
+      heard.clear();
+
+      current = proxy.address;
+      await expectLater(client.readSwap('pay1'), relayDown('HTTPS only'));
+      expect(heard, isEmpty, reason: 'the kept connection to the relay carries no call after the proxy is set');
+
+      current = null;
+      expect((await client.readSwap('pay1')).stage, SwapStage.waiting);
+    });
+  });
+
   test('holds a key of the relay that lies on P-256', () {
     expect(AppConfig.relaySigningKeys, isNotEmpty);
     expect(() => RelaySignature(AppConfig.relaySigningKeys), returnsNormally);
@@ -128,4 +207,70 @@ void main() {
     expect(() => RelaySignature([base64Encode(List.filled(33, 2))]), throwsArgumentError);
     expect(RelaySignature([key.publicBase64]).verifies(nonce: 'n', body: 'b', signature: null), isFalse);
   });
+}
+
+/// A SOCKS5 proxy for the tests. It keeps the greeting and the target of each connection, answers [reply] to the
+/// command CONNECT, and then closes, so that a call through it fails after the proxy has seen where it goes.
+final class _SocksProxy {
+  _SocksProxy._(this._server) {
+    _server.listen(_serve);
+  }
+
+  static Future<_SocksProxy> start() async => _SocksProxy._(await ServerSocket.bind(InternetAddress.loopbackIPv4, 0));
+
+  final ServerSocket _server;
+  final List<List<int>> greetings = [];
+  final List<String> targets = [];
+
+  /// The method that the proxy picks: 0 for no user name, 0xff for none of the methods that the app offers.
+  int method = 0;
+
+  /// The reply to the command CONNECT: 0 lets it through, any other code refuses it.
+  int reply = 0;
+
+  String get address => '127.0.0.1:${_server.port}';
+
+  Future<void> close() => _server.close();
+
+  void _serve(Socket socket) {
+    final bytes = <int>[];
+    var stage = 0;
+    socket.listen((data) {
+      bytes.addAll(data);
+      if (stage == 0 && bytes.length >= 3) {
+        greetings.add(bytes.sublist(0, 3));
+        bytes.removeRange(0, 3);
+        stage = 1;
+        socket.add([5, method]);
+        if (method != 0) socket.close();
+      } else if (stage == 1) {
+        final target = _target(bytes);
+        if (target == null) return;
+        targets.add(target);
+        stage = 2;
+        socket
+          ..add([5, reply, 0, 1, 0, 0, 0, 0, 0, 0])
+          ..close();
+      }
+    }, onError: (Object _) => socket.destroy());
+  }
+
+  /// The host and the port of a whole command CONNECT, or null while a part of it is still on the way.
+  static String? _target(List<int> bytes) {
+    if (bytes.length < 5) return null;
+    final type = bytes[3];
+    final length = switch (type) {
+      1 => 4,
+      4 => 16,
+      3 => 1 + bytes[4],
+      _ => throw StateError('An address of the type $type.'),
+    };
+    if (bytes.length < 4 + length + 2) return null;
+    final address = bytes.sublist(4, 4 + length);
+    final port = bytes[4 + length] << 8 | bytes[5 + length];
+    final host = type == 3
+        ? ascii.decode(address.sublist(1))
+        : InternetAddress.fromRawAddress(Uint8List.fromList(address)).address;
+    return '$host:$port';
+  }
 }

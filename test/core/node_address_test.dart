@@ -23,6 +23,13 @@ void main() {
     }
   });
 
+  test('splits an address into its host and its port', () {
+    expect(splitNodeAddress(' 127.0.0.1:9050 '), (host: '127.0.0.1', port: 9050));
+    expect(splitNodeAddress('[::1]:9150'), (host: '::1', port: 9150));
+    expect(splitNodeAddress('localhost:9050'), (host: 'localhost', port: 9050));
+    expect(() => splitNodeAddress('tor'), throwsA(isA<NodeAddressException>()));
+  });
+
   test('reads a restore height, and an empty field as the first block', () {
     expect(parseRestoreHeight(''), 0);
     expect(parseRestoreHeight(' 2,221,920 '), 2221920);

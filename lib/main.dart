@@ -14,8 +14,9 @@ Future<void> main() async {
   final worker = await WalletWorker.start(libraryPath: moneroLibraryPath());
   final controller = WalletController(worker: worker, storage: storage);
   await controller.start();
-  // One client of the relay serves the bridge and the scan of an address on Robinhood Chain.
-  final relay = RelayBridgeClient();
+  // One client of the relay serves the bridge and the scan of an address on Robinhood Chain, through the proxy of the
+  // node when the user sets one.
+  final relay = RelayBridgeClient(proxy: () => controller.proxy);
   final bridge = BridgeController(
     client: relay,
     store: BridgeStore(storage.bridgePath),

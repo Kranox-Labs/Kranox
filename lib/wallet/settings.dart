@@ -15,8 +15,9 @@ final class AppSettings {
   final MoneroNetwork network;
   final Map<MoneroNetwork, String> nodes;
 
-  /// The SOCKS proxy, such as Tor at 127.0.0.1:9050, through which the wallet reaches the node of every network, or
-  /// null to reach it straight (K-11 of the security review of 0.2.0).
+  /// The SOCKS proxy, such as Tor at 127.0.0.1:9050, through which the wallet reaches the node of every network
+  /// (K-11 of the security review of 0.2.0) and the relay (O-001 of the second review), or null to reach both
+  /// straight.
   final String? proxy;
 
   /// The index of the subaddress that the receive page shows. The bridge makes subaddresses of its own for the
