@@ -10,8 +10,8 @@ import 'package:kranox_wallet/bridge/relay_signature.dart';
 import 'package:kranox_wallet/config/app_config.dart';
 import 'package:pointycastle/export.dart';
 
-/// A key of P-256 for the relay of the test, which signs as the relay does: SHA-256 over the nonce, a line break, and
-/// the body, as 64 bytes of r and s in base64.
+/// A key of P-256 for the relay of the test, which signs as the relay does: SHA-256 over the text, as 64 bytes of r
+/// and s in base64.
 final class _TestKey {
   _TestKey() {
     final random = FortunaRandom()
@@ -28,31 +28,53 @@ final class _TestKey {
   late final String publicBase64;
   late final SecureRandom _random;
 
-  String sign(String nonce, String body) {
+  String sign(String text) {
     final signer = ECDSASigner(SHA256Digest())
       ..init(true, ParametersWithRandom(PrivateKeyParameter<ECPrivateKey>(_private), _random));
-    final signature = signer.generateSignature(Uint8List.fromList(utf8.encode('$nonce\n$body'))) as ECSignature;
+    final signature = signer.generateSignature(Uint8List.fromList(utf8.encode(text))) as ECSignature;
     Uint8List bytes(BigInt value) =>
         Uint8List.fromList([for (var i = 31; i >= 0; i--) ((value >> (8 * i)) & BigInt.from(0xff)).toInt()]);
     return base64Encode([...bytes(signature.r), ...bytes(signature.s)]);
   }
 }
 
+/// [answer] with one of its fields changed.
+SignedAnswer _changed(
+  SignedAnswer answer, {
+  String? nonce,
+  String? method,
+  String? target,
+  List<int>? requestBody,
+  int? status,
+  String? body,
+}) => SignedAnswer(
+  nonce: nonce ?? answer.nonce,
+  method: method ?? answer.method,
+  target: target ?? answer.target,
+  requestBody: requestBody ?? answer.requestBody,
+  status: status ?? answer.status,
+  body: body ?? answer.body,
+);
+
 /// A local server in place of the relay that keeps the headers of each request and answers a new payment and a state,
-/// signed by [_TestKey] unless the test asks otherwise.
+/// signed by [_TestKey] over the request and the answer unless the test asks otherwise. A read of the swap `swapped`
+/// gets the state of `pay1`.
 void main() {
   late HttpServer server;
   final key = _TestKey();
   final heard = <String, HttpHeaders>{};
-  String Function(String nonce, String body) signer = key.sign;
+  String signedByKey(SignedAnswer answer) => key.sign(answer.message);
+  String Function(SignedAnswer answer) signer = signedByKey;
 
   setUp(() async {
     heard.clear();
-    signer = key.sign;
+    signer = signedByKey;
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
       heard['${request.method} ${request.uri.path}'] = request.headers;
-      await utf8.decoder.bind(request).join();
+      final requestBody = await request.fold<List<int>>([], (bytes, chunk) => bytes..addAll(chunk));
+      final id = request.uri.pathSegments.last;
+      final status = request.method == 'POST' ? 201 : 200;
       final body = jsonEncode(
         request.method == 'POST'
             ? {
@@ -62,14 +84,23 @@ void main() {
                 'xmrAmount': 0.16,
                 'depositAddress': 'deposit',
                 'payoutAddress': '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed',
+                'refundAddress': 'subaddress',
                 'readToken': 'token-of-pay1',
               }
-            : {'status': 'waiting'},
+            : {'id': id == 'swapped' ? 'pay1' : id, 'status': 'waiting'},
+      );
+      final answer = SignedAnswer(
+        nonce: request.headers.value('kranox-nonce') ?? '',
+        method: request.method,
+        target: request.uri.toString(),
+        requestBody: requestBody,
+        status: status,
+        body: body,
       );
       request.response
-        ..statusCode = request.method == 'POST' ? 201 : 200
+        ..statusCode = status
         ..headers.contentType = ContentType.json
-        ..headers.set('kranox-signature', signer(request.headers.value('kranox-nonce') ?? '', body))
+        ..headers.set('kranox-signature-v2', signer(answer))
         ..write(body);
       await request.response.close();
     });
@@ -80,17 +111,20 @@ void main() {
   RelayBridgeClient client() =>
       RelayBridgeClient(proxy: () => null, baseUrl: 'http://127.0.0.1:${server.port}', signingKeys: [key.publicBase64]);
 
+  Future<CreatedPay> createPay() => client().createPay(
+    asset: BridgeAsset.usdg,
+    rate: PayRate.floating,
+    xmrAmount: '0.16',
+    address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+    refundAddress: 'subaddress',
+    rateId: null,
+    creationKey: 'c0ffee00c0ffee00c0ffee00c0ffee00',
+  );
+
   test('sends the key of a creation and the token of a read in the headers that the relay reads', () async {
-    final created = await client().createPay(
-      asset: BridgeAsset.usdg,
-      rate: PayRate.floating,
-      xmrAmount: '0.16',
-      address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
-      refundAddress: 'subaddress',
-      rateId: null,
-      creationKey: 'c0ffee00c0ffee00c0ffee00c0ffee00',
-    );
+    final created = await createPay();
     expect(created.readToken, 'token-of-pay1');
+    expect(created.refundAddress, 'subaddress');
     expect(heard['POST /v1/pay/swaps']!.value('idempotency-key'), 'c0ffee00c0ffee00c0ffee00c0ffee00');
 
     await client().readSwap('pay1', token: created.readToken);
@@ -99,23 +133,87 @@ void main() {
     expect(heard['GET /v1/swaps/pay0']!.value('kranox-swap-token'), isNull, reason: 'a swap of an older release');
   });
 
-  test('trusts no answer without the signature of the relay over its request (K-10)', () async {
+  test('trusts no answer without the signature of the relay over its request and its status (K-10, O-003)', () async {
     Future<void> refused(String reason) => expectLater(
-      client().readSwap('pay1'),
+      createPay(),
       throwsA(isA<BridgeException>().having((error) => error.detail, 'detail', contains('without a valid signature'))),
       reason: reason,
     );
-    expect((await client().readSwap('pay1')).stage, SwapStage.waiting);
-    expect(heard['GET /v1/swaps/pay1']!.value('kranox-nonce'), matches(RegExp(r'^[0-9a-f]{32}$')));
+    expect((await createPay()).id, 'pay1');
+    expect(heard['POST /v1/pay/swaps']!.value('kranox-nonce'), matches(RegExp(r'^[0-9a-f]{32}$')));
 
-    signer = (nonce, body) => '';
+    final changes = <String, SignedAnswer Function(SignedAnswer)>{
+      'an old answer for another request': (answer) => _changed(answer, nonce: '0123456789abcdef0123456789abcdef'),
+      'an answer to another method': (answer) => _changed(answer, method: 'GET'),
+      'an answer to another path': (answer) => _changed(answer, target: '/v1/receive/swaps'),
+      'an answer to another body': (answer) => _changed(answer, requestBody: [...answer.requestBody, 32]),
+      'an answer with another status': (answer) => _changed(answer, status: 200),
+      'a signature of another body': (answer) => _changed(answer, body: '${answer.body} '),
+    };
+    for (final MapEntry(key: reason, value: change) in changes.entries) {
+      signer = (answer) => signedByKey(change(answer));
+      await refused(reason);
+    }
+    signer = (answer) => '';
     await refused('no signature');
-    signer = (nonce, body) => key.sign('0123456789abcdef0123456789abcdef', body);
-    await refused('an old answer for another request');
-    signer = (nonce, body) => key.sign(nonce, '$body ');
-    await refused('a signature of another body');
-    signer = (nonce, body) => _TestKey().sign(nonce, body);
+    signer = (answer) => key.sign('${answer.nonce}\n${answer.body}');
+    await refused('the older signature over the nonce and the body alone');
+    signer = (answer) => _TestKey().sign(answer.message);
     await refused('a key that the app does not hold');
+  });
+
+  test('reads no answer larger than its limit, with or without its length (O-006)', () async {
+    final large = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => large.close(force: true));
+    large.listen((request) async {
+      final declared = request.uri.path.endsWith('declared');
+      final response = request.response..statusCode = 200;
+      if (declared) response.contentLength = AppConfig.relayAnswerMaxBytes + 1;
+      response.add(List.filled(AppConfig.relayAnswerMaxBytes + 1, 0x20));
+      await response.close();
+    });
+    final client = RelayBridgeClient(
+      proxy: () => null,
+      baseUrl: 'http://127.0.0.1:${large.port}',
+      signingKeys: [key.publicBase64],
+    );
+    for (final id in ['declared', 'chunked']) {
+      await expectLater(
+        client.readSwap(id),
+        throwsA(isA<BridgeException>().having((error) => error.detail, 'detail', contains('more than the app reads'))),
+        reason: id,
+      );
+    }
+  });
+
+  test('takes the state of a swap only for the swap that it asked for (O-003)', () async {
+    expect((await client().readSwap('pay1')).stage, SwapStage.waiting);
+    await expectLater(client().readSwap('swapped'), throwsA(isA<FormatException>()));
+  });
+
+  test('writes the text of a signature as the relay signs it', () {
+    // The same text is in the test "writes the text of a signature of the second form as the app reads it" of the
+    // relay, in test/server.test.mts; both sides must agree on it.
+    final answer = SignedAnswer(
+      nonce: '00112233445566778899aabbccddeeff',
+      method: 'POST',
+      target: '/v1/pay/swaps?x=1',
+      requestBody: utf8.encode('{"a":1}'),
+      status: 201,
+      body: '{"id":"9f4e2c71b03ad1"}',
+    );
+    expect(
+      answer.message,
+      [
+        'kranox/answer/2',
+        '00112233445566778899aabbccddeeff',
+        'POST',
+        '/v1/pay/swaps?x=1',
+        '015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862',
+        '201',
+        '{"id":"9f4e2c71b03ad1"}',
+      ].join('\n'),
+    );
   });
 
   group('through a SOCKS proxy such as Tor (O-001 of the second review)', () {
@@ -205,7 +303,8 @@ void main() {
   test('takes only an uncompressed point of P-256 as a key of the relay', () {
     expect(() => RelaySignature([base64Encode(List.filled(65, 4))]), throwsArgumentError);
     expect(() => RelaySignature([base64Encode(List.filled(33, 2))]), throwsArgumentError);
-    expect(RelaySignature([key.publicBase64]).verifies(nonce: 'n', body: 'b', signature: null), isFalse);
+    final answer = SignedAnswer(nonce: 'n', method: 'GET', target: '/', requestBody: const [], status: 200, body: 'b');
+    expect(RelaySignature([key.publicBase64]).verifies(answer, null), isFalse);
   });
 }
 

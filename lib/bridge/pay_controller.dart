@@ -309,7 +309,7 @@ final class PayController extends ChangeNotifier {
     // never reuse the deposit address of the first.
     _payAttempt = null;
     final xmr = XmrAmount.parse(quote.xmrAmount);
-    _checkCreated(created, recipient: recipient, xmr: xmr);
+    _checkCreated(created, recipient: recipient, xmr: xmr, refundAddress: refund.address);
     // The state of the new payment gives the time until which a fixed rate waits for the deposit.
     final SwapState state;
     try {
@@ -403,11 +403,19 @@ final class PayController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The app checks what the exchanger made before it builds a payment to it: the recipient, the XMR, and a deposit
-  /// address of the Monero mainnet.
-  static void _checkCreated(CreatedPay created, {required String recipient, required XmrAmount xmr}) {
+  /// The app checks what the exchanger made before it builds a payment to it: the recipient, the XMR, a deposit
+  /// address of the Monero mainnet, and the refund to the subaddress that the app sent.
+  static void _checkCreated(
+    CreatedPay created, {
+    required String recipient,
+    required XmrAmount xmr,
+    required String refundAddress,
+  }) {
     if (created.payoutAddress.toLowerCase() != recipient.toLowerCase()) {
       throw const BridgeException(BridgeFailure.failed, 'The exchanger made the payment for another recipient.');
+    }
+    if (created.refundAddress != refundAddress) {
+      throw const BridgeException(BridgeFailure.failed, 'The exchanger made the payment with another refund address.');
     }
     if ((created.xmrAmount - xmr.units / XmrAmount.unitsPerXmr).abs() > AppConfig.payAmountTolerance) {
       throw const BridgeException(BridgeFailure.failed, 'The exchanger made the payment for another amount of XMR.');

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -87,6 +88,7 @@ final class CreatedSwap {
     required this.estimatedXmr,
     required this.depositAddress,
     required this.payoutAddress,
+    this.refundAddress,
     this.readToken,
   });
 
@@ -95,6 +97,9 @@ final class CreatedSwap {
   final double? estimatedXmr;
   final String depositAddress;
   final String payoutAddress;
+
+  /// The refund address of the swap on Robinhood Chain, or null for none.
+  final String? refundAddress;
 
   /// The token that reads the state of the swap at the relay; null from a relay before 8 Oct 2026.
   final String? readToken;
@@ -122,6 +127,7 @@ final class CreatedSwap {
       estimatedXmr: estimate is num ? estimate.toDouble() : null,
       depositAddress: deposit,
       payoutAddress: payout,
+      refundAddress: _refundAddress(data),
       readToken: _readToken(data),
     );
   }
@@ -135,6 +141,7 @@ final class CreatedPay {
     required this.xmrAmount,
     required this.depositAddress,
     required this.payoutAddress,
+    required this.refundAddress,
     this.readToken,
   });
 
@@ -147,6 +154,9 @@ final class CreatedPay {
   final double xmrAmount;
   final String depositAddress;
   final String payoutAddress;
+
+  /// The subaddress of this wallet that gets the XMR back when the payment fails.
+  final String refundAddress;
 
   /// The token that reads the state of the payment at the relay; null from a relay before 8 Oct 2026.
   final String? readToken;
@@ -166,7 +176,8 @@ final class CreatedPay {
         deposit is! String ||
         deposit.isEmpty ||
         payout is! String ||
-        payout.isEmpty) {
+        payout.isEmpty ||
+        _refundAddress(data) == null) {
       throw const FormatException('The relay answered a new payment without its id, amounts, or addresses.');
     }
     return CreatedPay(
@@ -175,10 +186,19 @@ final class CreatedPay {
       xmrAmount: xmr.toDouble(),
       depositAddress: deposit,
       payoutAddress: payout,
+      refundAddress: _refundAddress(data)!,
       readToken: _readToken(data),
     );
   }
 }
+
+/// The refund address of a new swap or payment, which the app compares with the one that it sent (wallet O-003 of the
+/// second security review): text, or null for none.
+String? _refundAddress(Map<String, Object?> data) => switch (data['refundAddress']) {
+  null => null,
+  final String address when address.isNotEmpty => address,
+  _ => throw const FormatException('The relay answered a refund address that is no text.'),
+};
 
 /// The read token of a new swap or payment: text when the relay gives one, null from an older relay.
 String? _readToken(Map<String, Object?> data) => switch (data['readToken']) {
@@ -188,11 +208,12 @@ String? _readToken(Map<String, Object?> data) => switch (data['readToken']) {
 };
 
 /// The headers of the key of a creation, of the read token of a swap, of the nonce of a request, and of the signature
-/// of an answer, as the relay reads and writes them.
+/// of an answer over its request, as the relay reads and writes them. The relay also signs the nonce and the body
+/// alone, in Kranox-Signature, for the apps 0.3.1; this app reads only the signature over the request.
 const String _creationKeyHeader = 'Idempotency-Key';
 const String _swapTokenHeader = 'Kranox-Swap-Token';
 const String _nonceHeader = 'Kranox-Nonce';
-const String _signatureHeader = 'Kranox-Signature';
+const String _signatureHeader = 'Kranox-Signature-V2';
 
 /// The bridge through the relay of Kranox, over HTTP, and the scan of an address on Robinhood Chain through it.
 final class RelayBridgeClient implements BridgeClient, ChainScanClient {
@@ -271,9 +292,14 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
   );
 
   @override
-  Future<SwapState> readSwap(String id, {String? token}) async => SwapState.fromJson(
-    await _call('GET', '/v1/swaps/${Uri.encodeComponent(id)}', headers: {_swapTokenHeader: ?token}),
-  );
+  Future<SwapState> readSwap(String id, {String? token}) async {
+    final data = await _call('GET', '/v1/swaps/${Uri.encodeComponent(id)}', headers: {_swapTokenHeader: ?token});
+    // The state counts only for the swap that the app asked for (wallet O-003 of the second security review).
+    if (data['id'] != id) {
+      throw const FormatException('The relay answered the state of another swap.');
+    }
+    return SwapState.fromJson(data);
+  }
 
   @override
   Future<ChainScan> scanAddress(String address) async =>
@@ -313,6 +339,24 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     return connectTlsThroughSocks(proxy: proxy, host: uri.host, port: uri.port);
   }
 
+  /// The body of [response], refused once it passes [AppConfig.relayAnswerMaxBytes], before the app reads more of it.
+  static Future<List<int>> _readCapped(HttpClientResponse response) async {
+    const tooLarge = BridgeException(BridgeFailure.failed, 'The relay answered more than the app reads.');
+    if (response.contentLength > AppConfig.relayAnswerMaxBytes) throw tooLarge;
+    final bytes = BytesBuilder(copy: false);
+    await for (final chunk in response) {
+      bytes.add(chunk);
+      if (bytes.length > AppConfig.relayAnswerMaxBytes) throw tooLarge;
+    }
+    return bytes.takeBytes();
+  }
+
+  /// The path of [uri] with its query, as `dart:io` writes it into the request line of a straight connection.
+  static String _target(Uri uri) {
+    final path = uri.path.isEmpty ? '/' : uri.path;
+    return uri.hasQuery ? '$path?${uri.query}' : path;
+  }
+
   Future<Map<String, Object?>> _call(
     String method,
     String path, {
@@ -324,6 +368,7 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     final basePath = _base.path.endsWith('/') ? _base.path.substring(0, _base.path.length - 1) : _base.path;
     final uri = _base.replace(path: '$basePath$path', queryParameters: query);
     final nonce = [for (var i = 0; i < 16; i++) _random.nextInt(256).toRadixString(16).padLeft(2, '0')].join();
+    final requestBody = body == null ? const <int>[] : utf8.encode(jsonEncode(body));
     final HttpClientResponse response;
     final String text;
     try {
@@ -332,10 +377,12 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
       headers.forEach(request.headers.set);
       if (body != null) {
         request.headers.contentType = ContentType.json;
-        request.write(jsonEncode(body));
+        request.add(requestBody);
       }
       response = await request.close().timeout(AppConfig.bridgeRequestTimeout);
-      text = await response.transform(utf8.decoder).join().timeout(AppConfig.bridgeRequestTimeout);
+      text = utf8.decode(await _readCapped(response).timeout(AppConfig.bridgeRequestTimeout));
+    } on BridgeException {
+      rethrow;
     } on SocketException catch (error) {
       throw BridgeException(BridgeFailure.relayDown, error.message);
     } on SocksException catch (error) {
@@ -343,8 +390,16 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     } on Object catch (error) {
       throw BridgeException(BridgeFailure.relayDown, '$error');
     }
-    // An answer counts only with the signature of the relay over this request and its body, an error too.
-    if (!_signature.verifies(nonce: nonce, body: text, signature: response.headers.value(_signatureHeader))) {
+    // An answer counts only with the signature of the relay over this request and this answer, an error too.
+    final answer = SignedAnswer(
+      nonce: nonce,
+      method: method,
+      target: _target(uri),
+      requestBody: requestBody,
+      status: response.statusCode,
+      body: text,
+    );
+    if (!_signature.verifies(answer, response.headers.value(_signatureHeader))) {
       throw BridgeException(
         BridgeFailure.failed,
         'The relay answered ${response.statusCode} without a valid signature.',

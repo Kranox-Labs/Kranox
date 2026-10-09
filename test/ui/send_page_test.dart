@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,6 +63,7 @@ final class _Wallet implements WalletBackend {
         amount: XmrAmount(amountUnits),
         fee: XmrAmount.parse('0.00003'),
       ),
+      ReadFileKey() => Uint8List(32),
       _ => null,
     };
     return answer as T;
@@ -112,6 +114,7 @@ final class _SlowRelay implements BridgeClient {
       xmrAmount: double.parse(xmrAmount),
       depositAddress: _deposit,
       payoutAddress: address.toLowerCase(),
+      refundAddress: refundAddress,
     );
   }
 

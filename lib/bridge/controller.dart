@@ -8,6 +8,7 @@ import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/evm_address.dart';
 import '../wallet/controller.dart';
+import '../wallet/failure.dart';
 import 'attempt.dart';
 import 'chain_scan.dart';
 import 'client.dart';
@@ -45,6 +46,11 @@ final class BridgeController extends ChangeNotifier {
   DateTime? _checkedAt;
   Timer? _poll;
   Future<void>? _pollInFlight;
+
+  // Whether the swaps of the open wallet are read, and the sync with the wallet that runs.
+  bool _swapsOpen = false;
+  Future<void> _syncing = Future<void>.value();
+  bool _disposed = false;
 
   /// Pay, XMR out to an address on Robinhood Chain, for the send page. A payment that leaves joins the swaps here.
   /// The controller exists from the first use, so that a bridge that never paid listens to nothing.
@@ -144,10 +150,47 @@ final class BridgeController extends ChangeNotifier {
         !_quote.pending;
   }
 
+  /// Follows the wallet: the swaps open with the mainnet wallet and close when it locks, because their file reads only
+  /// with the key of the open wallet (wallet O-007 of the second security review).
   Future<void> start() async {
-    _swaps = await _store.read();
-    _followSwaps();
-    notifyListeners();
+    _wallet.addListener(_walletChanged);
+    await _syncWithWallet();
+  }
+
+  /// One sync after another, in the order of the changes of the wallet. A failure reaches the zone of the app, and the
+  /// syncs after it run all the same.
+  void _walletChanged() {
+    _syncing = _syncing
+        .then((_) => _syncWithWallet())
+        .catchError((Object error, StackTrace stack) => Zone.current.handleUncaughtError(error, stack));
+  }
+
+  Future<void> _syncWithWallet() async {
+    if (_disposed) return;
+    final open = _wallet.phase == WalletPhase.open && available;
+    if (open == _swapsOpen) return;
+    _swapsOpen = open;
+    if (open) {
+      final Uint8List key;
+      try {
+        key = await _wallet.readFileKey();
+      } on WalletException {
+        // The wallet locked while its key was on the way; its change syncs again. A wallet that stays open fails loud.
+        _swapsOpen = false;
+        if (_wallet.phase == WalletPhase.open) rethrow;
+        return;
+      }
+      _swaps = await _store.read(key);
+      _followSwaps();
+    } else {
+      _poll?.cancel();
+      _poll = null;
+      await _pollInFlight;
+      _store.close();
+      _swaps = const [];
+      _checkedAt = null;
+    }
+    if (!_disposed) notifyListeners();
   }
 
   /// Asks the relay whether it answers, for the settings page.
@@ -208,7 +251,7 @@ final class BridgeController extends ChangeNotifier {
       throw BridgeException(BridgeFailure.failed, failure.message);
     }
     _receiveAttempt = null;
-    _checkCreated(created, address: address.address, amount: amount);
+    _checkCreated(created, address: address.address, amount: amount, refundAddress: refundAddress);
     final swap = BridgeSwap(
       id: created.id,
       asset: asset,
@@ -230,10 +273,18 @@ final class BridgeController extends ChangeNotifier {
 
   /// The app checks what the exchanger made before it shows the deposit address as a code and the amount as "Send
   /// exactly": the coin goes in at an address of Robinhood Chain, of the amount of the form, for the subaddress that
-  /// the app sent.
-  static void _checkCreated(CreatedSwap created, {required String address, required String amount}) {
+  /// the app sent, with the refund address that the user gave.
+  static void _checkCreated(
+    CreatedSwap created, {
+    required String address,
+    required String amount,
+    required String? refundAddress,
+  }) {
     if (created.payoutAddress != address) {
       throw const BridgeException(BridgeFailure.failed, 'The exchanger made the swap for another address.');
+    }
+    if (created.refundAddress != refundAddress) {
+      throw const BridgeException(BridgeFailure.failed, 'The exchanger made the swap with another refund address.');
     }
     if ((created.amount - double.parse(amount)).abs() > AppConfig.payAmountTolerance) {
       throw const BridgeException(BridgeFailure.failed, 'The exchanger made the swap for another amount.');
@@ -316,6 +367,8 @@ final class BridgeController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _wallet.removeListener(_walletChanged);
     _quote.dispose();
     _pay?.dispose();
     _poll?.cancel();

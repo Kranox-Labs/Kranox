@@ -158,6 +158,7 @@ final class _SampleBackend implements WalletBackend {
       ),
       ConfirmSend() => _send(),
       CancelSend() => null,
+      ReadFileKey() => Uint8List(32),
       ReadHistory() => _history,
       ReadStatus() => WalletStatus(
         balance: _xmr('1286.4219'),
@@ -236,6 +237,7 @@ final class _SampleBridge implements BridgeClient {
     estimatedXmr: double.parse(amount) * _xmrPerEth,
     depositAddress: _sampleDeposit,
     payoutAddress: address,
+    refundAddress: refundAddress,
   );
 
   // The range of one payment at a fixed rate. CHECKED 6 Oct 2026, the range of ChangeNOW for XMR into ETH: 0.02267982 to
@@ -300,6 +302,7 @@ final class _SampleBridge implements BridgeClient {
     xmrAmount: double.parse(xmrAmount),
     depositAddress: _recipientAddress,
     payoutAddress: address,
+    refundAddress: refundAddress,
   );
 
   @override

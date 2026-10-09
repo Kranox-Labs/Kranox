@@ -3,7 +3,13 @@
 // the status of wallet2 after each call.
 // ignore_for_file: deprecated_member_use
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:monero/monero.dart' as monero;
+import 'package:pointycastle/api.dart';
+import 'package:pointycastle/digests/sha256.dart';
+import 'package:pointycastle/macs/hmac.dart';
 
 import '../config/app_config.dart';
 import '../core/amount.dart';
@@ -22,6 +28,10 @@ const int _statusOk = 0;
 
 /// The separator that the app gives to monero_c for lists in one string.
 const String _listSeparator = ',';
+
+/// The label of the key of the files of the app, and the block length of SHA-256 for its HMAC.
+const String _fileKeyLabel = 'kranox/file-key/1';
+const int _hmacBlockLength = 64;
 
 /// Runs the requests of the app on wallet2. It lives in the worker isolate, one request at a time, because
 /// wallet2 does not take two calls at once.
@@ -52,6 +62,7 @@ final class WalletEngine {
     ConfirmSend() => _confirmSend(request),
     CancelSend() => _cancelSend(request),
     ReadSeed() => _seed(request),
+    ReadFileKey() => _fileKey(),
     StoreWallet() => _store(),
     CloseWallet() => _close(),
   };
@@ -265,6 +276,21 @@ final class WalletEngine {
     final wallet = _requireWallet();
     _checkPassword(request.password);
     return _seedWords(wallet);
+  }
+
+  /// The key of the files of the app that belong to the open wallet (wallet O-007 of the second security review):
+  /// HMAC-SHA256 under the secret view key over a fixed label. Only the open wallet gives it, the wallet of the same
+  /// seed gives it again after a restore, and the view key never leaves the engine.
+  Uint8List _fileKey() {
+    final viewKey = monero.Wallet_secretViewKey(_requireWallet());
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(viewKey)) {
+      throw const WalletException(WalletFailure.native, 'wallet2 gave no secret view key.');
+    }
+    final keyBytes = Uint8List.fromList([
+      for (var i = 0; i < viewKey.length; i += 2) int.parse(viewKey.substring(i, i + 2), radix: 16),
+    ]);
+    final mac = HMac(SHA256Digest(), _hmacBlockLength)..init(KeyParameter(keyBytes));
+    return mac.process(Uint8List.fromList(utf8.encode(_fileKeyLabel)));
   }
 
   /// Checks [password] against the key file of the open wallet. Throws a [WalletException] when it does not open it.
