@@ -108,10 +108,17 @@ final class PayController extends ChangeNotifier {
 
   /// A lock or a change of network closes the wallet and drops the payment that it built, so the review goes too.
   void _followWallet() {
-    if (_review != null && _wallet.phase != WalletPhase.open) {
-      _review = null;
-      notifyListeners();
-    }
+    if (_review != null && _wallet.phase != WalletPhase.open) _dropReview();
+  }
+
+  /// Drops the review without a payment. Its payment at the exchanger spent the rate id of a fixed rate, and ChangeNOW
+  /// refuses one that made a payment already ("Rate id is overused", 10 Oct 2026), so the form asks a new rate for its
+  /// next review then, and not while the review shows, so that the new rate is fresh when the form comes back.
+  void _dropReview() {
+    final review = _review;
+    _review = null;
+    if (review?.rate == PayRate.fixed) _followQuote();
+    notifyListeners();
   }
 
   /// The range of one payment into the coin of the form at the rate of the form, once the exchanger gave it.
@@ -308,6 +315,19 @@ final class PayController extends ChangeNotifier {
     // The app knows the payment now, so the next review makes a new one: a second payment to the same recipient must
     // never reuse the deposit address of the first.
     _payAttempt = null;
+    try {
+      return await _reviewOf(created, quote, recipient, refund);
+    } on Object {
+      // The payment spent the rate id of a fixed rate, though the review failed, so the form asks a new rate.
+      if (rateId != null) _followQuote();
+      rethrow;
+    }
+  }
+
+  /// The review of the payment [created] at the exchanger from [quote] for [recipient], the address of the form, with
+  /// the subaddress [refund] for a refund: the checks of what the exchanger made, the time of a fixed rate, and the XMR
+  /// payment that the wallet builds.
+  Future<PayReview> _reviewOf(CreatedPay created, PayQuote quote, String recipient, ReceiveAddress refund) async {
     final xmr = XmrAmount.parse(quote.xmrAmount);
     _checkCreated(created, recipient: recipient, xmr: xmr, refundAddress: refund.address);
     // The state of the new payment gives the time until which a fixed rate waits for the deposit.
@@ -375,13 +395,11 @@ final class PayController extends ChangeNotifier {
       // wallet2 sent nothing, so the swap goes again; the exchanger lets its payment run out.
       await _forget(waiting.id);
       if (failure.failure == WalletFailure.deadlinePassed) {
-        _review = null;
-        notifyListeners();
+        _dropReview();
         throw const BridgeException(BridgeFailure.rateExpired, 'The fixed rate ran out before the payment left.');
       }
       if (failure.failure == WalletFailure.paymentChanged || failure.failure == WalletFailure.walletClosed) {
-        _review = null;
-        notifyListeners();
+        _dropReview();
       }
       rethrow;
     }
@@ -399,8 +417,7 @@ final class PayController extends ChangeNotifier {
     final review = _review;
     if (review == null) return;
     await _wallet.cancelSend(review.prepared);
-    _review = null;
-    notifyListeners();
+    _dropReview();
   }
 
   /// The app checks what the exchanger made before it builds a payment to it: the recipient, the XMR, a deposit

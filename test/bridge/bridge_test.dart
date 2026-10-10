@@ -25,6 +25,9 @@ const _xmrDeposit = '48PFnHrr8bVGx463yo8SMXGZUp7PyYPgwZJR4MnpgjKCDXpw3XvK6UTbarK
 /// A recipient on Robinhood Chain in the mixed case of EIP-55, from the examples of EIP-55.
 const _recipient = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
 
+/// A second recipient on Robinhood Chain, from the examples of EIP-55.
+const _otherRecipient = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
+
 /// A deposit address of the exchanger on Robinhood Chain for the sample swaps, in lowercase, which carries no checksum.
 const _chainDeposit = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984';
 
@@ -86,6 +89,12 @@ final class _SampleBridge implements BridgeClient {
   final List<(String, String)> paid = [];
   final List<(PayRate, String?)> paidRates = [];
   Duration payWindow = const Duration(minutes: 10);
+
+  // The fixed quotes of each amount, so that each one has a rate id of its own, and the rate ids that made a payment:
+  // ChangeNOW refuses a rate id that made one already ("Rate id is overused", CHECKED 10 Oct 2026 in the app). A
+  // second try with the key of the first is the relay answering the same payment again, so it passes.
+  final Map<String, int> _fixedQuotes = {};
+  final Set<String> _spentRates = {};
 
   /// The recipient of a payment that the exchanger makes, when it makes one for another recipient.
   String? payoutOverride;
@@ -177,7 +186,7 @@ final class _SampleBridge implements BridgeClient {
       rate: rate,
       xmrAmount: xmrAmount,
       amount: inRange ? value * _coinsPerXmr(rate) : null,
-      rateId: inRange && rate == PayRate.fixed ? 'rate-$xmrAmount' : null,
+      rateId: inRange && rate == PayRate.fixed ? _rateIdFor(xmrAmount) : null,
       validUntil: null,
       warning: null,
       limit: inRange ? null : (value < range.minXmr ? PayLimit.below : PayLimit.above),
@@ -186,6 +195,12 @@ final class _SampleBridge implements BridgeClient {
       depositFee: 0.006,
       withdrawalFee: 0.737,
     );
+  }
+
+  /// The rate id of the next fixed quote of [xmrAmount]: the first one is rate-0.16, the next ones rate-0.16#2 and on.
+  String _rateIdFor(String xmrAmount) {
+    final count = _fixedQuotes[xmrAmount] = (_fixedQuotes[xmrAmount] ?? 0) + 1;
+    return count == 1 ? 'rate-$xmrAmount' : 'rate-$xmrAmount#$count';
   }
 
   @override
@@ -199,6 +214,9 @@ final class _SampleBridge implements BridgeClient {
     required String creationKey,
   }) async {
     await holdCreatePay?.future;
+    if (rateId != null && !creationKeys.contains(creationKey) && !_spentRates.add(rateId)) {
+      throw const BridgeException(BridgeFailure.refused, 'Rate id is overused');
+    }
     paid.add((address, refundAddress));
     paidRates.add((rate, rateId));
     creationKeys.add(creationKey);
@@ -758,12 +776,30 @@ void main() {
       expect(exchanger.creationKeys.toSet(), hasLength(1));
       expect(exchanger.readTokens.last, 'token-pay2', reason: 'the read of its time carries its token');
 
-      // The app knows that payment now: a second review of the same form makes a new one.
+      // The app knows that payment now: a second review of the same form makes a new one, at a new fixed rate, since
+      // the first payment spent the rate id of the old one.
       await pay.cancelReview();
+      await _quoteSettles();
       await pay.startReview();
       expect(exchanger.creationKeys.toSet(), hasLength(2));
+      expect(exchanger.paidRates.last, (PayRate.fixed, 'rate-0.16#2'));
       final swap = await pay.confirm(password: 'password');
       expect(swap.readToken, 'token-pay3');
+    });
+
+    test('asks a new fixed rate once a review spent the old one, so that a second review of the form passes', () async {
+      final pay = bridge.pay;
+      pay.setRecipient(_recipient);
+      pay.setXmr('0.16');
+      await _quoteSettles();
+      await pay.startReview();
+      await pay.cancelReview();
+      // The user changes the recipient and reviews the same amount again, as on 10 Oct 2026.
+      pay.setRecipient(_otherRecipient);
+      await _quoteSettles();
+      expect(pay.canReview, isTrue);
+      await pay.startReview();
+      expect(exchanger.paidRates, [(PayRate.fixed, 'rate-0.16'), (PayRate.fixed, 'rate-0.16#2')]);
     });
 
     test('offers a floating rate below the minimum of a fixed one, and pays at it without a rate id', () async {

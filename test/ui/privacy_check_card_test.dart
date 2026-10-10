@@ -438,6 +438,9 @@ void main() {
     expect(find.text(Copy.privacyAddressClear), findsOneWidget, reason: 'paying someone again is fine');
     await tester.tap(find.text(Copy.cancel));
     await settle(tester);
+    // The review spent its fixed rate, so the form asks a new one first.
+    await tester.pump(AppConfig.bridgeQuoteDelay + const Duration(milliseconds: 200));
+    await settle(tester);
 
     // Once the user scanned it as theirs, the earlier payment ties this one to it.
     await tester.runAsync(() => scans.scan(_chainRecipient));
