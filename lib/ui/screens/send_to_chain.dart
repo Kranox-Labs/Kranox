@@ -27,7 +27,7 @@ import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
 import '../widgets/privacy_check.dart';
-import '../widgets/recipient_check.dart';
+import '../widgets/address_check.dart';
 import '../widgets/review_line.dart';
 import '../widgets/send_password.dart';
 import '../widgets/surfaces.dart';
@@ -168,12 +168,15 @@ class _SendToChainState extends State<SendToChain> {
     final scanner = widget.bridge.scanner;
     if (scanner == null) return null;
     final mine = identical(_recipientFor, review);
-    return RecipientCheck(
+    return AddressCheck(
       report: mine ? _recipientReport : null,
       checking: mine && _checkingRecipient,
       error: mine ? _recipientError : null,
       onCheck: _busy || _checkingRecipient ? null : () => _checkRecipient(review, scanner),
       now: DateTime.now(),
+      lead: Copy.payCheckRecipientLead,
+      freshNote: Copy.payRecipientFreshNote,
+      apartNote: Copy.payRecipientApart,
     );
   }
 
@@ -652,30 +655,7 @@ class _Review extends StatelessWidget {
           ),
           const SizedBox(height: Metrics.gap),
           // The whole recipient, so that the user can check it character by character before the payment leaves.
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: palette.field,
-              borderRadius: BorderRadius.circular(Metrics.radiusField),
-              border: Border.all(color: palette.line),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(Copy.payTo.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
-                  const SizedBox(height: Metrics.gapTiny),
-                  SelectableText(created.payoutAddress, style: KranoxType.mono.copyWith(color: palette.ink)),
-                  if (recipientCheck case final check?) ...[
-                    const SizedBox(height: Metrics.gapSmall),
-                    Divider(height: 1, color: palette.line),
-                    const SizedBox(height: Metrics.gapSmall),
-                    check,
-                  ],
-                ],
-              ),
-            ),
-          ),
+          ReviewAddress(label: Copy.payTo, address: created.payoutAddress, check: recipientCheck),
           const SizedBox(height: Metrics.gapSmall),
           ReviewLine(label: Copy.payYouSend, value: '${prepared.amount.toExact()} ${Copy.currency}'),
           ReviewLine(label: Copy.fee, value: '${prepared.fee.toExact()} ${Copy.currency}'),

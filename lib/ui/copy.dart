@@ -165,6 +165,27 @@ abstract final class Copy {
   static String privacyAddressOwn(String day) =>
       'You gave it as the refund address of a receive on $day. Paying it from XMR links both sides.';
   static const String privacyNote = 'The check runs on this Mac. You can still send.';
+  static const String privacyGoOnNote = 'The check runs on this Mac. You can still go on.';
+  static const String privacyLocalNote = 'The check runs on this Mac.';
+  // The privacy checks before a receive, from 10 Oct 2026: the subaddress that the receive page gives out, and the
+  // refund address of a receive from Robinhood Chain.
+  static const String privacySubaddressLabel = 'Subaddress';
+  static String privacySubaddressUnused(int index) => '#$index never took a payment. Give it to one payer only.';
+  static String privacySubaddressOnce(int index) =>
+      '#$index took 1 payment. If someone else pays next, give them a new address.';
+  static String privacySubaddressShared(int index, int payments) =>
+      '#$index took $payments payments. Payers who compare notes can tell that they paid the same person. Give the '
+      'next payer a new address.';
+  static const String privacyAfterItComesIn = 'After it comes in';
+  static String privacyAfterXmr(int hours) => 'Wait $hours hours before you send it on, and pick another amount.';
+  static const String privacyRefundRuleLabel = 'Refund address';
+  static const String privacyRefundNone =
+      'You gave none, so this receive names no address of yours on Robinhood Chain.';
+  static const String privacyRefundNeverPaid = 'You never paid it from XMR.';
+  static String privacyRefundPaid(String ago) => 'You paid it from XMR $ago. Giving it here ties both sides together.';
+  static const String privacyAfterThis = 'After this';
+  static String privacyAfterReceive(int hours) =>
+      'Wait $hours hours before you pay from this XMR, and pick another amount.';
 
   // The menu Privacy: the whole wallet, from its history on this Mac. Each check has a tile with one line, and the
   // longer text shows when the user opens the tile.
@@ -379,6 +400,20 @@ abstract final class Copy {
   // The form of a swap, as on pay. On 6 Oct 2026 the owner asked for the receive page in the form of the send page.
   static const String bridgeYouSend = 'You send';
   static const String bridgeYouGet = 'You get about';
+  static const String bridgeReview = 'Review';
+  // The review of a receive from Robinhood Chain, from 10 Oct 2026: what the receive does and its privacy check, before
+  // the exchanger makes the deposit address.
+  static const String receiveReviewTitle = 'Check the receive';
+  static const String receiveReviewLead = 'Nothing moves until you send the deposit.';
+  static const String receiveReviewNewSubaddress = 'A new subaddress of this wallet';
+  static const String receiveRefundTo = 'Refund address, on Robinhood Chain';
+  static const String receiveRefundNone = 'None';
+  static const String receiveCheckRefundLead =
+      'See what it already shows on Robinhood Chain. If you send from it too, the deposit carries that history.';
+  static const String receiveRefundFreshNote = 'Nothing on it yet to tie to this receive.';
+  static const String receiveRefundApart =
+      'ChangeNOW and anyone who watches the chain see this deposit next to what this address shows. A new address '
+      'keeps it apart.';
   static String bridgeMinimum(String amount, BridgeAsset asset) => 'Minimum: $amount ${asset.label}';
   static String bridgeBelowMinimum(String amount, BridgeAsset asset) => 'Below the minimum of $amount ${asset.label}.';
   static String bridgeSpeed(String minutes) => 'Usually $minutes minutes.';

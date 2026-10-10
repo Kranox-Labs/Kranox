@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
+import '../../config/app_config.dart';
+import '../../privacy/chain_scans.dart';
+import '../../privacy/receive_check.dart';
 import '../../wallet/controller.dart';
 import '../../wallet/failure.dart';
+import '../../wallet/models.dart';
 import '../copy.dart';
 import '../format.dart';
 import '../theme/kranox_theme.dart';
@@ -13,6 +17,7 @@ import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/choice_pill.dart';
 import '../widgets/page_frame.dart';
+import '../widgets/privacy_check.dart';
 import '../widgets/qr_card.dart';
 import '../widgets/surfaces.dart';
 import 'receive_from_chain.dart';
@@ -20,14 +25,17 @@ import 'receive_from_chain.dart';
 /// The ways to receive: XMR to a subaddress, or a coin on Robinhood Chain that ChangeNOW turns into XMR.
 enum _ReceiveWay { monero, robinhood }
 
-/// The receive page: the newest subaddress as a code to scan and as text, with a button for a new subaddress, or the
-/// receive from Robinhood Chain. Its content stands in a column in the middle, as on the send page; the owner asked for
-/// that on 6 Oct 2026 ("receive belum simple dan di tengah").
+/// The receive page: the newest subaddress as a code to scan and as text, with its privacy check from 10 Oct 2026 and a
+/// button for a new subaddress, or the receive from Robinhood Chain. Its content stands in a column in the middle, as
+/// on the send page; the owner asked for that on 6 Oct 2026 ("receive belum simple dan di tengah").
 class ReceivePage extends StatefulWidget {
-  const ReceivePage({super.key, required this.controller, required this.bridge});
+  const ReceivePage({super.key, required this.controller, required this.bridge, this.scans});
 
   final WalletController controller;
   final BridgeController bridge;
+
+  /// The addresses that the user scanned in the menu Privacy, for the check of the refund address of a receive.
+  final ChainScans? scans;
 
   @override
   State<ReceivePage> createState() => _ReceivePageState();
@@ -85,7 +93,7 @@ class _ReceivePageState extends State<ReceivePage> {
           ],
         ),
         const SizedBox(height: Metrics.gap),
-        if (fromChain) ReceiveFromChain(bridge: widget.bridge) else _subaddress(context),
+        if (fromChain) ReceiveFromChain(bridge: widget.bridge, scans: widget.scans) else _subaddress(context),
       ],
     );
   }
@@ -124,6 +132,14 @@ class _ReceivePageState extends State<ReceivePage> {
               ),
             ),
           ),
+          // The privacy check of the subaddress, before the user hands it out.
+          if (address != null) ...[
+            const SizedBox(height: Metrics.gap),
+            PrivacyRulesCard(
+              note: Copy.privacyLocalNote,
+              rules: _subaddressRules(address.index, widget.controller.transfers),
+            ),
+          ],
           ErrorLine(_error),
           const SizedBox(height: Metrics.gap),
           PillButton(
@@ -138,4 +154,31 @@ class _ReceivePageState extends State<ReceivePage> {
       ),
     );
   }
+}
+
+/// The rules of the privacy check of the subaddress [index] that the page gives out: the payments that it already took,
+/// and what to do once the XMR comes in. One payment is a tip, since the same payer may pay again; more payments warn,
+/// as the check "Subaddresses" of the menu Privacy does.
+List<PrivacyRule> _subaddressRules(int index, List<WalletTransfer> transfers) {
+  final payments = paymentsTo(index, transfers);
+  return [
+    PrivacyRule(
+      label: Copy.privacySubaddressLabel,
+      state: switch (payments) {
+        0 => RuleState.passed,
+        1 => RuleState.tip,
+        _ => RuleState.warning,
+      },
+      text: switch (payments) {
+        0 => Copy.privacySubaddressUnused(index),
+        1 => Copy.privacySubaddressOnce(index),
+        _ => Copy.privacySubaddressShared(index, payments),
+      },
+    ),
+    PrivacyRule(
+      label: Copy.privacyAfterItComesIn,
+      state: RuleState.tip,
+      text: Copy.privacyAfterXmr(AppConfig.privacyFreshWindow.inHours),
+    ),
+  ];
 }

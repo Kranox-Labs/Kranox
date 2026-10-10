@@ -10,17 +10,20 @@ import 'bits.dart';
 import 'buttons.dart';
 import 'privacy_board.dart';
 
-/// The check of the recipient on the review of pay, from 8 Oct 2026: a button that scans the address on Robinhood
-/// Chain, then what its public history shows, for an address that may be one of the user's own. It advises; the
-/// payment can still leave.
-class RecipientCheck extends StatelessWidget {
-  const RecipientCheck({
+/// The check of an address on Robinhood Chain on a review: a button that scans it, then what its public history shows.
+/// Pay checks its recipient from 8 Oct 2026, and a receive its refund address from 10 Oct 2026. It advises; the user
+/// can still go on.
+class AddressCheck extends StatelessWidget {
+  const AddressCheck({
     super.key,
     required this.report,
     required this.checking,
     required this.error,
     required this.onCheck,
     required this.now,
+    required this.lead,
+    required this.freshNote,
+    required this.apartNote,
   });
 
   /// What the scan of the recipient found; null before the check.
@@ -31,6 +34,15 @@ class RecipientCheck extends StatelessWidget {
 
   /// The moment that the days of the lines count from.
   final DateTime now;
+
+  /// Beside the button: why the user may want the check.
+  final String lead;
+
+  /// Under an address without a public history.
+  final String freshNote;
+
+  /// Under an address whose history ties it to the user.
+  final String apartNote;
 
   @override
   Widget build(BuildContext context) => switch (report) {
@@ -51,7 +63,7 @@ class RecipientCheck extends StatelessWidget {
           ),
           const SizedBox(width: Metrics.gapSmall),
           Expanded(
-            child: Text(Copy.payCheckRecipientLead, style: KranoxType.small.copyWith(color: context.palette.inkSoft)),
+            child: Text(lead, style: KranoxType.small.copyWith(color: context.palette.inkSoft)),
           ),
         ],
       ),
@@ -63,7 +75,7 @@ class RecipientCheck extends StatelessWidget {
     final lines = _lines(found, now);
     final fresh = _isFresh(found);
     final warns = lines.any((line) => line.$1 == CheckState.warning);
-    final note = fresh ? Copy.payRecipientFreshNote : (warns ? Copy.payRecipientApart : null);
+    final note = fresh ? freshNote : (warns ? apartNote : null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -81,7 +93,7 @@ class RecipientCheck extends StatelessWidget {
 /// An address without a transaction and without a token transfer has no public history.
 bool _isFresh(ChainPrivacyReport report) => report.exposure.transactions == 0 && report.exposure.tokenTransfers == 0;
 
-/// What the history of the recipient shows, one line each: no history, or its first funding, its direct transfers with
+/// What the history of the address shows, one line each: no history, or its first funding, its direct transfers with
 /// other addresses of the user, and how much it did.
 List<(CheckState, String)> _lines(ChainPrivacyReport report, DateTime now) {
   if (_isFresh(report)) return const [(CheckState.good, Copy.payRecipientFresh)];
@@ -101,7 +113,7 @@ List<(CheckState, String)> _lines(ChainPrivacyReport report, DateTime now) {
   ];
 }
 
-/// The first funding of the recipient: from another address of the user or from a sender with a public name ties it to
+/// The first funding of the address: from another address of the user or from a sender with a public name ties it to
 /// them; from a sender without a name, it does not.
 (CheckState, String) _fundingLine(FirstFunding funding, DateTime now) {
   final day = formatTime(funding.transfer.time, now);

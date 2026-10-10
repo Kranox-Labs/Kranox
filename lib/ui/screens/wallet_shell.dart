@@ -91,7 +91,7 @@ class _WalletShellState extends State<WalletShell> {
                           scans: _scans,
                           startOnPay: _startOnPay,
                         ),
-                        WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge),
+                        WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge, scans: _scans),
                         WalletPage.activity => ActivityPage(controller: controller),
                         WalletPage.privacy => PrivacyPage(
                           controller: controller,
