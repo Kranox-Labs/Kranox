@@ -65,7 +65,9 @@ class HomePage extends StatelessWidget {
                 )
               : Column(
                   children: [
-                    hero,
+                    // The balance card pushes its buttons down with a Spacer, so it needs a height: in one column, the
+                    // height of its content, as the page scrolls without a height of its own.
+                    IntrinsicHeight(child: hero),
                     const SizedBox(height: Metrics.gap),
                     side,
                   ],
