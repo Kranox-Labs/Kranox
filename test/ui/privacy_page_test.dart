@@ -188,27 +188,41 @@ void main() {
   testWidgets('a public node and a subaddress of many payments are two things to improve, each with its way', (
     tester,
   ) async {
-    await tester.runAsync(() => start([1, 1, 1, 2]));
+    // The first unlock gives the receive page subaddress #2, which took three payments.
+    await tester.runAsync(() => start([2, 2, 2, 1]));
     await show(tester);
     expect(find.text(Copy.privacyToImprove(2)), findsOneWidget);
     expect(find.text(Copy.privacyRingCount(4, 6)), findsOneWidget);
-    expect(find.text(Copy.privacySubaddressLine(1, 3)), findsOneWidget);
+    expect(find.text(Copy.privacySubaddressLine(2, 3)), findsOneWidget);
+    expect(find.text(Copy.privacyFromHistory.toUpperCase()), findsNothing, reason: 'a reuse in use is no note');
 
-    // The longer text of a check shows when the user opens its tile, and goes when the user closes it.
-    expect(find.text(Copy.privacySubaddressOne(1, 3)), findsNothing);
-    await tester.tap(find.text(Copy.privacySubaddressTitle));
-    await tester.pump();
-    expect(find.text(Copy.privacySubaddressOne(1, 3)), findsOneWidget);
-    await tester.tap(find.text(Copy.privacySubaddressTitle));
-    await tester.pump();
-    expect(find.text(Copy.privacySubaddressOne(1, 3)), findsNothing);
+    // The things to improve stand first, above the checks that are clear.
+    double top(String title) => tester.getTopLeft(find.text(title)).dy;
+    expect(top(Copy.privacySubaddressTitle), lessThan(top(Copy.privacySwapsTitle)));
 
+    // The whole text of a check and its way to improve it show when the user opens its row, and go when the user
+    // closes it.
+    expect(find.text(Copy.privacySubaddressOne(2, 3)), findsNothing);
+    expect(find.text(Copy.privacyNewSubaddress), findsNothing);
+    await tester.tap(find.text(Copy.privacySubaddressTitle));
+    await tester.pumpAndSettle();
+    expect(find.text(Copy.privacySubaddressOne(2, 3)), findsOneWidget);
+    expect(find.text(Copy.privacyNewSubaddress), findsOneWidget);
+    await tester.tap(find.text(Copy.privacySubaddressTitle));
+    await tester.pumpAndSettle();
+    expect(find.text(Copy.privacySubaddressOne(2, 3)), findsNothing);
+
+    expect(find.text(Copy.privacyChangeNode), findsNothing);
+    await tester.tap(find.text(Copy.privacyNodeTitle));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(Copy.privacyChangeNode));
     expect(opened, [WalletPage.settings]);
 
     // The first unlock of a wallet makes the subaddress of the receive page too, so the test counts from here.
     int made() => engine.handled.whereType<ReadReceiveAddress>().where((request) => request.createNew).length;
     final before = made();
+    await tester.tap(find.text(Copy.privacySubaddressTitle));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(Copy.privacyNewSubaddress));
     // The wallet writes the new index to its settings file: the file takes real time, and each step after it a frame.
     for (var round = 0; round < 40 && opened.length < 2; round++) {
@@ -217,6 +231,32 @@ void main() {
     }
     expect(made(), before + 1);
     expect(opened, [WalletPage.settings, WalletPage.receive]);
+
+    // The receive page gives out a new subaddress now, so the reuse is a note and only the node is left.
+    await tester.pumpAndSettle();
+    expect(find.text(Copy.privacyToImprove(1)), findsOneWidget);
+    expect(find.text(Copy.privacySubaddressPastLine(2, 3)), findsOneWidget);
+    expect(find.text(Copy.privacyFromHistory.toUpperCase()), findsOneWidget);
+  });
+
+  testWidgets('a reuse that the receive page no longer gives out leaves nothing to improve, with a note', (
+    tester,
+  ) async {
+    // The first unlock gives the receive page subaddress #2, so the reuse of #1 is in the history only.
+    await tester.runAsync(() async {
+      await start([1, 1, 2]);
+      await wallet.changeNode('192.168.1.5:18089');
+    });
+    await show(tester);
+    expect(find.text(Copy.privacyNothingLeft), findsOneWidget);
+    expect(find.text(Copy.privacyNotesLead(1)), findsOneWidget);
+    expect(find.text(Copy.privacyRingCount(6, 6)), findsOneWidget);
+    expect(find.text(Copy.privacySubaddressPastLine(1, 2)), findsOneWidget);
+    expect(find.text(Copy.privacyFromHistory.toUpperCase()), findsOneWidget);
+    await tester.tap(find.text(Copy.privacySubaddressTitle));
+    await tester.pumpAndSettle();
+    expect(find.text(Copy.privacySubaddressPast(1, 2)), findsOneWidget);
+    expect(find.text(Copy.privacyNewSubaddress), findsNothing);
   });
 
   testWidgets('a node of its own network and one payment for each subaddress leave the wallet all clear', (
@@ -233,7 +273,7 @@ void main() {
     expect(find.text(Copy.privacyNewSubaddress), findsNothing);
     expect(find.text(Copy.privacyNodeOwnLine), findsOneWidget);
     await tester.tap(find.text(Copy.privacyNodeTitle));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text(Copy.privacyNodeOwn('192.168.1.5:18089')), findsOneWidget);
   });
 
@@ -245,7 +285,7 @@ void main() {
     await show(tester, scans: scans);
     expect(find.text(Copy.privacyFundingPending), findsNothing);
 
-    // The scan has a tab of its own, whose tiles say what each check reads before the first scan.
+    // The scan has a tab of its own, whose rows say what each check reads before the first scan.
     await tester.tap(find.text(Copy.privacyChainTab.toUpperCase()));
     await tester.pump();
     expect(find.text(Copy.privacyFundingPending), findsOneWidget);
@@ -269,12 +309,21 @@ void main() {
     expect(find.text(Copy.privacyRingCount(3, 5)), findsOneWidget);
     expect(find.text(Copy.privacyFundingNamedLine('Big Exchange')), findsOneWidget);
     expect(find.text(Copy.privacyLookAlikeLine(1)), findsOneWidget);
-    expect(find.text(Copy.privacyStatCount(3)), findsOneWidget);
     expect(find.text(Copy.privacyFundingPending), findsNothing);
+
+    // The look-alike sender warns, so it stands above the clear check of the other addresses of the user.
+    double top(String title) => tester.getTopLeft(find.text(title)).dy;
+    expect(top(Copy.privacyLookAlikeTitle), lessThan(top(Copy.privacyOwnTitle)));
+
+    // The figures of what everyone sees show with its whole text.
+    expect(find.text(Copy.privacyStatCount(3)), findsNothing);
+    await tester.tap(find.text(Copy.privacyExposureTitle));
+    await tester.pumpAndSettle();
+    expect(find.text(Copy.privacyStatCount(3)), findsOneWidget);
 
     await tester.tap(find.text(Copy.privacyFundingTitle));
     await tester.tap(find.text(Copy.privacyLookAlikeTitle));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.textContaining('Big Exchange funded it first'), findsOneWidget);
     expect(find.textContaining('$_fakeShop looks like $_shop'), findsOneWidget);
 

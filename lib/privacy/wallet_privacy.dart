@@ -7,10 +7,14 @@ import '../wallet/models.dart';
 
 /// A subaddress of this wallet that took more than one payment.
 final class ReusedSubaddress {
-  const ReusedSubaddress({required this.index, required this.payments});
+  const ReusedSubaddress({required this.index, required this.payments, required this.inUse});
 
   final int index;
   final int payments;
+
+  /// Whether the receive page still gives it out, so that the next payer gets it too. Once the page gives out a new
+  /// subaddress, the reuse is a part of the history that the user cannot change.
+  final bool inUse;
 }
 
 /// A receive from Robinhood Chain and a later payment to it that sit close in time or in amount, so that someone who
@@ -48,7 +52,8 @@ final class NewCoins {
 }
 
 /// What the menu Privacy found for the whole wallet, from the history on this Mac. The owner decided on 7 Oct 2026
-/// that the privacy check also has a menu of its own.
+/// that the privacy check also has a menu of its own, and on 10 Oct 2026 that only what the user can still change
+/// counts as something to improve: what is already in the history, such as a swap pair, is a note.
 final class WalletPrivacyReport {
   const WalletPrivacyReport({
     required this.node,
@@ -71,10 +76,11 @@ final class WalletPrivacyReport {
   /// The subaddresses that took more than one payment, the most payments first.
   final List<ReusedSubaddress> reused;
 
-  /// The swaps that sit close in time or in amount, the newest first.
+  /// The swaps that sit close in time or in amount, the newest first. They are already on the chain, so they are notes;
+  /// the privacy check of a payment warns before the next one.
   final List<SwapPair> pairs;
 
-  /// The refund addresses that the user paid from XMR, the newest first.
+  /// The refund addresses that the user paid from XMR, the newest first. Notes, like the pairs.
   final List<LinkedRefund> links;
 
   /// New XMR in the balance. Time alone fixes it, so it counts as a note and not as something to improve.
@@ -83,34 +89,41 @@ final class WalletPrivacyReport {
   /// Whether the node sees the IP address of the user: a public node reached without a proxy.
   bool get nodeSeesYou => !ownNode && proxy == null;
 
-  int get toImprove =>
-      [nodeSeesYou, reused.isNotEmpty, pairs.isNotEmpty, links.isNotEmpty].where((found) => found).length;
+  /// Whether the receive page gives out a subaddress that took more than one payment.
+  bool get reuseInUse => reused.any((subaddress) => subaddress.inUse);
+
+  int get toImprove => [nodeSeesYou, reuseInUse].where((found) => found).length;
 }
 
-/// Checks the privacy of the whole wallet: its [node] and the [proxy] to it, what came in ([transfers]), the swaps of
-/// the bridge ([swaps]), and the [balance].
+/// Checks the privacy of the whole wallet: its [node] and the [proxy] to it, what came in ([transfers]), the
+/// subaddress that the receive page gives out ([receiveIndex], null before the wallet reads it, which counts any reuse
+/// as in use), the swaps of the bridge ([swaps]), and the [balance].
 WalletPrivacyReport checkWallet({
   required String node,
   required String? proxy,
   required List<WalletTransfer> transfers,
+  required int? receiveIndex,
   required List<BridgeSwap> swaps,
   required XmrAmount balance,
   required DateTime now,
 }) {
-  final incoming = [
-    for (final transfer in transfers)
-      if (transfer.direction == TransferDirection.incoming && !transfer.isFailed) transfer,
-  ];
+  final incoming = incomingTransfers(transfers);
   return WalletPrivacyReport(
     node: node,
     proxy: proxy,
     ownNode: isOwnNode(node),
-    reused: _reused(incoming),
+    reused: _reused(incoming, receiveIndex),
     pairs: _pairs(swaps),
     links: _links(swaps),
     newCoins: _newCoins(incoming, balance, now),
   );
 }
+
+/// The payments that came into this wallet and did not fail.
+List<WalletTransfer> incomingTransfers(List<WalletTransfer> transfers) => [
+  for (final transfer in transfers)
+    if (transfer.direction == TransferDirection.incoming && !transfer.isFailed) transfer,
+];
 
 /// Whether the host of [node] is this Mac or an address of a private network: localhost, a loopback address, an
 /// address of RFC 1918 or a link-local one, a unique local address of IPv6, or a name of mDNS that ends in `.local`.
@@ -140,7 +153,7 @@ String _hostOf(String node) {
   return colon < 0 ? value : value.substring(0, colon);
 }
 
-List<ReusedSubaddress> _reused(List<WalletTransfer> incoming) {
+List<ReusedSubaddress> _reused(List<WalletTransfer> incoming, int? receiveIndex) {
   final counts = <int, int>{};
   for (final transfer in incoming) {
     final index = transfer.subaddressIndex;
@@ -148,7 +161,8 @@ List<ReusedSubaddress> _reused(List<WalletTransfer> incoming) {
   }
   return [
     for (final MapEntry(key: index, value: payments) in counts.entries)
-      if (payments > 1) ReusedSubaddress(index: index, payments: payments),
+      if (payments > 1)
+        ReusedSubaddress(index: index, payments: payments, inUse: receiveIndex == null || receiveIndex == index),
   ]..sort((a, b) => b.payments.compareTo(a.payments));
 }
 

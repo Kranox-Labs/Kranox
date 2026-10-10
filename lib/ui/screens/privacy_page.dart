@@ -27,9 +27,9 @@ import '../widgets/surfaces.dart';
 enum _PrivacyTab { monero, robinhood }
 
 /// The menu Privacy, a board in the middle of the page, which the owner chose on 8 Oct 2026: what the whole wallet
-/// shows, worked out on this Mac from its history, with a ring of the checks at the head and a tile for each check,
-/// with a way to improve it where the app has one; and on mainnet, with [scans], a second tab for the scan of an
-/// address of the user on Robinhood Chain.
+/// shows, worked out on this Mac from its history, with a ring of the checks at the head and a row for each check, the
+/// things to improve first, with a way to improve it where the app has one; and on mainnet, with [scans], a second tab
+/// for the scan of an address of the user on Robinhood Chain.
 class PrivacyPage extends StatefulWidget {
   const PrivacyPage({
     super.key,
@@ -142,27 +142,37 @@ class _PrivacyPageState extends State<PrivacyPage> {
       node: controller.node,
       proxy: controller.proxy,
       transfers: controller.transfers,
+      receiveIndex: controller.receiveAddress?.index,
       swaps: widget.bridge.swaps,
       balance: controller.status.balance,
       now: now,
     );
-    final checks = [
+    final checks = warningsFirst([
       _nodeCheck(report),
-      _subaddressCheck(report.reused),
+      _subaddressCheck(report),
       _swapsCheck(report.pairs, now),
       _refundCheck(report.links, now),
       _newCoinsCheck(report.newCoins, now),
       _lockCheck(),
-    ];
+    ]);
     final toImprove = report.toImprove;
+    final notes = checks.where((check) => check.state == CheckState.note).length;
     return [
       PrivacySummary(
         checks: checks,
-        headline: toImprove == 0 ? Copy.privacyClear : Copy.privacyToImprove(toImprove),
-        lead: toImprove == 0 ? Copy.privacyAllClearLead : Copy.privacyToImproveLead,
+        headline: switch ((toImprove, notes)) {
+          (0, 0) => Copy.privacyClear,
+          (0, _) => Copy.privacyNothingLeft,
+          _ => Copy.privacyToImprove(toImprove),
+        },
+        lead: switch ((toImprove, notes)) {
+          (0, 0) => Copy.privacyAllClearLead,
+          (0, _) => Copy.privacyNotesLead(notes),
+          _ => Copy.privacyToImproveLead,
+        },
       ),
       const SizedBox(height: Metrics.gap),
-      CheckGrid(checks: checks),
+      CheckList(checks: checks),
       const SizedBox(height: Metrics.gap),
       Text(
         Copy.privacyPageNote,
@@ -194,34 +204,49 @@ class _PrivacyPageState extends State<PrivacyPage> {
     ),
   };
 
-  PrivacyCheck _subaddressCheck(List<ReusedSubaddress> reused) => PrivacyCheck(
-    title: Copy.privacySubaddressTitle,
-    state: reused.isEmpty ? CheckState.good : CheckState.warning,
-    line: switch (reused) {
-      [] => Copy.privacySubaddressClearLine,
-      [final only] => Copy.privacySubaddressLine(only.index, only.payments),
-      _ => Copy.privacySubaddressManyLine(reused.length),
-    },
-    detail: switch (reused) {
-      [] => Copy.privacySubaddressClear,
-      [final only] => Copy.privacySubaddressOne(only.index, only.payments),
-      [final most, ...] => Copy.privacySubaddressMany(reused.length, most.index, most.payments),
-    },
-    action: reused.isEmpty
-        ? null
-        : SmallPillButton(label: Copy.privacyNewSubaddress, busy: _makingSubaddress, onPressed: _newSubaddress),
-    error: _subaddressError,
-  );
+  /// A reused subaddress that the receive page still gives out is something to improve, with a new subaddress as the
+  /// way; once the page gives out another one, the reuse is a note on the history.
+  PrivacyCheck _subaddressCheck(WalletPrivacyReport report) {
+    final reused = report.reused;
+    final inUse = report.reuseInUse;
+    return PrivacyCheck(
+      title: Copy.privacySubaddressTitle,
+      state: switch (reused) {
+        [] => CheckState.good,
+        _ when inUse => CheckState.warning,
+        _ => CheckState.note,
+      },
+      line: switch (reused) {
+        [] => Copy.privacySubaddressClearLine,
+        [final only] when inUse => Copy.privacySubaddressLine(only.index, only.payments),
+        [final only] => Copy.privacySubaddressPastLine(only.index, only.payments),
+        _ when inUse => Copy.privacySubaddressManyLine(reused.length),
+        _ => Copy.privacySubaddressPastManyLine(reused.length),
+      },
+      detail: switch (reused) {
+        [] => Copy.privacySubaddressClear,
+        [final only] when inUse => Copy.privacySubaddressOne(only.index, only.payments),
+        [final only] => Copy.privacySubaddressPast(only.index, only.payments),
+        [final most, ...] when inUse => Copy.privacySubaddressMany(reused.length, most.index, most.payments),
+        [final most, ...] => Copy.privacySubaddressPastMany(reused.length, most.index, most.payments),
+      },
+      action: inUse
+          ? SmallPillButton(label: Copy.privacyNewSubaddress, busy: _makingSubaddress, onPressed: _newSubaddress)
+          : null,
+      error: _subaddressError,
+      tag: reused.isNotEmpty && !inUse ? Copy.privacyFromHistory : null,
+    );
+  }
 
   /// The board of an address on Robinhood Chain: the form at the top, then what each check reads before the first
   /// scan, or the ring and the checks of the newest scan.
   List<Widget> _chainBoard(ChainScans scans) {
     final scan = scans.current;
     if (scan == null) {
-      return [_scanForm(scans), const SizedBox(height: Metrics.gap), const CheckGrid(checks: _pendingChainChecks)];
+      return [_scanForm(scans), const SizedBox(height: Metrics.gap), const CheckList(checks: _pendingChainChecks)];
     }
     final report = analyzeChain(scan, swaps: widget.bridge.swaps, ownAddresses: scans.scanned);
-    final checks = _chainChecks(report, DateTime.now());
+    final checks = warningsFirst(_chainChecks(report, DateTime.now()));
     final toImprove = report.toImprove;
     return [
       _scanForm(scans),
@@ -240,7 +265,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
               ),
       ),
       const SizedBox(height: Metrics.gap),
-      CheckGrid(checks: checks),
+      CheckList(checks: checks),
     ];
   }
 
@@ -278,9 +303,11 @@ class _PrivacyPageState extends State<PrivacyPage> {
   }
 }
 
+/// A swap pair is already on the chain, so it is a note; the privacy check of a payment warns before the next one.
 PrivacyCheck _swapsCheck(List<SwapPair> pairs, DateTime now) => PrivacyCheck(
   title: Copy.privacySwapsTitle,
-  state: pairs.isEmpty ? CheckState.good : CheckState.warning,
+  state: pairs.isEmpty ? CheckState.good : CheckState.note,
+  tag: pairs.isEmpty ? null : Copy.privacyFromHistory,
   line: pairs.isEmpty ? Copy.privacySwapsClearLine : Copy.privacySwapsLine(pairs.length),
   detail: switch (pairs) {
     [] => Copy.privacySwapsClear,
@@ -302,9 +329,11 @@ PrivacyCheck _swapsCheck(List<SwapPair> pairs, DateTime now) => PrivacyCheck(
   },
 );
 
+/// A refund address paid from XMR is already on both sides, so it is a note, like a swap pair.
 PrivacyCheck _refundCheck(List<LinkedRefund> links, DateTime now) => PrivacyCheck(
   title: Copy.privacyRefundTitle,
-  state: links.isEmpty ? CheckState.good : CheckState.warning,
+  state: links.isEmpty ? CheckState.good : CheckState.note,
+  tag: links.isEmpty ? null : Copy.privacyFromHistory,
   line: links.isEmpty ? Copy.privacyRefundClearLine : Copy.privacyRefundLine(links.length),
   detail: switch (links) {
     [] => Copy.privacyRefundClear,
@@ -354,15 +383,10 @@ const List<PrivacyCheck> _pendingChainChecks = [
   PrivacyCheck(title: Copy.privacyOwnTitle, state: CheckState.pending, line: Copy.privacyOwnPending),
   PrivacyCheck(title: Copy.privacyLookAlikeTitle, state: CheckState.pending, line: Copy.privacyLookAlikePending),
   PrivacyCheck(title: Copy.privacyKranoxTitle, state: CheckState.pending, line: Copy.privacyKranoxPending),
-  PrivacyCheck(
-    title: Copy.privacyExposureTitle,
-    state: CheckState.pending,
-    line: Copy.privacyExposurePending,
-    wide: true,
-  ),
+  PrivacyCheck(title: Copy.privacyExposureTitle, state: CheckState.pending, line: Copy.privacyExposurePending),
 ];
 
-/// The checks of a scanned address in the order of the board: four that can find a link, then what everyone sees.
+/// The checks of a scanned address in their order: four that can find a link, then what everyone sees.
 List<PrivacyCheck> _chainChecks(ChainPrivacyReport report, DateTime now) => [
   _fundingCheck(report.funding, now),
   _ownCheck(report.own, now),
@@ -447,8 +471,8 @@ PrivacyCheck _kranoxCheck(List<KranoxLink> kranox, DateTime now) {
   );
 }
 
-/// What everyone sees is a note with its figures, in a tile as wide as the board. The tokens that the address holds
-/// stand in its line, so that the figures fit on one row.
+/// What everyone sees is a note with its figures. The tokens that the address holds stand in its line, so that the
+/// figures fit on one row.
 PrivacyCheck _exposureCheck(Exposure exposure, DateTime now) {
   final empty = exposure.transactions == 0 && exposure.tokenTransfers == 0;
   final hours = exposure.activeHours;
@@ -479,7 +503,6 @@ PrivacyCheck _exposureCheck(Exposure exposure, DateTime now) {
             if (hours case (final from, final to))
               CheckStat(value: Copy.privacyStatHourRange(_hour(from), _hour(to)), label: Copy.privacyStatHours),
           ],
-    wide: true,
   );
 }
 

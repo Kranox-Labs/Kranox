@@ -176,6 +176,11 @@ abstract final class Copy {
   static const String privacyRingLabel = 'Clear';
   static String privacyToImprove(int count) => count == 1 ? '1 thing to improve' : '$count things to improve';
   static const String privacyAllClearLead = 'Your wallet gives nothing away that this page can find.';
+  static const String privacyNothingLeft = 'Nothing left to improve';
+  static const String privacyFromHistory = 'From your history';
+  static String privacyNotesLead(int count) => count == 1
+      ? '1 note on your history. Click it to see what it found.'
+      : '$count notes on your history. Click one to see what it found.';
   static const String privacyToImproveLead = 'Click a check to see what it found and what you can do.';
   static const String privacyPageNote = 'Everything on this page comes from this Mac. Nothing leaves it.';
   static const String privacyNodeOwnLine = 'Your own node';
@@ -183,6 +188,9 @@ abstract final class Copy {
   static const String privacySubaddressClearLine = 'One payment each at most';
   static String privacySubaddressLine(int index, int payments) => 'Subaddress #$index took $payments payments';
   static String privacySubaddressManyLine(int count) => '$count subaddresses took several payments';
+  static String privacySubaddressPastLine(int index, int payments) =>
+      'Subaddress #$index took $payments payments before';
+  static String privacySubaddressPastManyLine(int count) => '$count subaddresses took several payments before';
   static const String privacySwapsClearLine = 'No swaps sit close';
   static String privacySwapsLine(int count) => count == 1 ? '1 pair can be matched' : '$count pairs can be matched';
   static const String privacyRefundClearLine = 'None paid from XMR';
@@ -210,6 +218,13 @@ abstract final class Copy {
   static String privacySubaddressMany(int count, int index, int payments) =>
       '$count subaddresses took more than one payment, #$index the most with $payments. Payers who compare notes can '
       'tell that they paid the same person. Give each payer a new subaddress.';
+  static String privacySubaddressPast(int index, int payments) =>
+      'Subaddress #$index took $payments payments before. Payers who compare notes can tell that they paid the same '
+      'person. Your receive page gives out a new subaddress now, so give that one to the next payer.';
+  static String privacySubaddressPastMany(int count, int index, int payments) =>
+      '$count subaddresses took more than one payment before, #$index the most with $payments. Payers who compare '
+      'notes can tell that they paid the same person. Your receive page gives out a new subaddress now, so give that '
+      'one to the next payer.';
   static const String privacyNewSubaddress = 'New subaddress';
   static const String privacySwapsTitle = 'Swaps with Robinhood Chain';
   static const String privacySwapsClear = 'None of your swaps sit close in time or amount.';

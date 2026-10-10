@@ -23,8 +23,8 @@ final class CheckStat {
   final String label;
 }
 
-/// One check of a board in the menu Privacy: what its tile shows, and the longer text that shows when the user opens
-/// the tile.
+/// One check of a board in the menu Privacy: what its row shows, and the whole text that shows when the user opens
+/// the row.
 final class PrivacyCheck {
   const PrivacyCheck({
     required this.title,
@@ -34,7 +34,7 @@ final class PrivacyCheck {
     this.action,
     this.error,
     this.stats = const [],
-    this.wide = false,
+    this.tag,
   });
 
   final String title;
@@ -43,7 +43,7 @@ final class PrivacyCheck {
   /// What the check found, in one short line.
   final String line;
 
-  /// What shows and what to do about it. A tile without it does not open.
+  /// What shows and what to do about it, in full.
   final String? detail;
 
   /// The way to improve it that the app offers, such as a button to the settings of the node.
@@ -51,10 +51,13 @@ final class PrivacyCheck {
   final String? error;
   final List<CheckStat> stats;
 
-  /// Whether the tile takes a whole row of the board, such as a check with figures.
-  final bool wide;
+  /// A few words beside the title, such as where a note comes from.
+  final String? tag;
 
   bool get clear => state != CheckState.warning;
+
+  /// Whether the row has more to show when the user opens it.
+  bool get opens => detail != null || stats.isNotEmpty || action != null;
 }
 
 /// The head of a board: a ring with one part for each check, lit in the accent color when the check finds nothing to
@@ -175,127 +178,164 @@ class _RingPainter extends CustomPainter {
   bool shouldRepaint(_RingPainter old) => !listEquals(old.colors, colors);
 }
 
-/// The checks of a board in two columns, row by row, each row as high as its highest tile; a wide check takes a row of
-/// its own. Narrower than [Metrics.boardTwoColumns], the board has one column.
-class CheckGrid extends StatelessWidget {
-  const CheckGrid({super.key, required this.checks});
+/// The checks that find something to improve first, then the others, each part in its order, so that the ring and the
+/// list read the same way.
+List<PrivacyCheck> warningsFirst(List<PrivacyCheck> checks) => [
+  ...checks.where((check) => check.state == CheckState.warning),
+  ...checks.where((check) => check.state != CheckState.warning),
+];
+
+/// The checks of a board as one list as wide as the board, which the owner chose on 10 Oct 2026 over a grid of tiles,
+/// so that the whole text of a check reads without a narrow column: a hairline between two rows.
+class CheckList extends StatelessWidget {
+  const CheckList({super.key, required this.checks});
 
   final List<PrivacyCheck> checks;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final rows = constraints.maxWidth < Metrics.boardTwoColumns
-          ? [
-              for (final check in checks) [check],
-            ]
-          : _rows(checks);
-      return Column(
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Surface(
+      padding: EdgeInsets.zero,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (index, row) in rows.indexed) ...[if (index > 0) const SizedBox(height: Metrics.gap), _row(row)],
-        ],
-      );
-    },
-  );
-
-  /// The checks two by two in their order, with a wide check alone in its row.
-  static List<List<PrivacyCheck>> _rows(List<PrivacyCheck> checks) {
-    final rows = <List<PrivacyCheck>>[];
-    for (final check in checks) {
-      final last = rows.isEmpty ? null : rows.last;
-      if (!check.wide && last != null && last.length == 1 && !last.first.wide) {
-        last.add(check);
-      } else {
-        rows.add([check]);
-      }
-    }
-    return rows;
-  }
-
-  static Widget _row(List<PrivacyCheck> row) {
-    final first = row.first;
-    if (first.wide) return CheckTile(key: ValueKey(first.title), check: first);
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: CheckTile(key: ValueKey(first.title), check: first),
-          ),
-          const SizedBox(width: Metrics.gap),
-          Expanded(
-            child: row.length > 1 ? CheckTile(key: ValueKey(row.last.title), check: row.last) : const SizedBox(),
-          ),
+          for (final (index, check) in checks.indexed) ...[
+            if (index > 0) Divider(height: 1, color: palette.line),
+            CheckRow(key: ValueKey(check.title), check: check),
+          ],
         ],
       ),
     );
   }
 }
 
-/// One tile of a board: the mark of its state, its title, what it found, its figures, and its way to improve it. A
-/// click puts the longer text in the place of the line, and a second click puts the line back. A tile that warns has
-/// an edge in the color of a failure.
-class CheckTile extends StatefulWidget {
-  const CheckTile({super.key, required this.check});
+/// One row of a board: the mark of its state, its title, and what it found in one line. A click opens the whole text
+/// under the line, with the figures of the check and its way to improve it, and a second click closes it.
+class CheckRow extends StatefulWidget {
+  const CheckRow({super.key, required this.check});
 
   final PrivacyCheck check;
 
   @override
-  State<CheckTile> createState() => _CheckTileState();
+  State<CheckRow> createState() => _CheckRowState();
 }
 
-class _CheckTileState extends State<CheckTile> {
+class _CheckRowState extends State<CheckRow> {
   bool _open = false;
 
   @override
   Widget build(BuildContext context) {
+    final check = widget.check;
+    if (!check.opens) return _head(context, open: false);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          button: true,
+          expanded: _open,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _open = !_open),
+              child: _head(context, open: _open),
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: Metrics.fade,
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _open ? _body(context) : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+
+  Widget _head(BuildContext context, {required bool open}) {
     final palette = context.palette;
     final check = widget.check;
-    final detail = check.detail;
     final pending = check.state == CheckState.pending;
-    final tile = Surface(
+    return Padding(
       padding: const EdgeInsets.all(Metrics.tilePadding),
-      border: check.state == CheckState.warning ? palette.dangerLine : null,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _StateMark(check.state),
-          const SizedBox(width: Metrics.gapSmall + 2),
+          const SizedBox(width: Metrics.checkMarkGap),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 2),
-                Text(check.title, style: KranoxType.cardTitle.copyWith(color: pending ? palette.inkSoft : palette.ink)),
+                Wrap(
+                  spacing: Metrics.gapSmall,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      check.title,
+                      style: KranoxType.cardTitle.copyWith(color: pending ? palette.inkSoft : palette.ink),
+                    ),
+                    if (check.tag case final tag?) _Tag(tag),
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text(
-                  _open && detail != null ? detail : check.line,
+                  check.line,
                   style: KranoxType.bodyRegular.copyWith(color: pending ? palette.inkFaint : palette.inkSoft),
                 ),
-                if (check.stats.isNotEmpty) ...[const SizedBox(height: Metrics.gap - 4), _Stats(check.stats)],
-                if (check.action case final action?) ...[const SizedBox(height: Metrics.gapSmall + 2), action],
-                ErrorLine(check.error),
               ],
             ),
           ),
-          if (detail != null) ...[
+          if (check.opens) ...[
             const SizedBox(width: Metrics.gapTiny),
-            Icon(_open ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 20, color: palette.inkFaint),
+            Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 20, color: palette.inkFaint),
           ],
         ],
       ),
     );
-    if (detail == null) return tile;
-    return Semantics(
-      button: true,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _open = !_open),
-          child: tile,
-        ),
+  }
+
+  /// The whole text, under the title and as wide as the row, then the figures and the way to improve it.
+  Widget _body(BuildContext context) {
+    final palette = context.palette;
+    final check = widget.check;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Metrics.tilePadding + Metrics.smallRound + Metrics.checkMarkGap,
+        0,
+        Metrics.tilePadding,
+        Metrics.tilePadding,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (check.detail case final detail?) Text(detail, style: KranoxType.bodyRegular.copyWith(color: palette.ink)),
+          if (check.stats.isNotEmpty) ...[const SizedBox(height: Metrics.gap - 4), _Stats(check.stats)],
+          if (check.action case final action?) ...[const SizedBox(height: Metrics.gapSmall + 2), action],
+          ErrorLine(check.error),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small pill beside the title of a check, in capitals, such as "From your history" on a note.
+class _Tag extends StatelessWidget {
+  const _Tag(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return DecoratedBox(
+      decoration: BoxDecoration(color: palette.solid, borderRadius: BorderRadius.circular(Metrics.radiusPill)),
+      child: Padding(
+        padding: Metrics.tagPadding,
+        child: Text(text.toUpperCase(), style: KranoxType.unitLabel.copyWith(color: palette.inkSoft)),
       ),
     );
   }

@@ -207,6 +207,9 @@ void main() {
     await tapText(Copy.navPrivacy);
     await waitFor(find.text(Copy.privacyPageLead));
     expect(find.text(Copy.privacyToImprove(1)), findsOneWidget);
+    // The row of the node opens with its whole text and its way to improve it.
+    await tapText(Copy.privacyNodeTitle);
+    await waitFor(find.text(Copy.privacyChangeNode));
     await shoot('07-privacy');
 
     // The exchanger works on mainnet only, so receive from Robinhood Chain on stagenet says so and offers no form.
