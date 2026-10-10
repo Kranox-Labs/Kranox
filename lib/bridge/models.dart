@@ -146,7 +146,9 @@ final class PayQuote {
 }
 
 /// The steps of a swap at the exchanger, from its status names: new, waiting, confirming, exchanging, sending,
-/// finished, failed, refunded, and verifying.
+/// finished, failed, refunded, verifying, and expired. The API documentation of ChangeNOW lists expired among the
+/// statuses of its transactions, for a swap whose deposit did not come in time, and a client library of the API also
+/// names hold, which the app reads as a check: CHECKED 10 Oct 2026.
 enum SwapStage {
   waiting,
   confirming,
@@ -155,6 +157,7 @@ enum SwapStage {
   finished,
   failed,
   refunded,
+  expired,
   verifying;
 
   static SwapStage fromStatus(String status) => switch (status) {
@@ -165,15 +168,19 @@ enum SwapStage {
     'finished' => SwapStage.finished,
     'failed' => SwapStage.failed,
     'refunded' => SwapStage.refunded,
-    'verifying' => SwapStage.verifying,
+    'expired' => SwapStage.expired,
+    'verifying' || 'hold' => SwapStage.verifying,
     _ => throw FormatException('The exchanger reported an unknown status: $status.'),
   };
 
   /// The steps of a swap that goes well, in their order.
   static const List<SwapStage> path = [waiting, confirming, exchanging, sending, finished];
 
-  /// Whether the swap has ended, so that the app stops asking for its state.
-  bool get isFinal => this == finished || this == failed || this == refunded;
+  /// Whether the swap has ended, so that its card can close.
+  bool get isFinal => this == finished || this == failed || this == refunded || this == expired;
+
+  /// Whether the swap ended without its payout: it failed, the exchanger refunded it, or its deposit did not come.
+  bool get withoutPayout => this == failed || this == refunded || this == expired;
 
   /// Whether the swap went wrong or waits for a check, outside the steps of [path].
   bool get isOffPath => !path.contains(this);
@@ -287,11 +294,12 @@ final class BridgeSwap {
   /// The payment once its XMR left the wallet in the Monero transaction [hash].
   BridgeSwap withDeposit(String hash) => _copy(depositHash: hash);
 
-  /// Whether the app keeps asking for the state of the swap. A failed swap can still turn into a refund, so the app
-  /// follows it until the user closes its card.
+  /// Whether the app keeps asking for the state of the swap. A failed swap can still turn into a refund, and the
+  /// support of the exchanger can still take in the late deposit of an expired one, so the app follows both until the
+  /// user closes the card.
   bool get watched => switch (stage) {
     SwapStage.finished || SwapStage.refunded => false,
-    SwapStage.failed => !closed,
+    SwapStage.failed || SwapStage.expired => !closed,
     _ => true,
   };
 

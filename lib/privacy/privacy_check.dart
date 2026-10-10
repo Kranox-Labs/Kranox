@@ -4,6 +4,7 @@ import '../bridge/models.dart';
 import '../config/app_config.dart';
 import '../core/amount.dart';
 import '../wallet/models.dart';
+import 'chain_privacy.dart';
 
 /// A payment to Robinhood Chain under review: what the recipient gets there, and where. The limits of the exchanger
 /// keep a suggested amount inside them.
@@ -62,12 +63,15 @@ final class FreshCoins {
   final bool fromChain;
 }
 
-/// The recipient of a payment to Robinhood Chain is the refund address that the user gave in a receive.
+/// The recipient of a payment to Robinhood Chain took part in another swap of the user, so that the records of the
+/// exchanger tie this payment to that swap, the newest one in [link].
 final class OwnAddress {
-  const OwnAddress({required this.usedAt});
+  const OwnAddress(this.link);
 
-  /// When the user made that receive.
-  final DateTime usedAt;
+  final KranoxLink link;
+
+  /// When the user made that swap.
+  DateTime get usedAt => link.swap.createdAt;
 }
 
 /// What the privacy check found for one payment: one finding for each rule that warns, and nothing for a rule that
@@ -91,12 +95,21 @@ final class PrivacyReport {
   final OwnAddress? ownAddress;
 
   int get warnings => [amountMatch, fresh, ownAddress].where((finding) => finding != null).length;
+
+  /// The same report with the rule of the address in [ownAddress], such as one that the scan of the recipient knows.
+  PrivacyReport withOwnAddress(OwnAddress? ownAddress) => PrivacyReport(
+    checksAddress: checksAddress,
+    amountMatch: amountMatch,
+    suggestion: suggestion,
+    fresh: fresh,
+    ownAddress: ownAddress,
+  );
 }
 
 /// Runs the privacy check on a payment of [amount] XMR with [fee]: a plain send, or with [chain] a payment to Robinhood
-/// Chain. It reads what came into the wallet ([transfers]), the swaps of the bridge ([swaps]), the [balance], and the
-/// part of it that the wallet can spend now ([spendable]). [random] picks the step of a suggested amount, so that
-/// suggestions follow no fixed pattern.
+/// Chain. It reads what came into the wallet ([transfers]), the swaps of the bridge ([swaps]), the [balance], the part
+/// of it that the wallet can spend now ([spendable]), and the addresses on Robinhood Chain that the user scanned as
+/// theirs ([ownAddresses]). [random] picks the step of a suggested amount, so that suggestions follow no fixed pattern.
 PrivacyReport checkPrivacy({
   required XmrAmount amount,
   required XmrAmount fee,
@@ -106,6 +119,7 @@ PrivacyReport checkPrivacy({
   required XmrAmount spendable,
   required DateTime now,
   ChainPayment? chain,
+  Iterable<String> ownAddresses = const [],
   Random? random,
 }) {
   final incoming = [
@@ -138,7 +152,7 @@ PrivacyReport checkPrivacy({
           ),
     fresh: _freshCoins(amount + fee, balance, incoming, swaps, now),
     checksAddress: chain != null,
-    ownAddress: chain == null ? null : _ownAddress(chain.recipient, swaps),
+    ownAddress: chain == null ? null : ownAddressOf(chain.recipient, swaps, ownAddresses: ownAddresses),
   );
 }
 
@@ -249,14 +263,20 @@ FreshCoins? _freshCoins(
   return FreshCoins(since: newest.time, clearsAt: newest.time.add(AppConfig.privacyFreshWindow), fromChain: fromChain);
 }
 
-/// The newest receive in which the user gave [recipient] as the refund address on Robinhood Chain.
-OwnAddress? _ownAddress(String recipient, List<BridgeSwap> swaps) {
+/// What ties a payment to [recipient] to another swap of the user: from the records of the swaps, or from the [links]
+/// of a scan of the recipient, which also know the receives whose coin it sent in. A receive ties it, since the user
+/// gave the address there or sent from it. An earlier payment ties it only when the user scanned it as an address of
+/// theirs ([ownAddresses]), since paying someone again is how payments go.
+OwnAddress? ownAddressOf(
+  String recipient,
+  List<BridgeSwap> swaps, {
+  Iterable<String> ownAddresses = const [],
+  List<KranoxLink>? links,
+}) {
+  final found = links ?? kranoxLinks(recipient, swaps);
+  if (found.where((link) => link is! GotPay).firstOrNull case final receive?) return OwnAddress(receive);
   final target = recipient.toLowerCase();
-  DateTime? usedAt;
-  for (final swap in swaps) {
-    if (swap.direction != SwapDirection.receive) continue;
-    if (swap.refundAddress?.toLowerCase() != target) continue;
-    if (usedAt == null || swap.createdAt.isAfter(usedAt)) usedAt = swap.createdAt;
-  }
-  return usedAt == null ? null : OwnAddress(usedAt: usedAt);
+  final yours = ownAddresses.any((address) => address.toLowerCase() == target);
+  final paid = found.whereType<GotPay>().firstOrNull;
+  return yours && paid != null ? OwnAddress(paid) : null;
 }

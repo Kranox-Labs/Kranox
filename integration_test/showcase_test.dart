@@ -509,6 +509,8 @@ void main() {
     await tester.tap(find.text(Copy.bridgeReview));
     await waitFor(find.text(Copy.receiveReviewTitle));
     await shoot('receive-chain-review');
+    // The review is taller than the window, so its button scrolls into view first.
+    await tester.ensureVisible(find.text(Copy.bridgeCreate));
     await tester.tap(find.text(Copy.bridgeCreate));
     await waitFor(find.text(Copy.bridgeStepWaiting));
     await tester.pump(_frame);
@@ -536,6 +538,8 @@ void main() {
     await waitFor(estimate);
     await tester.tap(find.text(Copy.bridgeReview));
     await waitFor(find.text(Copy.receiveReviewTitle));
+    // The review is taller than the window, so its button scrolls into view first.
+    await tester.ensureVisible(find.text(Copy.bridgeCreate));
     await tester.tap(find.text(Copy.bridgeCreate));
     await waitFor(find.text(Copy.bridgeStepWaiting));
     await swapAt(const SwapState(stage: SwapStage.confirming, depositHash: _sampleDepositHash), 'receive-chain-step');

@@ -242,9 +242,14 @@ void main() {
     expect(SwapStage.fromStatus('waiting'), SwapStage.waiting);
     expect(SwapStage.fromStatus('sending'), SwapStage.sending);
     expect(SwapStage.fromStatus('verifying'), SwapStage.verifying);
+    expect(SwapStage.fromStatus('hold'), SwapStage.verifying);
+    expect(SwapStage.fromStatus('expired'), SwapStage.expired);
     expect(SwapStage.finished.isFinal, isTrue);
     expect(SwapStage.refunded.isFinal, isTrue);
+    expect(SwapStage.expired.isFinal, isTrue);
     expect(SwapStage.exchanging.isFinal, isFalse);
+    expect(SwapStage.expired.withoutPayout, isTrue);
+    expect(SwapStage.finished.withoutPayout, isFalse);
     expect(() => SwapStage.fromStatus('lost'), throwsFormatException);
   });
 
@@ -619,12 +624,30 @@ void main() {
       await bridge.refresh();
       exchanger.stage = SwapStage.failed;
       await bridge.refresh();
-      expect(bridge.shownSwapOf(SwapDirection.receive)?.stage, SwapStage.failed);
+      expect(bridge.openSwapsOf(SwapDirection.receive).single.stage, SwapStage.failed);
       expect(bridge.activeSwap?.id, swap.id, reason: 'a failed swap may still be refunded');
       await bridge.closeSwap(swap.id);
-      expect(bridge.shownSwapOf(SwapDirection.receive), isNull);
+      expect(bridge.openSwapsOf(SwapDirection.receive), isEmpty);
       expect(bridge.activeSwap, isNull);
       expect((await BridgeStore(storage.bridgePath).read(_fileKey)).single.closed, isTrue);
+    });
+
+    test('keeps every swap that runs open, and an expired one until its card closes', () async {
+      bridge.setAmount('0.0055');
+      await _quoteSettles();
+      final first = await bridge.createSwap();
+      bridge.setAmount('0.006');
+      await _quoteSettles();
+      final second = await bridge.createSwap();
+      expect([for (final swap in bridge.openSwapsOf(SwapDirection.receive)) swap.id], [second.id, first.id]);
+      exchanger.stage = SwapStage.expired;
+      await bridge.refresh();
+      expect(bridge.openSwapsOf(SwapDirection.receive).map((swap) => swap.stage), everyElement(SwapStage.expired));
+      expect(bridge.activeSwap, isNotNull, reason: 'the support of the exchanger can still take in a late deposit');
+      await bridge.closeSwap(first.id);
+      await bridge.closeSwap(second.id);
+      expect(bridge.openSwapsOf(SwapDirection.receive), isEmpty);
+      expect(bridge.activeSwap, isNull);
     });
 
     test('reports whether the relay answers', () async {

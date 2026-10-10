@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kranox_wallet/bridge/chain_scan.dart';
 import 'package:kranox_wallet/bridge/client.dart';
 import 'package:kranox_wallet/bridge/controller.dart';
+import 'package:kranox_wallet/bridge/models.dart';
 import 'package:kranox_wallet/bridge/store.dart';
 import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
@@ -129,6 +130,94 @@ final class _Scanner implements ChainScanClient {
   }
 }
 
+/// The scan of an address that an address without a public name funded, and that did nothing else: clear on every
+/// check. The transfer of the funding has a hash of its own for each address, as [_fundingHash] gives it.
+final class _PlainScanner implements ChainScanClient {
+  @override
+  Future<ChainScan> scanAddress(String address) async => ChainScan(
+    address: address,
+    isContract: false,
+    balanceWei: BigInt.zero,
+    transactionCount: 1,
+    tokenTransferCount: 0,
+    firstTransaction: ChainTransfer(
+      hash: _fundingHash(address),
+      from: const ChainParty(address: _funder, label: null, isContract: false),
+      to: ChainParty(address: address, label: null, isContract: false),
+      value: BigInt.from(5),
+      token: null,
+      time: DateTime.now().subtract(const Duration(days: 5)),
+    ),
+    firstTokenTransfer: null,
+    transactions: const [],
+    tokenTransfers: const [],
+    holdings: const [],
+  );
+}
+
+/// The scan of a relay that read the first funding of an address, from an address without a public name, but could not
+/// read every kind of transfer in.
+final class _UnsureScanner implements ChainScanClient {
+  @override
+  Future<ChainScan> scanAddress(String address) async {
+    final plain = await _PlainScanner().scanAddress(address);
+    return ChainScan(
+      address: plain.address,
+      isContract: false,
+      balanceWei: BigInt.zero,
+      transactionCount: plain.transactionCount,
+      tokenTransferCount: 0,
+      firstTransaction: plain.firstTransaction,
+      firstTokenTransfer: null,
+      transactions: const [],
+      tokenTransfers: const [],
+      holdings: const [],
+      firstFunding: plain.firstTransaction,
+      fundingRead: true,
+      fundingSure: false,
+    );
+  }
+}
+
+/// The funder of [_PlainScanner], an address without a public name from the examples of EIP-55.
+const _funder = '0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB';
+
+/// A new address of the user, from the examples of EIP-55, that a payment from XMR funded: the clean start.
+const _cleanStart = '0x52908400098527886E0F7030069857D2E4169EE7';
+
+/// The hash of the transfer that first funded [address] in a scan of [_PlainScanner].
+String _fundingHash(String address) => 'funding-${address.toLowerCase()}';
+
+/// A finished payment from XMR to [recipient], whose payout funded it first.
+BridgeSwap _paymentTo(String recipient, String id) => BridgeSwap(
+  direction: SwapDirection.pay,
+  id: id,
+  asset: BridgeAsset.usdg,
+  amount: 25,
+  xmrAmount: 0.07,
+  depositAddress: 'xmr-deposit',
+  payoutAddress: recipient,
+  subaddressIndex: 3,
+  createdAt: DateTime.now().subtract(const Duration(days: 3)),
+  stage: SwapStage.finished,
+  depositHash: 'xmr-$id',
+  payoutHash: _fundingHash(recipient),
+);
+
+/// A finished receive from Robinhood Chain with [refund] as its refund address.
+BridgeSwap _receiveWithRefund(String refund) => BridgeSwap(
+  id: 'receive1',
+  asset: BridgeAsset.eth,
+  amount: 0.01,
+  xmrAmount: 0.03,
+  depositAddress: _exchange,
+  payoutAddress: 'subaddress-4',
+  subaddressIndex: 4,
+  createdAt: DateTime.now().subtract(const Duration(days: 6)),
+  stage: SwapStage.finished,
+  refundAddress: refund,
+);
+
 /// The page reads only the swaps that the store holds, so the exchanger never answers.
 final class _NoRelay implements BridgeClient {
   @override
@@ -143,16 +232,23 @@ void main() {
   final opened = <WalletPage>[];
   var paid = 0;
 
-  Future<void> start(List<int> indexes) async {
+  /// A wallet with payments to the subaddresses [indexes], whose bridge holds [swaps].
+  Future<void> start(List<int> indexes, {List<BridgeSwap> swaps = const []}) async {
     root = Directory.systemTemp.createTempSync('kranox-privacy-page');
     final storage = AppStorage(root.path);
     await storage.prepareWalletFolder(MoneroNetwork.mainnet);
     File('${storage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
+    final store = BridgeStore(storage.bridgePath);
+    if (swaps.isNotEmpty) {
+      await store.read(Uint8List(32));
+      await store.write(swaps);
+    }
     engine = _Wallet(indexes);
     wallet = WalletController(worker: engine, storage: storage);
     await wallet.start();
     await wallet.unlock('password');
-    bridge = BridgeController(client: _NoRelay(), store: BridgeStore(storage.bridgePath), wallet: wallet);
+    bridge = BridgeController(client: _NoRelay(), store: store, wallet: wallet);
+    if (swaps.isNotEmpty) await bridge.start();
     opened.clear();
     paid = 0;
   }
@@ -330,6 +426,94 @@ void main() {
     // Things to improve come with the way to a clean start: pay to a new address of the user.
     await tester.tap(find.text(Copy.privacyPayNewAddress));
     expect(paid, 1);
+  });
+
+  testWidgets('an address that ties swaps together is something to improve, and a clean start from XMR is perfect', (
+    tester,
+  ) async {
+    await tester.runAsync(
+      () => start(
+        [1, 2],
+        swaps: [_paymentTo(_address, 'pay1'), _receiveWithRefund(_address), _paymentTo(_cleanStart, 'pay2')],
+      ),
+    );
+    final scans = ChainScans(_PlainScanner());
+    addTearDown(scans.dispose);
+    await show(tester, scans: scans);
+    await tester.tap(find.text(Copy.privacyChainTab.toUpperCase()));
+    await tester.pump();
+    Future<void> scan(String address) async {
+      await tester.enterText(find.byType(TextField), address);
+      await tester.tap(find.text(Copy.privacyChainScan));
+      for (var round = 0; round < 4; round++) {
+        await tester.pump();
+      }
+    }
+
+    // Paid from XMR and the refund address of a receive: both sides, so the records of ChangeNOW tie them.
+    await scan(_address);
+    expect(find.text(Copy.privacyToImprove(1)), findsOneWidget);
+    expect(find.text(Copy.privacyRingCount(4, 5)), findsOneWidget);
+    expect(find.text(Copy.privacyCleanStart), findsOneWidget);
+    expect(find.text(Copy.privacyPayNewAddress), findsOneWidget);
+    expect(find.text(Copy.privacyKranoxLine(2)), findsOneWidget);
+    expect(find.text(Copy.privacyFundingPayLine), findsOneWidget, reason: 'its own payment from XMR funded it');
+    await tester.tap(find.text(Copy.privacyKranoxTitle));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(Copy.privacyKranoxBothSides), findsOneWidget);
+
+    // A new address that one payment from XMR funded is the clean start: nothing ties it to the user.
+    await scan(_cleanStart);
+    expect(find.text(Copy.privacyClear), findsOneWidget);
+    expect(find.text(Copy.privacyRingCount(5, 5)), findsOneWidget);
+    expect(find.text(Copy.privacyChainClearLead), findsOneWidget);
+    expect(find.text(Copy.privacyFundingPayLine), findsOneWidget);
+    expect(find.text(Copy.privacyKranoxLine(1)), findsOneWidget);
+
+    // An address in none of the swaps stays all clear too.
+    await scan(_shop);
+    expect(find.text(Copy.privacyClear), findsOneWidget);
+    expect(find.text(Copy.privacyKranoxClearLine), findsOneWidget);
+  });
+
+  testWidgets('a first funding that the relay could not read for sure leaves nothing to call all clear', (
+    tester,
+  ) async {
+    await tester.runAsync(() => start([1, 2]));
+    final scans = ChainScans(_UnsureScanner());
+    addTearDown(scans.dispose);
+    await show(tester, scans: scans);
+    await tester.tap(find.text(Copy.privacyChainTab.toUpperCase()));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), _address);
+    await tester.tap(find.text(Copy.privacyChainScan));
+    for (var round = 0; round < 4; round++) {
+      await tester.pump();
+    }
+    expect(find.text(Copy.privacyNothingFound), findsOneWidget);
+    expect(find.text(Copy.privacyChainUnsureLead), findsOneWidget);
+    expect(find.text(Copy.privacyClear), findsNothing);
+    expect(find.text(Copy.privacyFundingUnsureLine), findsOneWidget);
+  });
+
+  testWidgets('the note on a refund address paid from XMR names it and scans it on the tab of Robinhood Chain', (
+    tester,
+  ) async {
+    await tester.runAsync(() => start([1, 2], swaps: [_paymentTo(_address, 'pay1'), _receiveWithRefund(_address)]));
+    final scans = ChainScans(_PlainScanner());
+    addTearDown(scans.dispose);
+    await show(tester, scans: scans);
+
+    await tester.tap(find.text(Copy.privacyRefundTitle));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(shortText(_address)), findsOneWidget);
+    await tester.tap(find.text(Copy.privacyScanIt));
+    for (var round = 0; round < 4; round++) {
+      await tester.pump();
+    }
+    expect(find.text(Copy.privacyChainResult(shortText(_address))), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, _address);
+    expect(find.text(Copy.privacyToImprove(1)), findsOneWidget);
   });
 
   testWidgets('a wallet on another network than mainnet shows no scan of Robinhood Chain', (tester) async {

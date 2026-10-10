@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ import '../theme/typography.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
+import '../widgets/page_frame.dart';
 import '../widgets/privacy_check.dart';
 import '../widgets/address_check.dart';
 import '../widgets/review_line.dart';
@@ -39,12 +41,15 @@ const int _evmAddressLength = 42;
 
 /// Pay to Robinhood Chain: the user types the XMR to pay and sees the coin that it buys at a fixed rate, then enters
 /// the recipient there, and ChangeNOW turns the XMR of this wallet into exactly that amount. The part of the send page
-/// under the choice "To Robinhood Chain", in the form of a swap, as the owner showed on 6 Oct 2026.
+/// under the choice "To Robinhood Chain", in the form of a swap, as the owner showed on 6 Oct 2026. From 10 Oct 2026
+/// each payment has a page of its own, which [onOpenSwap] opens: from its card under the form, from its line in the
+/// list, and at once for a new payment.
 class SendToChain extends StatefulWidget {
-  const SendToChain({super.key, required this.bridge, required this.wallet, this.scans});
+  const SendToChain({super.key, required this.bridge, required this.wallet, required this.onOpenSwap, this.scans});
 
   final BridgeController bridge;
   final WalletController wallet;
+  final ValueChanged<BridgeSwap> onOpenSwap;
 
   /// The addresses that the user scanned in the menu Privacy, which the check of the recipient counts as the user's.
   final ChainScans? scans;
@@ -60,17 +65,14 @@ class _SendToChainState extends State<SendToChain> {
   String? _error;
   bool _busy = false;
 
-  // While a payment is on its way, the page shows that payment alone, until the user asks for the form of another one.
-  bool _another = false;
-
   // The privacy check of the review on screen, made once for each review, so that its suggestion stays put. The review
   // lives in pay, so it can outlast a visit of this page.
   PayReview? _checked;
   PrivacyReport? _privacy;
   final Random _random = Random.secure();
 
-  // The check of the recipient, for the review that it belongs to: what the scan found, or why it failed.
-  PayReview? _recipientFor;
+  // The check of the recipient, for the address that it belongs to: what the scan found, or why it failed.
+  String? _checkedRecipient;
   ChainPrivacyReport? _recipientReport;
   String? _recipientError;
   bool _checkingRecipient = false;
@@ -84,6 +86,12 @@ class _SendToChainState extends State<SendToChain> {
     _xmr.addListener(() => _pay.setXmr(_xmr.text));
     widget.bridge.refresh();
     _pay.loadRange();
+    // A review that outlived a visit of this page gets its check once the page shows.
+    if (_pay.review case final review?) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startRecipientCheck(review);
+      });
+    }
   }
 
   @override
@@ -101,14 +109,14 @@ class _SendToChainState extends State<SendToChain> {
     _recipient.text = text;
   }
 
-  Future<void> _startReview() => _run(_pay.startReview);
+  Future<void> _startReview() => _run(() async => _startRecipientCheck(await _pay.startReview()));
 
   Future<void> _confirm() => _run(() async {
-    await _pay.confirm(password: _password.text);
+    final swap = await _pay.confirm(password: _password.text);
     _password.clear();
     _recipient.clear();
     _xmr.clear();
-    _another = false;
+    widget.onOpenSwap(swap);
   });
 
   Future<void> _cancel() => _run(() async {
@@ -136,6 +144,7 @@ class _SendToChainState extends State<SendToChain> {
         minXmr: range?.minXmr,
         maxXmr: range?.maxXmr,
       ),
+      ownAddresses: widget.scans?.scanned ?? const [],
       random: _random,
     );
     _checked = review;
@@ -143,23 +152,51 @@ class _SendToChainState extends State<SendToChain> {
     return report;
   }
 
-  /// Scans the recipient of [review] through the relay. The scan stays out of the scans of the menu Privacy, because the
+  /// The privacy check of [review] with the rule of the address from the scan of its recipient once it is in, which
+  /// also knows the receives whose coin the recipient sent in. The rest of the check stays as it was made.
+  PrivacyReport _withRecipientScan(PrivacyReport report, PayReview review) {
+    final recipient = review.created.payoutAddress;
+    final scanned = _checkedRecipient == recipient ? _recipientReport : null;
+    if (scanned == null) return report;
+    return report.withOwnAddress(
+      ownAddressOf(
+        recipient,
+        widget.bridge.swaps,
+        ownAddresses: widget.scans?.scanned ?? const [],
+        links: scanned.kranox,
+      ),
+    );
+  }
+
+  /// Starts the check of the recipient of [review] as the review opens, since a user forgets a button, when the relay
+  /// of the app offers the scan. A check of the same address that found something stays.
+  void _startRecipientCheck(PayReview review) {
+    final scanner = widget.bridge.scanner;
+    final address = review.created.payoutAddress;
+    if (scanner == null || (_checkedRecipient == address && _recipientReport != null)) return;
+    unawaited(_checkRecipient(address, scanner));
+  }
+
+  /// Whether the review of [review] waits for the check of its recipient before it pays.
+  bool _waitsForCheck(PayReview review) => _checkedRecipient == review.created.payoutAddress && _checkingRecipient;
+
+  /// Scans the recipient [address] through the relay. The scan stays out of the scans of the menu Privacy, because the
   /// recipient may be someone else.
-  Future<void> _checkRecipient(PayReview review, ChainScanClient scanner) async {
+  Future<void> _checkRecipient(String address, ChainScanClient scanner) async {
     setState(() {
-      _recipientFor = review;
+      _checkedRecipient = address;
       _recipientReport = null;
       _recipientError = null;
       _checkingRecipient = true;
     });
     try {
-      final scan = await readScan(scanner, review.created.payoutAddress);
+      final scan = await readScan(scanner, address);
       final report = analyzeChain(scan, swaps: widget.bridge.swaps, ownAddresses: widget.scans?.scanned ?? const []);
-      if (mounted && identical(_recipientFor, review)) setState(() => _recipientReport = report);
+      if (mounted && _checkedRecipient == address) setState(() => _recipientReport = report);
     } on BridgeException catch (error) {
-      if (mounted && identical(_recipientFor, review)) setState(() => _recipientError = bridgeFailureText(error));
+      if (mounted && _checkedRecipient == address) setState(() => _recipientError = bridgeFailureText(error));
     } finally {
-      if (mounted) setState(() => _checkingRecipient = false);
+      if (mounted && _checkedRecipient == address) setState(() => _checkingRecipient = false);
     }
   }
 
@@ -167,14 +204,13 @@ class _SendToChainState extends State<SendToChain> {
   Widget? _recipientCheck(PayReview review) {
     final scanner = widget.bridge.scanner;
     if (scanner == null) return null;
-    final mine = identical(_recipientFor, review);
+    final address = review.created.payoutAddress;
+    final mine = _checkedRecipient == address;
     return AddressCheck(
       report: mine ? _recipientReport : null,
-      checking: mine && _checkingRecipient,
       error: mine ? _recipientError : null,
-      onCheck: _busy || _checkingRecipient ? null : () => _checkRecipient(review, scanner),
+      onRetry: _busy || _checkingRecipient ? null : () => _checkRecipient(address, scanner),
       now: DateTime.now(),
-      lead: Copy.payCheckRecipientLead,
       freshNote: Copy.payRecipientFreshNote,
       apartNote: Copy.payRecipientApart,
     );
@@ -221,7 +257,7 @@ class _SendToChainState extends State<SendToChain> {
           ),
         );
       }
-      final shown = widget.bridge.shownSwapOf(SwapDirection.pay);
+      final open = widget.bridge.openSwapsOf(SwapDirection.pay);
       final review = _pay.review;
       final payments = widget.bridge.swapsOf(SwapDirection.pay);
       return Column(
@@ -230,8 +266,9 @@ class _SendToChainState extends State<SendToChain> {
           if (review != null)
             _Review(
               review: review,
-              privacy: _privacyOf(review),
+              privacy: _withRecipientScan(_privacyOf(review), review),
               recipientCheck: _recipientCheck(review),
+              checking: _waitsForCheck(review),
               onUseSuggestion: _useSuggestion,
               password: _password,
               busy: _busy,
@@ -239,48 +276,34 @@ class _SendToChainState extends State<SendToChain> {
               onConfirm: _confirm,
               onCancel: _cancel,
             )
-          else if (shown != null) ...[
-            _PaymentCard(
-              swap: shown,
-              transfer: _sentTransfer(shown),
-              checkedAt: widget.bridge.checkedAt,
-              onRefresh: widget.bridge.refresh,
-              onAnother: shown.stage.isFinal || _another ? null : () => setState(() => _another = true),
-              onClose: shown.stage.isFinal ? () => widget.bridge.closeSwap(shown.id) : null,
-            ),
-            if (_another && !shown.stage.isFinal) ...[const SizedBox(height: Metrics.gap), _form(context)],
-          ] else
+          else
             _form(context),
+          // Each payment that runs has a simple card of its own under the form, so that the user can pay again
+          // meanwhile.
+          SwapCards(
+            title: Copy.payOpenPayments(open.length),
+            swaps: open,
+            headline: _paymentTitle,
+            onOpen: widget.onOpenSwap,
+          ),
           if (payments.isNotEmpty) ...[
             const SizedBox(height: Metrics.gap),
             SwapHistory(
               title: Copy.paymentsTitle,
               swaps: payments,
-              line: (swap) => Copy.paySwapTitle(_paidAmount(swap), swap.asset, shortText(swap.payoutAddress)),
-              // A failed or refunded payment brought the XMR back, so it shows no amount that left.
+              line: _paymentTitle,
+              // A payment that failed, was refunded, or expired paid nothing, so it shows no amount that left.
               trailing: (swap) => switch (swap.xmrAmount) {
-                final xmr? when swap.stage != SwapStage.failed && swap.stage != SwapStage.refunded => Copy.payOut(
-                  formatDecimal(xmr, decimals: 8),
-                ),
+                final xmr? when !swap.stage.withoutPayout => Copy.payOut(formatDecimal(xmr, decimals: 8)),
                 _ => null,
               },
+              onOpen: widget.onOpenSwap,
             ),
           ],
         ],
       );
     },
   );
-
-  /// The transfer of this wallet that carried the XMR of [swap] to the exchanger, once the history of the wallet holds
-  /// it, for the confirmations that the card of the payment counts.
-  WalletTransfer? _sentTransfer(BridgeSwap swap) {
-    final hash = swap.depositHash;
-    if (hash == null) return null;
-    for (final transfer in widget.wallet.transfers) {
-      if (transfer.hash == hash) return transfer;
-    }
-    return null;
-  }
 
   Widget _form(BuildContext context) {
     final palette = context.palette;
@@ -419,6 +442,21 @@ class _ReceivedFigure extends StatelessWidget {
 String _paidAmount(BridgeSwap swap) {
   final text = formatDecimal(swap.amountOut ?? swap.amount, decimals: 8);
   return swap.fixedRate || swap.amountOut != null ? text : Copy.about(text);
+}
+
+/// The title of a payment, on its card, its line, and its page.
+String _paymentTitle(BridgeSwap swap) =>
+    Copy.paySwapTitle(_paidAmount(swap), swap.asset, shortText(swap.payoutAddress));
+
+/// The transfer of this wallet that carried the XMR of [swap] to the exchanger, once the history of the wallet in
+/// [transfers] holds it, for the confirmations that the card of the payment counts.
+WalletTransfer? _sentTransfer(BridgeSwap swap, List<WalletTransfer> transfers) {
+  final hash = swap.depositHash;
+  if (hash == null) return null;
+  for (final transfer in transfers) {
+    if (transfer.hash == hash) return transfer;
+  }
+  return null;
 }
 
 /// One choice of the rate: its name, what it means, and its minimum for the coin of the form. The chosen one has the
@@ -594,6 +632,7 @@ class _Review extends StatelessWidget {
     required this.review,
     required this.privacy,
     required this.recipientCheck,
+    required this.checking,
     required this.onUseSuggestion,
     required this.password,
     required this.busy,
@@ -605,6 +644,9 @@ class _Review extends StatelessWidget {
   final PayReview review;
   final PrivacyReport privacy;
   final Widget? recipientCheck;
+
+  /// Whether the check of the recipient runs, so that the payment waits for it.
+  final bool checking;
   final ValueChanged<XmrAmount> onUseSuggestion;
   final TextEditingController password;
   final bool busy;
@@ -673,8 +715,8 @@ class _Review extends StatelessWidget {
           SendWithPassword(
             password: password,
             label: Copy.payNow,
-            busyLabel: Copy.paying,
-            busy: busy,
+            busyLabel: busy ? Copy.paying : Copy.addressCheckWait,
+            busy: busy || checking,
             onConfirm: onConfirm,
           ),
           ErrorLine(error),
@@ -692,16 +734,67 @@ class _Review extends StatelessWidget {
   }
 }
 
-/// The payment that the page follows: its steps from the XMR that left this wallet to the coin at the recipient, each
-/// with what ChangeNOW reports about it. A failure, a check, or a refund says what happened and what to do, and the
-/// card stays until the user closes it.
+/// The page of one payment, with the way back to the send page in [onBack]. It follows the payment as the bridge reads
+/// it and the confirmations of its XMR as the wallet reads them, and goes back once the user closes the card of an
+/// ended payment.
+class PaymentPage extends StatelessWidget {
+  const PaymentPage({
+    super.key,
+    required this.bridge,
+    required this.wallet,
+    required this.swapId,
+    required this.onBack,
+  });
+
+  final BridgeController bridge;
+  final WalletController wallet;
+  final String swapId;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([bridge, wallet]),
+    builder: (context, _) {
+      final swap = bridge.swaps.where((swap) => swap.id == swapId).firstOrNull;
+      if (swap == null) {
+        // The swaps closed with the wallet, so the page goes back to the form.
+        WidgetsBinding.instance.addPostFrameCallback((_) => onBack());
+        return const SizedBox.shrink();
+      }
+      return PageFrame(
+        back: BackLink(label: Copy.navSend, onTap: onBack),
+        title: _paymentTitle(swap),
+        lead: Copy.swapStage(swap.direction, swap.stage),
+        chips: const [StatusChip(label: Copy.exchanger)],
+        centered: true,
+        children: [
+          _PaymentCard(
+            swap: swap,
+            transfer: _sentTransfer(swap, wallet.transfers),
+            checkedAt: bridge.checkedAt,
+            onRefresh: bridge.refresh,
+            onClose: swap.stage.isFinal && !swap.closed
+                ? () async {
+                    await bridge.closeSwap(swap.id);
+                    onBack();
+                  }
+                : null,
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// A payment that the page follows: its steps from the XMR that left this wallet to the coin at the recipient, each
+/// with what ChangeNOW reports about it. A failure, a check, a refund, or the end of the wait says what happened and
+/// what to do, and the card stays under the form until the user closes it.
 class _PaymentCard extends StatelessWidget {
   const _PaymentCard({
     required this.swap,
     required this.transfer,
     required this.checkedAt,
     required this.onRefresh,
-    required this.onAnother,
     required this.onClose,
   });
 
@@ -712,10 +805,7 @@ class _PaymentCard extends StatelessWidget {
   final DateTime? checkedAt;
   final Future<void> Function() onRefresh;
 
-  /// Shows the form for another payment; null when the form shows or the payment has ended.
-  final VoidCallback? onAnother;
-
-  /// Closes the card of an ended payment; null while the payment runs.
+  /// Closes the card of an ended payment; null while the payment runs, or once the user closed it.
   final VoidCallback? onClose;
 
   @override
@@ -728,7 +818,6 @@ class _PaymentCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SwapCardHeader(
-            title: Copy.paySwapTitle(_paidAmount(swap), swap.asset, shortText(swap.payoutAddress)),
             swap: swap,
             checkedAt: checkedAt,
             onRefresh: onRefresh,
@@ -755,7 +844,6 @@ class _PaymentCard extends StatelessWidget {
               Expanded(
                 child: SwapCopyLine(label: Copy.bridgeSwapId, value: swap.id, shorten: false),
               ),
-              if (onAnother != null) PillButton(label: Copy.payAnother, tone: PillTone.quiet, onPressed: onAnother),
               if (onClose != null) PillButton(label: Copy.bridgeClose, tone: PillTone.solid, onPressed: onClose),
             ],
           ),
@@ -802,6 +890,9 @@ class _PaymentCard extends StatelessWidget {
         if (refundHash != null) SwapCopyLine(label: Copy.payMoneroHash, value: refundHash),
       ]),
       failed: SwapStep(SwapMark.failed, Copy.bridgeStepFailed, [SwapFact(Copy.payFailed(swap.subaddressIndex))]),
+      expired: SwapStep(SwapMark.expired, Copy.bridgeStepExpired, [
+        SwapFact(moneroHash == null ? Copy.payExpiredNothingSent : Copy.payExpired(swap.subaddressIndex)),
+      ]),
     );
   }
 }

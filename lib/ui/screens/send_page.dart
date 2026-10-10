@@ -37,7 +37,14 @@ enum _SendWay { monero, robinhood }
 /// The send page: a payment in XMR in three steps, the form, the review with the fee, and the receipt; or pay to
 /// Robinhood Chain.
 class SendPage extends StatefulWidget {
-  const SendPage({super.key, required this.controller, required this.bridge, this.scans, this.startOnPay = false});
+  const SendPage({
+    super.key,
+    required this.controller,
+    required this.bridge,
+    this.scans,
+    this.startOnPay = false,
+    this.reselect = 0,
+  });
 
   final WalletController controller;
   final BridgeController bridge;
@@ -48,6 +55,9 @@ class SendPage extends StatefulWidget {
 
   /// Whether the page opens on pay, such as from the way to a clean start of the menu Privacy.
   final bool startOnPay;
+
+  /// Counts the clicks on Send in the sidebar while this page shows, so that a click leaves the page of a payment.
+  final int reselect;
 
   @override
   State<SendPage> createState() => _SendPageState();
@@ -68,6 +78,9 @@ class _SendPageState extends State<SendPage> {
   final _address = TextEditingController();
   final _amount = TextEditingController();
   final _password = TextEditingController();
+
+  // The payment whose page shows in place of this page, or null.
+  String? _swapId;
   String? _addressError;
   String? _amountError;
 
@@ -82,6 +95,12 @@ class _SendPageState extends State<SendPage> {
   // The privacy check of the payment under review, made once for each review, so that its suggestion stays put.
   PrivacyReport? _privacy;
   final Random _random = Random.secure();
+
+  @override
+  void didUpdateWidget(SendPage old) {
+    super.didUpdateWidget(old);
+    if (widget.reselect != old.reselect) _swapId = null;
+  }
 
   @override
   void dispose() {
@@ -267,6 +286,14 @@ class _SendPageState extends State<SendPage> {
       ListenableBuilder(listenable: widget.bridge.pay, builder: (context, _) => _page(context));
 
   Widget _page(BuildContext context) {
+    if (_swapId case final id?) {
+      return PaymentPage(
+        bridge: widget.bridge,
+        wallet: widget.controller,
+        swapId: id,
+        onBack: () => setState(() => _swapId = null),
+      );
+    }
     final toChain = _way == _SendWay.robinhood;
     final pay = widget.bridge.pay;
     // The choice waits while a payment is under review or in preparation, so that a review never stays open behind
@@ -301,7 +328,12 @@ class _SendPageState extends State<SendPage> {
         children: [
           ways,
           const SizedBox(height: Metrics.gap),
-          SendToChain(bridge: widget.bridge, wallet: widget.controller, scans: widget.scans),
+          SendToChain(
+            bridge: widget.bridge,
+            wallet: widget.controller,
+            scans: widget.scans,
+            onOpenSwap: (swap) => setState(() => _swapId = swap.id),
+          ),
         ],
       );
     }

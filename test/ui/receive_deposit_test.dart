@@ -108,7 +108,7 @@ void main() {
       MaterialApp(
         theme: KranoxTheme.build(Palette.of(activeLook)),
         home: Scaffold(
-          body: SingleChildScrollView(child: ReceiveFromChain(bridge: bridge)),
+          body: ReceiveSwapPage(bridge: bridge, swapId: 'swap1', onBack: () {}),
         ),
       ),
     );

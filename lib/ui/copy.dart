@@ -161,9 +161,16 @@ abstract final class Copy {
   static String privacyTimingFromChain(String ago, String moment) =>
       'This payment may use XMR that came from Robinhood Chain $ago. A short gap makes the two easy to match. Waiting '
       'until $moment helps.';
-  static const String privacyAddressClear = 'It is not an address of yours from a receive.';
-  static String privacyAddressOwn(String day) =>
-      'You gave it as the refund address of a receive on $day. Paying it from XMR links both sides.';
+  // From 10 Oct 2026 the rule reads every swap of the recipient, and names ChangeNOW as the one that can tie them, as
+  // the review of a receive does; the owner asked for privacy kept at its most.
+  static const String privacyAddressClear = 'It ties this payment to none of your swaps.';
+  static String privacyAddressRefund(String day) =>
+      'You gave it as the refund address of a receive on $day. Paying it from XMR lets ChangeNOW tie this payment to '
+      'that receive.';
+  static String privacyAddressFunded(String day) =>
+      'It sent the coin of your receive on $day. Paying it from XMR lets ChangeNOW tie this payment to that receive.';
+  static String privacyAddressPaid(String day) =>
+      'You paid this address of yours from XMR on $day. Paying it again lets ChangeNOW tie both payments together.';
   static const String privacyNote = 'The check runs on this Mac. You can still send.';
   static const String privacyGoOnNote = 'The check runs on this Mac. You can still go on.';
   static const String privacyLocalNote = 'The check runs on this Mac.';
@@ -181,8 +188,19 @@ abstract final class Copy {
   static const String privacyRefundRuleLabel = 'Refund address';
   static const String privacyRefundNone =
       'You gave none, so this receive names no address of yours on Robinhood Chain.';
-  static const String privacyRefundNeverPaid = 'You never paid it from XMR.';
-  static String privacyRefundPaid(String ago) => 'You paid it from XMR $ago. Giving it here ties both sides together.';
+  static const String privacyRefundUnused = 'It took part in none of your swaps.';
+  // The owner asked on 10 Oct 2026 that the warning name who can tie the two sides: ChangeNOW, which handled both.
+  static String privacyRefundPaid(String ago) =>
+      'ChangeNOW saw you pay it from XMR $ago. As the refund address here, it lets ChangeNOW tie this receive to that '
+      'payment.';
+  static String privacyRefundReused(String ago) =>
+      'It took part in your receive $ago. As the refund address here, it lets ChangeNOW tie both receives together.';
+  static const String privacyRefundHistory =
+      'Its public history ties it to you, as the check above shows, and ChangeNOW keeps it with this receive.';
+  static const String privacyBeforeYouSend = 'Before you send';
+  static const String privacySendFromClean =
+      'Send the deposit from an address of yours that took part in none of your swaps, and not straight from an '
+      'exchange account.';
   static const String privacyAfterThis = 'After this';
   static String privacyAfterReceive(int hours) =>
       'Wait $hours hours before you pay from this XMR, and pick another amount.';
@@ -249,9 +267,16 @@ abstract final class Copy {
   static const String privacyNewSubaddress = 'New subaddress';
   static const String privacySwapsTitle = 'Swaps with Robinhood Chain';
   static const String privacySwapsClear = 'None of your swaps sit close in time or amount.';
-  static String privacySwapsPair(String sent, String paid, String receivedOn, String paidOn, String how) =>
-      'Your receive of $sent on $receivedOn and your payment of $paid on $paidOn sit close in $how. Anyone who '
-      'watches the chain can match them.';
+  static String privacySwapsPair(
+    String sent,
+    String paid,
+    String recipient,
+    String receivedOn,
+    String paidOn,
+    String how,
+  ) =>
+      'Your receive of $sent on $receivedOn and your payment of $paid to $recipient on $paidOn sit close in $how. '
+      'Anyone who watches the chain can match them.';
   static String privacySwapsMore(int count) => count == 1 ? '1 more pair does too.' : '$count more pairs do too.';
   static const String privacySwapsTip = 'Next time, leave a day between them and change the amount.';
   static const String privacyCloseInTime = 'time';
@@ -264,6 +289,8 @@ abstract final class Copy {
       'links both sides.';
   static String privacyRefundMore(int count) =>
       count == 1 ? '1 more address does too.' : '$count more addresses do too.';
+  // A refund address is the user's own, so a note on one offers its scan on the tab of Robinhood Chain.
+  static const String privacyScanIt = 'Scan it';
   static const String privacyNewCoinsTitle = 'New XMR';
   static String privacyNewCoinsClear(int hours) => 'All your XMR came in more than $hours hours ago.';
   static String privacyNewCoins(String amount, int hours, String moment) =>
@@ -281,7 +308,11 @@ abstract final class Copy {
   static const String privacyChainScan = 'Scan';
   static const String privacyChainScanning = 'Scanning…';
   static String privacyChainResult(String address) => 'What $address shows';
-  static const String privacyChainClearLead = 'Its public history ties it to nothing of yours that Kranox knows.';
+  // A perfect score means no trace that Kranox can find, never no trace at all: ChangeNOW keeps a record of each swap.
+  static const String privacyChainClearLead = 'Nothing that Kranox can find ties it to you or to your other swaps.';
+  static const String privacyNothingFound = 'Nothing found to improve';
+  static const String privacyChainUnsureLead =
+      'Part of the scan failed, so Kranox is not sure of its first funding. Scan it again in a while.';
   static const String privacyCleanStart = 'To start clean, pay a new address of yours from XMR with Kranox.';
   static const String privacyPayNewAddress = 'Pay a new address';
   static const String privacyFundingPending = 'Who sent it its first coins';
@@ -293,6 +324,8 @@ abstract final class Copy {
   static const String privacyFundingOwnLine = 'Funded by an address of yours';
   static String privacyFundingNamedLine(String name) => 'Funded by $name';
   static const String privacyFundingPlainLine = 'Funded by an address without a name';
+  static const String privacyFundingPayLine = 'Funded by your payment from XMR';
+  static const String privacyFundingUnsureLine = 'Not sure of its first funding';
   static const String privacyOwnClearLine = 'No direct link to your addresses';
   static String privacyOwnLine(int count) =>
       count == 1 ? 'Linked to 1 address of yours' : 'Linked to $count addresses of yours';
@@ -318,6 +351,19 @@ abstract final class Copy {
       '$name funded it first on $day. If $name knows who you are, it can tie you to this address.';
   static String privacyFundingPlain(String sender, String day) =>
       '$sender funded it first on $day, and that address has no public name.';
+  static String privacyFundingUnsure(String sender, String day) =>
+      'The oldest transfer in that Kranox could read came from $sender on $day, but part of the scan failed, so an '
+      'older one may exist. Scan it again in a while.';
+  static const String privacyFundingUnsureNone =
+      'Part of the scan failed, so Kranox could not read its first funding. Scan it again in a while.';
+  // CHECKED 10 Oct 2026: the PRO API of Blockscout answers the internal transfers of Robinhood Chain with the note that
+  // it has not yet processed some of them, for every range of blocks.
+  static const String privacyFundingExplorerGap =
+      'The explorer of Robinhood Chain still misses some transfers that contracts made, so an older one can hide '
+      'there.';
+  static String privacyFundingPay(String amount, String day) =>
+      'Your payment of $amount from XMR funded it first on $day. On the chain this shows a transfer from an exchanger, '
+      'and only the records of ChangeNOW tie it to that one payment.';
   static const String privacyOwnTitle = 'Your other addresses';
   static const String privacyOwnClear = 'It never dealt directly with another address of yours that Kranox knows.';
   static String privacyOwnLinked(String other, String day) =>
@@ -335,8 +381,16 @@ abstract final class Copy {
   static String privacyKranoxPaid(String amount, String day) => 'It got your payment of $amount from XMR on $day.';
   static String privacyKranoxRefund(String day) => 'You gave it as the refund address of your receive on $day.';
   static String privacyMoreSwaps(int count) => count == 1 ? '1 more swap does too.' : '$count more swaps do too.';
-  static const String privacyKranoxNote =
-      'On the chain this shows a transfer with an exchanger, and only the records of ChangeNOW tie it to your XMR.';
+  // One swap is how a swap goes; more tie those swaps together in the records of ChangeNOW, from 10 Oct 2026.
+  static const String privacyKranoxOne =
+      'On the chain this shows a transfer with an exchanger, and only the records of ChangeNOW tie it to that one '
+      'swap.';
+  static String privacyKranoxTied(int count) =>
+      'The records of ChangeNOW tie these $count swaps together through this address. Use a new address for your next '
+      'swap.';
+  static const String privacyKranoxBothSides =
+      'It sits on both sides, so the records of ChangeNOW tie the XMR that came in to the XMR that went out. Use a new '
+      'address for your next swap.';
   static const String privacyExposureTitle = 'What everyone sees';
   static const String privacyExposureEmpty = 'It has no public history yet.';
   // The source of the scan may count only what it read, so the counts are a floor.
@@ -408,8 +462,6 @@ abstract final class Copy {
   static const String receiveReviewNewSubaddress = 'A new subaddress of this wallet';
   static const String receiveRefundTo = 'Refund address, on Robinhood Chain';
   static const String receiveRefundNone = 'None';
-  static const String receiveCheckRefundLead =
-      'See what it already shows on Robinhood Chain. If you send from it too, the deposit carries that history.';
   static const String receiveRefundFreshNote = 'Nothing on it yet to tie to this receive.';
   static const String receiveRefundApart =
       'ChangeNOW and anyone who watches the chain see this deposit next to what this address shows. A new address '
@@ -449,7 +501,9 @@ abstract final class Copy {
       'Send only ${asset.label} on Robinhood Chain. Another coin or another chain does not arrive.';
   static const String bridgeSwapId = 'Swap ID';
   static const String bridgeRefresh = 'Check now';
-  static const String bridgeAnother = 'Start another swap';
+  // The swaps that run or wait to be closed, each in a simple card of its own under the form, from 10 Oct 2026; a
+  // click opens the page of the swap.
+  static String bridgeOpenSwaps(int count) => 'Open swaps · $count';
   static const String bridgeSwapsTitle = 'Swaps';
   static String bridgeSwapLine(String amount, BridgeAsset asset) => '$amount ${asset.label} into XMR';
   static String bridgeOut(String xmr) => '$xmr XMR';
@@ -467,6 +521,7 @@ abstract final class Copy {
     (_, SwapStage.finished) => 'Done',
     (_, SwapStage.failed) => 'Failed',
     (_, SwapStage.refunded) => 'Refunded',
+    (_, SwapStage.expired) => bridgeStepExpired,
     (_, SwapStage.verifying) => 'Held for a check',
   };
 
@@ -500,6 +555,12 @@ abstract final class Copy {
   static String bridgeFailedNoRefundAddress(String amount, BridgeAsset asset) =>
       'Your $amount ${asset.label} is with ChangeNOW. Write to $exchangerSupport with the swap ID to get it back.';
   static const String bridgeStepRefunded = 'Refunded';
+  static const String bridgeStepExpired = 'Expired';
+  // CHECKED 10 Oct 2026, the help center of ChangeNOW, "My exchange is stuck on Awaiting deposit": at the classic rate
+  // ChangeNOW waits about 24 hours for a deposit, and after that its system cannot recognize one.
+  static String bridgeExpired(BridgeAsset asset) =>
+      'ChangeNOW saw no deposit in time and stopped waiting for it, so nothing left your wallet. Do not send to this '
+      'address now. If you sent ${asset.label} after all, write to $exchangerSupport with the swap ID.';
   static String bridgeRefundedTo(String amount, BridgeAsset asset, String refundAddress) =>
       'ChangeNOW sent $amount ${asset.label} back to $refundAddress on Robinhood Chain.';
   static String bridgeRefundedNoAddress(String amount, BridgeAsset asset) =>
@@ -556,16 +617,26 @@ abstract final class Copy {
   static const String payPreparing = 'Asking ChangeNOW…';
   static const String payTo = 'To, on Robinhood Chain';
   // The check of the recipient on the review of pay, from 8 Oct 2026: the scan of the menu Privacy, for an address that
-  // may be one of the user's own.
-  static const String payCheckRecipient = 'Check this address';
-  static const String payCheckingRecipient = 'Checking…';
-  static const String payCheckRecipientLead = 'Is it yours? See what it already shows on Robinhood Chain.';
+  // may be one of the user's own. From 10 Oct 2026 it runs as soon as a review opens, on pay and on a receive, and
+  // the button that goes on waits for it; the owner: people forget to click a check.
+  static const String addressChecking = 'Checking what this address shows on Robinhood Chain…';
+  static const String addressCheckAgain = 'Check again';
+  static const String addressCheckWait = 'Checking the address…';
   static const String payRecipientFresh = 'No public history yet';
   static const String payRecipientFreshNote = 'A clean start, if this address is yours.';
   static String payRecipientFundedNamed(String name, String day) => 'First funded by $name on $day';
   static String payRecipientFundedOwn(String address, String day) =>
       'First funded by $address, an address of yours, on $day';
   static String payRecipientFundedPlain(String day) => 'First funded on $day by an address without a name';
+  static String payRecipientFundedByPay(String day) => 'First funded on $day by your payment from XMR';
+  // From 10 Oct 2026: a first funding that the relay could not read for sure is a note, never a clean line, and a
+  // look-alike sender in the history warns on the review too.
+  static String payRecipientFundedUnsure(String day) =>
+      'Oldest transfer in that Kranox could read: $day. An older one may exist.';
+  static const String payRecipientFundingUnsure = 'Kranox could not read its first funding for sure.';
+  static String payRecipientLookAlike(int count) => count == 1
+      ? 'A look-alike sender in its history: copy an address from its owner, never from a history.'
+      : '$count look-alike senders in its history: copy an address from its owner, never from a history.';
   static String payRecipientOwn(String address) => 'Dealt directly with $address, another address of yours';
   static String payRecipientOwnMany(int count) => 'Dealt directly with $count other addresses of yours';
   // The source of the scan may count only what it read, so the count is a floor.
@@ -610,10 +681,14 @@ abstract final class Copy {
       'ChangeNOW sends your XMR back to subaddress #$index of this wallet. If it does not come, write to '
       '$exchangerSupport with the swap ID.';
   static String payRefunded(String xmr, int index) => 'ChangeNOW sent $xmr XMR back to subaddress #$index.';
+  static String payExpired(int index) =>
+      'ChangeNOW stopped waiting before it took in the XMR. Write to $exchangerSupport with the swap ID to get it back '
+      'to subaddress #$index.';
+  static const String payExpiredNothingSent = 'ChangeNOW stopped waiting, and no XMR left this wallet for it.';
   static const String payMoneroHash = 'Monero transaction';
   static const String payChainHash = 'Robinhood Chain transaction';
   static String payOut(String xmr) => '-$xmr XMR';
-  static const String payAnother = 'Make another payment';
+  static String payOpenPayments(int count) => 'Open payments · $count';
   static const String paymentsTitle = 'Payments';
 
   // Settings.

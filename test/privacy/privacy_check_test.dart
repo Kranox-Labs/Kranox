@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kranox_wallet/bridge/models.dart';
 import 'package:kranox_wallet/config/app_config.dart';
 import 'package:kranox_wallet/core/amount.dart';
+import 'package:kranox_wallet/bridge/chain_scan.dart';
+import 'package:kranox_wallet/privacy/chain_privacy.dart';
 import 'package:kranox_wallet/privacy/privacy_check.dart';
 import 'package:kranox_wallet/wallet/models.dart';
 
@@ -62,6 +64,20 @@ BridgeSwap _receive({
   refundAddress: refundAddress,
 );
 
+/// An earlier payment from XMR to [recipient].
+BridgeSwap _paid(String recipient, Duration age) => BridgeSwap(
+  direction: SwapDirection.pay,
+  id: 'pay-${age.inMinutes}',
+  asset: BridgeAsset.usdg,
+  amount: 20,
+  xmrAmount: 0.05,
+  depositAddress: 'xmr-deposit',
+  payoutAddress: recipient,
+  subaddressIndex: 8,
+  createdAt: _now.subtract(age),
+  stage: SwapStage.finished,
+);
+
 PrivacyReport _check(
   String amount, {
   List<WalletTransfer> transfers = const [],
@@ -69,6 +85,7 @@ PrivacyReport _check(
   String balance = '10',
   String? spendable,
   ChainPayment? chain,
+  Iterable<String> ownAddresses = const [],
   int seed = 7,
 }) => checkPrivacy(
   amount: XmrAmount.parse(amount),
@@ -79,6 +96,7 @@ PrivacyReport _check(
   spendable: XmrAmount.parse(spendable ?? balance),
   now: _now,
   chain: chain,
+  ownAddresses: ownAddresses,
   random: Random(seed),
 );
 
@@ -141,7 +159,7 @@ void main() {
       final match = report.amountMatch! as ChainMatch;
       expect(match.sent, 100);
       expect(match.paid, 97);
-      // The coin that the suggestion buys lands outside the tolerance on the chain too.
+      // The coin that the suggestion buys stays outside the tolerance on the chain too.
       final paid = 97 * report.suggestion!.units / XmrAmount.parse('0.2').units;
       expect((paid - 100).abs(), greaterThan(AppConfig.privacyChainTolerance * 100));
     });
@@ -234,7 +252,51 @@ void main() {
       );
       expect(report.checksAddress, isTrue);
       expect(report.ownAddress!.usedAt, _now.subtract(const Duration(days: 2)));
+      expect(report.ownAddress!.link, isA<RefundOf>());
       expect(report.warnings, 1);
+    });
+
+    test('warns when the scan of the recipient finds a receive whose coin it sent in', () {
+      final receive = _receive(sent: 10, age: const Duration(days: 3));
+      final scan = ChainScan(
+        address: _recipient,
+        isContract: false,
+        balanceWei: BigInt.zero,
+        transactionCount: 1,
+        tokenTransferCount: 0,
+        firstTransaction: null,
+        firstTokenTransfer: null,
+        transactions: [
+          ChainTransfer(
+            hash: '0xin',
+            from: const ChainParty(address: _recipient, label: null, isContract: false),
+            to: ChainParty(address: receive.depositAddress, label: null, isContract: false),
+            value: BigInt.one,
+            token: null,
+            time: receive.createdAt,
+          ),
+        ],
+        tokenTransfers: const [],
+        holdings: const [],
+      );
+      final report = _check('0.5', swaps: [receive], chain: _pay(250));
+      expect(report.ownAddress, isNull, reason: 'the records alone do not know who sent the coin in');
+      final scanned = analyzeChain(scan, swaps: [receive], ownAddresses: const []);
+      final own = ownAddressOf(_recipient, [receive], links: scanned.kranox);
+      expect(own!.link, isA<FundedReceive>());
+      expect(report.withOwnAddress(own).warnings, 1);
+    });
+
+    test('warns about an earlier payment only when the user scanned the recipient as theirs', () {
+      final swaps = [_paid(_recipient, const Duration(days: 3))];
+      expect(
+        _check('0.5', swaps: swaps, chain: _pay(250)).ownAddress,
+        isNull,
+        reason: 'paying someone again is fine',
+      );
+      final yours = _check('0.5', swaps: swaps, chain: _pay(250), ownAddresses: [_recipient.toLowerCase()]);
+      expect(yours.ownAddress!.link, isA<GotPay>());
+      expect(yours.ownAddress!.usedAt, _now.subtract(const Duration(days: 3)));
     });
 
     test('passes another recipient', () {

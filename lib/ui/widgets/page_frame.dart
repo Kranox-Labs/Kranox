@@ -6,7 +6,8 @@ import '../theme/typography.dart';
 
 /// A page of the open wallet: a title, a short line below it, chips at the right, and the content below. A [centered]
 /// page puts all of it in one column of [width] in the middle, with the chips under the line, after the home of Vizor;
-/// the owner asked for it on the send page on 5 Oct 2026.
+/// the owner asked for it on the send page on 5 Oct 2026. A page that another page opens has a [back] link above its
+/// title.
 class PageFrame extends StatelessWidget {
   const PageFrame({
     super.key,
@@ -16,6 +17,7 @@ class PageFrame extends StatelessWidget {
     this.chips = const [],
     this.centered = false,
     this.width = Metrics.centerColumnWidth,
+    this.back,
   });
 
   final String title;
@@ -23,6 +25,7 @@ class PageFrame extends StatelessWidget {
   final List<Widget> chips;
   final List<Widget> children;
   final bool centered;
+  final BackLink? back;
 
   /// The width of the column of a [centered] page.
   final double width;
@@ -39,6 +42,10 @@ class PageFrame extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (back case final link?) ...[
+                  Align(alignment: Alignment.centerLeft, child: link),
+                  const SizedBox(height: 4),
+                ],
                 Text(
                   title,
                   textAlign: TextAlign.center,
@@ -67,6 +74,10 @@ class PageFrame extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (back case final link?) ...[
+            Align(alignment: Alignment.centerLeft, child: link),
+            const SizedBox(height: 4),
+          ],
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -86,6 +97,40 @@ class PageFrame extends StatelessWidget {
           const SizedBox(height: Metrics.gap + 4),
           ...children,
         ],
+      ),
+    );
+  }
+}
+
+/// The way back from a page that another page opened: an arrow and the name of that page, such as "Receive".
+class BackLink extends StatelessWidget {
+  const BackLink({super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.palette.inkSoft;
+    return Semantics(
+      button: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: Metrics.gapTiny),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.arrow_back_rounded, size: 18, color: color),
+                const SizedBox(width: Metrics.gapTiny),
+                Text(label, style: KranoxType.body.copyWith(color: color)),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

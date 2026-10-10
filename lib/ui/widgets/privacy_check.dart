@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/app_config.dart';
 import '../../core/amount.dart';
+import '../../privacy/chain_privacy.dart';
 import '../../privacy/privacy_check.dart';
 import '../copy.dart';
 import '../format.dart';
@@ -132,7 +133,12 @@ class PrivacyCheckCard extends StatelessWidget {
           PrivacyRule(
             label: Copy.privacyAddressLabel,
             state: own == null ? RuleState.passed : RuleState.warning,
-            text: own == null ? Copy.privacyAddressClear : Copy.privacyAddressOwn(formatTime(own.usedAt, now)),
+            text: switch (own) {
+              null => Copy.privacyAddressClear,
+              OwnAddress(link: RefundOf(), :final usedAt) => Copy.privacyAddressRefund(formatTime(usedAt, now)),
+              OwnAddress(link: FundedReceive(), :final usedAt) => Copy.privacyAddressFunded(formatTime(usedAt, now)),
+              OwnAddress(link: GotPay(), :final usedAt) => Copy.privacyAddressPaid(formatTime(usedAt, now)),
+            },
           ),
       ],
     );

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -10,7 +12,6 @@ import '../../bridge/payment_link.dart';
 import '../../core/evm_address.dart';
 import '../../privacy/chain_privacy.dart';
 import '../../privacy/chain_scans.dart';
-import '../../privacy/receive_check.dart';
 import '../../wallet/failure.dart';
 import '../copy.dart';
 import '../format.dart';
@@ -21,6 +22,7 @@ import '../widgets/address_check.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
+import '../widgets/page_frame.dart';
 import '../widgets/privacy_check.dart';
 import '../widgets/qr_card.dart';
 import '../widgets/review_line.dart';
@@ -31,11 +33,14 @@ import '../widgets/swap_steps.dart';
 /// Receive from Robinhood Chain: the user sends ETH or USDG there, and ChangeNOW turns it into XMR for a new
 /// subaddress of this wallet. The part of the receive page under the choice "From Robinhood Chain", in the form of a
 /// swap as pay on the send page: the coin that the user sends above, the XMR that it buys below. From 10 Oct 2026 a
-/// review with the privacy check of the receive comes before the exchanger makes the deposit address.
+/// review with the privacy check of the receive comes before the exchanger makes the deposit address, and each swap has
+/// a page of its own, which [onOpenSwap] opens: from its card under the form, from its line in the list, and at once
+/// for a new swap, so that its deposit address shows.
 class ReceiveFromChain extends StatefulWidget {
-  const ReceiveFromChain({super.key, required this.bridge, this.scans});
+  const ReceiveFromChain({super.key, required this.bridge, required this.onOpenSwap, this.scans});
 
   final BridgeController bridge;
+  final ValueChanged<BridgeSwap> onOpenSwap;
 
   /// The addresses that the user scanned in the menu Privacy, which the check of the refund address counts as the
   /// user's.
@@ -51,9 +56,6 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
   String? _refundError;
   String? _error;
   bool _creating = false;
-
-  // While a swap is on its way, the page shows that swap alone, until the user asks for the form of another one.
-  bool _another = false;
 
   // The review before the exchanger makes the deposit address, with the refund address of the form.
   bool _reviewing = false;
@@ -99,7 +101,16 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
       _reviewing = true;
       _reviewRefund = refund;
     });
+    // The check of the refund address starts with the review, since a user forgets a button; a check of the same
+    // address that found something stays.
+    final scanner = widget.bridge.scanner;
+    if (refund != null && scanner != null && (_checkedRefund != refund || _refundReport == null)) {
+      unawaited(_checkRefund(refund, scanner));
+    }
   }
+
+  /// Whether the review waits for the check of its refund address before it asks for the deposit address.
+  bool get _waitsForCheck => _reviewRefund != null && _checkedRefund == _reviewRefund && _checkingRefund;
 
   Future<void> _create() async {
     setState(() {
@@ -107,10 +118,12 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
       _creating = true;
     });
     try {
-      await widget.bridge.createSwap(refundAddress: _reviewRefund);
+      final swap = await widget.bridge.createSwap(refundAddress: _reviewRefund);
+      // The form starts empty for the next swap, so that a refund address does not tie two swaps by mistake.
       _amount.clear();
-      _another = false;
+      _refund.clear();
       _reviewing = false;
+      widget.onOpenSwap(swap);
     } on BridgeException catch (error) {
       setState(() => _error = bridgeFailureText(error));
     } on WalletException catch (error) {
@@ -139,7 +152,7 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     } on BridgeException catch (error) {
       if (mounted && _checkedRefund == address) setState(() => _refundCheckError = bridgeFailureText(error));
     } finally {
-      if (mounted) setState(() => _checkingRefund = false);
+      if (mounted && _checkedRefund == address) setState(() => _checkingRefund = false);
     }
   }
 
@@ -150,11 +163,9 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     final mine = _checkedRefund == refund;
     return AddressCheck(
       report: mine ? _refundReport : null,
-      checking: mine && _checkingRefund,
       error: mine ? _refundCheckError : null,
-      onCheck: _creating || _checkingRefund ? null : () => _checkRefund(refund, scanner),
+      onRetry: _creating || _checkingRefund ? null : () => _checkRefund(refund, scanner),
       now: DateTime.now(),
-      lead: Copy.receiveCheckRefundLead,
       freshNote: Copy.receiveRefundFreshNote,
       apartNote: Copy.receiveRefundApart,
     );
@@ -165,7 +176,7 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     listenable: widget.bridge,
     builder: (context, _) {
       final bridge = widget.bridge;
-      final shown = bridge.shownSwapOf(SwapDirection.receive);
+      final open = bridge.openSwapsOf(SwapDirection.receive);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -178,20 +189,14 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
               ),
             )
           else ...[
-            if (shown != null) ...[
-              _SwapCard(
-                swap: shown,
-                checkedAt: bridge.checkedAt,
-                onRefresh: bridge.refresh,
-                onAnother: shown.stage.isFinal || _another ? null : () => setState(() => _another = true),
-                onClose: shown.stage.isFinal ? () => bridge.closeSwap(shown.id) : null,
-              ),
-              if (_another && !shown.stage.isFinal) ...[
-                const SizedBox(height: Metrics.gap),
-                _formOrReview(context, bridge),
-              ],
-            ] else
-              _formOrReview(context, bridge),
+            // The form stays on top while swaps run, and each swap has a simple card of its own under it.
+            _formOrReview(context, bridge),
+            SwapCards(
+              title: Copy.bridgeOpenSwaps(open.length),
+              swaps: open,
+              headline: _swapTitle,
+              onOpen: widget.onOpenSwap,
+            ),
           ],
           if (bridge.swapsOf(SwapDirection.receive) case final swaps when swaps.isNotEmpty) ...[
             const SizedBox(height: Metrics.gap),
@@ -199,13 +204,12 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
               title: Copy.bridgeSwapsTitle,
               swaps: swaps,
               line: (swap) => Copy.bridgeSwapLine(formatDecimal(swap.amount, decimals: 8), swap.asset),
-              // A failed or refunded swap brought no XMR, so it shows no amount of XMR.
+              // A swap that failed, was refunded, or expired brought no XMR, so it shows no amount of XMR.
               trailing: (swap) => switch (swap.amountOut ?? swap.xmrAmount) {
-                final xmr? when swap.stage != SwapStage.failed && swap.stage != SwapStage.refunded => Copy.bridgeOut(
-                  formatDecimal(xmr),
-                ),
+                final xmr? when !swap.stage.withoutPayout => Copy.bridgeOut(formatDecimal(xmr)),
                 _ => null,
               },
+              onOpen: widget.onOpenSwap,
             ),
           ],
         ],
@@ -326,12 +330,20 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
           ReviewLine(label: Copy.to, value: Copy.receiveReviewNewSubaddress),
           if (refund == null) ReviewLine(label: Copy.privacyRefundRuleLabel, value: Copy.receiveRefundNone),
           const SizedBox(height: Metrics.gapSmall),
-          PrivacyRulesCard(note: Copy.privacyGoOnNote, rules: _receiveRules(refund, bridge.swaps, DateTime.now())),
+          PrivacyRulesCard(
+            note: Copy.privacyGoOnNote,
+            rules: _receiveRules(
+              refund,
+              bridge.swaps,
+              refund != null && _checkedRefund == refund ? _refundReport : null,
+              DateTime.now(),
+            ),
+          ),
           const SizedBox(height: Metrics.gap),
           PillButton(
             label: Copy.bridgeCreate,
-            busy: _creating,
-            busyLabel: Copy.bridgeCreating,
+            busy: _creating || _waitsForCheck,
+            busyLabel: _creating ? Copy.bridgeCreating : Copy.addressCheckWait,
             expand: true,
             onPressed: bridge.canSwap ? _create : null,
           ),
@@ -355,20 +367,29 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
   }
 }
 
-/// The rules of the privacy check of a receive from Robinhood Chain: whether the user paid the refund address
-/// [refund] from XMR, and what to do once the XMR comes in.
-List<PrivacyRule> _receiveRules(String? refund, List<BridgeSwap> swaps, DateTime now) {
-  final paidAt = refund == null ? null : lastPaidFromXmr(refund, swaps);
+/// The rules of the privacy check of a receive from Robinhood Chain: what ties the refund address [refund] to the user,
+/// from the swaps of the bridge ([swaps]) and, once it is in, from its scan ([report]), which also knows the receives
+/// whose coin it sent in and its public history; where to send the deposit from; and what to do once the XMR comes in.
+/// The owner asked on 10 Oct 2026 for privacy kept at its most.
+List<PrivacyRule> _receiveRules(String? refund, List<BridgeSwap> swaps, ChainPrivacyReport? report, DateTime now) {
+  final links = refund == null ? const <KranoxLink>[] : report?.kranox ?? kranoxLinks(refund, swaps);
+  final paid = links.whereType<GotPay>().firstOrNull;
+  final used = links.firstOrNull;
+  final history = report != null && ((report.funding?.links ?? false) || report.own.isNotEmpty);
+  String ago(KranoxLink link) => formatAgo(now.difference(link.swap.createdAt));
   return [
     PrivacyRule(
       label: Copy.privacyRefundRuleLabel,
-      state: paidAt == null ? RuleState.passed : RuleState.warning,
-      text: switch ((refund, paidAt)) {
-        (null, _) => Copy.privacyRefundNone,
-        (_, null) => Copy.privacyRefundNeverPaid,
-        (_, final paid?) => Copy.privacyRefundPaid(formatAgo(now.difference(paid))),
+      state: refund != null && (used != null || history) ? RuleState.warning : RuleState.passed,
+      text: switch ((refund, paid, used)) {
+        (null, _, _) => Copy.privacyRefundNone,
+        (_, final pay?, _) => Copy.privacyRefundPaid(ago(pay)),
+        (_, _, final receive?) => Copy.privacyRefundReused(ago(receive)),
+        _ when history => Copy.privacyRefundHistory,
+        _ => Copy.privacyRefundUnused,
       },
     ),
+    PrivacyRule(label: Copy.privacyBeforeYouSend, state: RuleState.tip, text: Copy.privacySendFromClean),
     PrivacyRule(
       label: Copy.privacyAfterThis,
       state: RuleState.tip,
@@ -451,26 +472,63 @@ class _QuoteNote extends StatelessWidget {
   };
 }
 
-/// The swap that the page follows: its steps from the deposit to the XMR in this wallet, each with what ChangeNOW
-/// reports about it. A failure, a check, or a refund says what happened and what to do, and the card stays until the
-/// user closes it.
+/// The title of a swap from Robinhood Chain, on its card and its page.
+String _swapTitle(BridgeSwap swap) => Copy.bridgeSwapTitle(formatDecimal(swap.amount, decimals: 8), swap.asset);
+
+/// The page of one swap from Robinhood Chain, with the way back to the receive page in [onBack]. It follows the swap
+/// as the bridge reads it, and goes back once the user closes the card of an ended swap.
+class ReceiveSwapPage extends StatelessWidget {
+  const ReceiveSwapPage({super.key, required this.bridge, required this.swapId, required this.onBack});
+
+  final BridgeController bridge;
+  final String swapId;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: bridge,
+    builder: (context, _) {
+      final swap = bridge.swaps.where((swap) => swap.id == swapId).firstOrNull;
+      if (swap == null) {
+        // The swaps closed with the wallet, so the page goes back to the form.
+        WidgetsBinding.instance.addPostFrameCallback((_) => onBack());
+        return const SizedBox.shrink();
+      }
+      return PageFrame(
+        back: BackLink(label: Copy.navReceive, onTap: onBack),
+        title: _swapTitle(swap),
+        lead: Copy.swapStage(swap.direction, swap.stage),
+        chips: const [StatusChip(label: Copy.exchanger)],
+        centered: true,
+        children: [
+          _SwapCard(
+            swap: swap,
+            checkedAt: bridge.checkedAt,
+            onRefresh: bridge.refresh,
+            onClose: swap.stage.isFinal && !swap.closed
+                ? () async {
+                    await bridge.closeSwap(swap.id);
+                    onBack();
+                  }
+                : null,
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// A swap that the page follows: its steps from the deposit to the XMR in this wallet, each with what ChangeNOW
+/// reports about it. A failure, a check, a refund, or a deposit that did not come in time says what happened and what
+/// to do, and the card stays under the form until the user closes it.
 class _SwapCard extends StatelessWidget {
-  const _SwapCard({
-    required this.swap,
-    required this.checkedAt,
-    required this.onRefresh,
-    required this.onAnother,
-    required this.onClose,
-  });
+  const _SwapCard({required this.swap, required this.checkedAt, required this.onRefresh, required this.onClose});
 
   final BridgeSwap swap;
   final DateTime? checkedAt;
   final Future<void> Function() onRefresh;
 
-  /// Shows the form for another swap; null when the form shows or the swap has ended.
-  final VoidCallback? onAnother;
-
-  /// Closes the card of an ended swap; null while the swap runs.
+  /// Closes the card of an ended swap; null while the swap runs, or once the user closed it.
   final VoidCallback? onClose;
 
   @override
@@ -481,13 +539,7 @@ class _SwapCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SwapCardHeader(
-            title: Copy.bridgeSwapTitle(formatDecimal(swap.amount, decimals: 8), swap.asset),
-            swap: swap,
-            checkedAt: checkedAt,
-            onRefresh: onRefresh,
-            notes: const [Copy.bridgeCanClose],
-          ),
+          SwapCardHeader(swap: swap, checkedAt: checkedAt, onRefresh: onRefresh, notes: const [Copy.bridgeCanClose]),
           const SizedBox(height: Metrics.gap),
           for (var index = 0; index < steps.length; index++)
             SwapStepRow(
@@ -501,7 +553,6 @@ class _SwapCard extends StatelessWidget {
               Expanded(
                 child: SwapCopyLine(label: Copy.bridgeSwapId, value: swap.id, shorten: false),
               ),
-              if (onAnother != null) PillButton(label: Copy.bridgeAnother, tone: PillTone.quiet, onPressed: onAnother),
               if (onClose != null) PillButton(label: Copy.bridgeClose, tone: PillTone.solid, onPressed: onClose),
             ],
           ),
@@ -573,6 +624,7 @@ class _SwapCard extends StatelessWidget {
         if (depositHash != null && swap.reached == SwapStage.waiting)
           SwapCopyLine(label: Copy.bridgeDepositHash, value: depositHash),
       ]),
+      expired: SwapStep(SwapMark.expired, Copy.bridgeStepExpired, [SwapFact(Copy.bridgeExpired(asset))]),
     );
   }
 }

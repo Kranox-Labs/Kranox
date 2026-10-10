@@ -108,6 +108,9 @@ final class ChainScan {
     required this.transactions,
     required this.tokenTransfers,
     required this.holdings,
+    this.firstFunding,
+    this.fundingRead = false,
+    this.fundingSure = true,
   });
 
   factory ChainScan.fromJson(Map<String, Object?> json) {
@@ -131,6 +134,7 @@ final class ChainScan {
     }
     final first = json['firstTransaction'];
     final firstToken = json['firstTokenTransfer'];
+    final funding = json['firstFunding'];
     return ChainScan(
       address: address,
       isContract: isContract,
@@ -142,6 +146,11 @@ final class ChainScan {
       transactions: transactions.map(ChainTransfer.fromJson).toList(),
       tokenTransfers: tokenTransfers.map(ChainTransfer.fromJson).toList(),
       holdings: holdings.map(ChainHolding.fromJson).toList(),
+      firstFunding: funding == null ? null : ChainTransfer.fromJson(funding),
+      // A relay before 10 Oct 2026 reads no first funding of its own, so what the app reads from its oldest transfers
+      // is unsure.
+      fundingRead: json.containsKey('firstFunding'),
+      fundingSure: json['fundingSure'] == true,
     );
   }
 
@@ -157,6 +166,16 @@ final class ChainScan {
   final List<ChainTransfer> transactions;
   final List<ChainTransfer> tokenTransfers;
   final List<ChainHolding> holdings;
+
+  /// The oldest transfer of value into the address that the relay found, of ETH, of ETH that a contract sent, or of a
+  /// token, with the public name of its sender; null when it found none. The relay reads it from 10 Oct 2026, when the
+  /// owner asked that a name no explorer gave never turn a check green: [fundingRead] says whether it did, and without
+  /// it the app reads the first funding from the oldest transactions above.
+  final ChainTransfer? firstFunding;
+  final bool fundingRead;
+
+  /// Whether the relay read every kind of transfer in and the name of the sender, so that no older one escaped it.
+  final bool fundingSure;
 }
 
 /// Reads the public history of an address on Robinhood Chain through the relay of Kranox, so that the explorer sees the
