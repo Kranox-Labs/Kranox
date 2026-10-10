@@ -74,6 +74,7 @@ final class WalletController extends ChangeNotifier {
 
   /// Makes a new wallet and gives its seed. The wallet opens when the user has written the seed down.
   Future<List<String>> create(String password) async {
+    _checkNewPassword(password);
     await _storage.prepareWalletFolder(network);
     return _worker.call<List<String>>(
       CreateWallet(path: _storage.walletPath(network), password: password, networkType: network.walletType),
@@ -81,6 +82,7 @@ final class WalletController extends ChangeNotifier {
   }
 
   Future<void> restore({required List<String> seed, required int restoreHeight, required String password}) async {
+    _checkNewPassword(password);
     await _storage.prepareWalletFolder(network);
     await _worker.call<void>(
       RestoreWallet(
@@ -92,6 +94,15 @@ final class WalletController extends ChangeNotifier {
       ),
     );
     await enterWallet();
+  }
+
+  /// The rule of a new password holds here as well as on the screens, so that no way into the controller makes a
+  /// wallet under a short password (the sharp-edges scan of 10 Oct 2026). A wallet made before keeps its password, so
+  /// an unlock checks nothing. The error never holds the password.
+  static void _checkNewPassword(String password) {
+    if (!isLongEnoughPassword(password)) {
+      throw ArgumentError('A new password must have at least ${AppConfig.minPasswordLength} characters.');
+    }
   }
 
   Future<void> unlock(String password) async {
@@ -226,18 +237,28 @@ final class WalletController extends ChangeNotifier {
 
   Future<List<String>> readSeed(String password) => _worker.call<List<String>>(ReadSeed(password: password));
 
-  /// The key of the files of the app that belong to the open wallet, such as the swaps of the bridge (wallet O-007
+  /// The keys of the files of the app that belong to the open wallet, such as the swaps of the bridge (wallet O-007
   /// of the second security review).
-  Future<Uint8List> readFileKey() => _worker.call<Uint8List>(const ReadFileKey());
+  Future<FileKeys> readFileKeys() => _worker.call<FileKeys>(const ReadFileKeys());
+
+  /// Records in the wallet that its files are sealed with the key of [readFileKeys], so that the app takes no file of
+  /// an earlier form after it (the sharp-edges scan of 10 Oct 2026).
+  Future<void> markFilesSealed() => _worker.call<void>(const MarkFilesSealed());
 
   /// The SOCKS proxy to the node of every network and to the relay, or null when the wallet reaches both straight.
   String? get proxy => _settings.proxy;
 
+  /// Whether wallet2 refused the proxy at the last connection, so that the wallet stays away from its node until the
+  /// user sets one that works. The wallet still opens, so that the user can reach the settings.
+  bool get proxyRefused => _proxyRefused;
+  bool _proxyRefused = false;
+
   /// Saves the proxy, such as Tor at 127.0.0.1:9050, or no proxy for empty text, and connects the wallet through it.
-  /// Throws a [NodeAddressException] for an address of the wrong form.
+  /// Throws a [NodeAddressException] for an address that is no IP address and port, and a [WalletException] of
+  /// [WalletFailure.proxyRefused] when wallet2 refuses the proxy.
   Future<void> changeProxy(String text) async {
-    final proxy = text.trim().isEmpty ? null : parseNodeAddress(text);
-    if (proxy == _settings.proxy) return;
+    final proxy = text.trim().isEmpty ? null : parseProxyAddress(text);
+    if (proxy == _settings.proxy && !_proxyRefused) return;
     _settings = _settings.withProxy(proxy);
     await _storage.writeSettings(_settings);
     if (_phase == WalletPhase.open) {
@@ -245,6 +266,9 @@ final class WalletController extends ChangeNotifier {
       await _readState(withHistory: false);
     }
     notifyListeners();
+    if (_proxyRefused) {
+      throw const WalletException(WalletFailure.proxyRefused, 'wallet2 refused the proxy.');
+    }
   }
 
   /// Saves another node for the network of the app and connects the wallet to it. Throws a [NodeAddressException]
@@ -260,11 +284,21 @@ final class WalletController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Connects the wallet to its node. A node that does not answer leaves the wallet open and offline; so does a proxy
+  /// that wallet2 refused, after which the engine asks the node nothing.
   Future<void> _connect() async {
     try {
       await _worker.call<void>(ConnectNode(address: node, proxy: proxy));
+      _proxyRefused = false;
     } on WalletException catch (error) {
-      if (error.failure != WalletFailure.nodeUnreachable) rethrow;
+      switch (error.failure) {
+        case WalletFailure.proxyRefused:
+          _proxyRefused = true;
+        case WalletFailure.nodeUnreachable:
+          _proxyRefused = false;
+        default:
+          rethrow;
+      }
     }
   }
 
@@ -308,3 +342,8 @@ final class WalletController extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// Whether [password] is long enough for a new wallet: at least [AppConfig.minPasswordLength] characters, counted as
+/// code points of Unicode, so that a character beyond the basic plane, such as an emoji, counts once rather than twice
+/// (the sharp-edges scan of 10 Oct 2026).
+bool isLongEnoughPassword(String password) => password.runes.length >= AppConfig.minPasswordLength;

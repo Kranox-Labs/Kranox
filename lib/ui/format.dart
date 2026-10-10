@@ -9,6 +9,7 @@ import '../core/address.dart';
 import '../core/amount.dart';
 import '../core/evm_address.dart';
 import '../core/seed.dart';
+import '../wallet/controller.dart' show isLongEnoughPassword;
 import '../wallet/failure.dart';
 import 'copy.dart';
 
@@ -89,6 +90,7 @@ String failureText(WalletException error) => switch (error.failure) {
   WalletFailure.paymentChanged => Copy.paymentChanged,
   WalletFailure.deadlinePassed => Copy.deadlinePassed,
   WalletFailure.feeTooHigh => Copy.feeTooHigh(error.detail, AppConfig.maxNetworkFee.toExact()),
+  WalletFailure.proxyRefused => Copy.proxyRefused,
   WalletFailure.native => Copy.walletReported(error.detail),
 };
 
@@ -117,7 +119,7 @@ String seedProblemText(SeedFormatException error) => switch (error.problem) {
 
 /// Checks a new password and its repetition. Gives the text of the problem, or null.
 String? passwordProblem(String password, String repeated) {
-  if (password.length < AppConfig.minPasswordLength) return Copy.passwordTooShort(AppConfig.minPasswordLength);
+  if (!isLongEnoughPassword(password)) return Copy.passwordTooShort(AppConfig.minPasswordLength);
   if (password != repeated) return Copy.passwordMismatch;
   return null;
 }

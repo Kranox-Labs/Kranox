@@ -1,6 +1,17 @@
-/// One side of a transfer on Robinhood Chain, with the name that the explorer gives it, if any.
+/// Where the name of a party comes from (the sharp-edges scan of 10 Oct 2026): a public tag of the explorer, such as
+/// the hot wallet of an exchange; the name of a verified contract, which says what its code does, not who used it; or
+/// a domain, which anyone can register. A name without a source, from a relay before 10 Oct 2026, reads as a tag, as
+/// the app read every name before.
+enum LabelSource { tag, contract, domain }
+
+/// One side of a transfer on Robinhood Chain, with the name that the explorer gives it, if any, and where it comes from.
 final class ChainParty {
-  const ChainParty({required this.address, required this.label, required this.isContract});
+  const ChainParty({
+    required this.address,
+    required this.label,
+    required this.isContract,
+    this.labelSource = LabelSource.tag,
+  });
 
   factory ChainParty.fromJson(Object? json) {
     if (json is! Map<String, Object?>) throw const FormatException('A side of a transfer is not an object.');
@@ -10,12 +21,24 @@ final class ChainParty {
     if (address is! String || address.isEmpty || (label != null && label is! String) || isContract is! bool) {
       throw const FormatException('A side of a transfer has no address.');
     }
-    return ChainParty(address: address, label: label as String?, isContract: isContract);
+    return ChainParty(
+      address: address,
+      label: label as String?,
+      isContract: isContract,
+      labelSource: switch (json['labelSource']) {
+        'contract' => LabelSource.contract,
+        'domain' => LabelSource.domain,
+        _ => LabelSource.tag,
+      },
+    );
   }
 
   final String address;
   final String? label;
   final bool isContract;
+
+  /// Where [label] comes from.
+  final LabelSource labelSource;
 }
 
 /// A token of Robinhood Chain, as ERC-20.
@@ -110,7 +133,8 @@ final class ChainScan {
     required this.holdings,
     this.firstFunding,
     this.fundingRead = false,
-    this.fundingSure = true,
+    // Unsure unless said, as the reader of the JSON reads it (the sharp-edges scan of 10 Oct 2026).
+    this.fundingSure = false,
   });
 
   factory ChainScan.fromJson(Map<String, Object?> json) {

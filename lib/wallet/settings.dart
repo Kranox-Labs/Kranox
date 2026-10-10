@@ -1,5 +1,6 @@
 import '../config/app_config.dart';
 import '../config/network.dart';
+import '../core/node_address.dart';
 
 /// The choices of the user that the app keeps between runs: the network, a node for each network where the user
 /// chose one, the subaddress that the receive page shows on each network, and a proxy to the nodes. A network without
@@ -103,8 +104,21 @@ final class AppSettings {
       network: network is String ? _networkNamed(network) : AppConfig.defaultNetwork,
       nodes: nodes,
       receiveIndexes: receiveIndexes,
-      proxy: proxy as String?,
+      proxy: proxy == null ? null : _proxyOf(proxy as String),
     );
+  }
+
+  /// The proxy of a file, as wallet2 reads it: none for empty text, which wallet2 reads as no proxy too, and the IP
+  /// address of localhost for the name, which 0.3.1 took. Another host name makes the file unreadable, so that the
+  /// app says so and the user sets the proxy again, rather than reach the node without it.
+  static String? _proxyOf(String text) {
+    if (text.trim().isEmpty) return null;
+    try {
+      final (:host, :port) = splitNodeAddress(text);
+      return parseProxyAddress(host.toLowerCase() == 'localhost' ? '127.0.0.1:$port' : text);
+    } on NodeAddressException {
+      throw const FormatException('The settings hold a proxy that is no IP address and port.');
+    }
   }
 
   static MoneroNetwork _networkNamed(String name) => MoneroNetwork.values.firstWhere(

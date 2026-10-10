@@ -77,7 +77,14 @@ final class OwnAddress {
 /// What the privacy check found for one payment: one finding for each rule that warns, and nothing for a rule that
 /// passes. The check advises and blocks nothing; the owner approved its three rules on 7 Oct 2026.
 final class PrivacyReport {
-  const PrivacyReport({required this.checksAddress, this.amountMatch, this.suggestion, this.fresh, this.ownAddress});
+  const PrivacyReport({
+    required this.checksAddress,
+    this.amountMatch,
+    this.suggestion,
+    this.fresh,
+    this.ownAddress,
+    this.addressChecked = true,
+  });
 
   /// The rule of the amount: an earlier amount that this one matches.
   final AmountMatch? amountMatch;
@@ -94,15 +101,22 @@ final class PrivacyReport {
   /// The rule of the address.
   final OwnAddress? ownAddress;
 
+  /// Whether the rule of the address read what it needs: false while the scan of the recipient runs or after it
+  /// failed, since only a scan knows the receives whose coin the recipient sent in. Without it the rule passes
+  /// nothing, so that the check never says "All clear" on missing data (the sharp-edges scan of 10 Oct 2026).
+  final bool addressChecked;
+
   int get warnings => [amountMatch, fresh, ownAddress].where((finding) => finding != null).length;
 
-  /// The same report with the rule of the address in [ownAddress], such as one that the scan of the recipient knows.
-  PrivacyReport withOwnAddress(OwnAddress? ownAddress) => PrivacyReport(
+  /// The same report with the rule of the address in [ownAddress], such as one that the scan of the recipient knows,
+  /// and whether that rule read what it needs ([checked]).
+  PrivacyReport withOwnAddress(OwnAddress? ownAddress, {bool checked = true}) => PrivacyReport(
     checksAddress: checksAddress,
     amountMatch: amountMatch,
     suggestion: suggestion,
     fresh: fresh,
     ownAddress: ownAddress,
+    addressChecked: checked,
   );
 }
 

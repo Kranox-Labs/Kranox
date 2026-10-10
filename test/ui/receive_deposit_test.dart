@@ -38,7 +38,7 @@ final class _Wallet implements WalletBackend {
       ReadHistory() => const <WalletTransfer>[],
       ReadReceiveAddress() => const ReceiveAddress(address: 'subaddress-1', index: 1),
       ReadSubaddress(:final index) => ReceiveAddress(address: 'subaddress-$index', index: index),
-      ReadFileKey() => Uint8List(32),
+      ReadFileKeys() => FileKeys(key: Uint8List(32)),
       _ => null,
     };
     return answer as T;
@@ -71,7 +71,7 @@ void main() {
     await storage.prepareWalletFolder(MoneroNetwork.mainnet);
     File('${storage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
     final store = BridgeStore(storage.bridgePath);
-    await store.read(Uint8List(32));
+    await store.read(FileKeys(key: Uint8List(32)));
     await store.write([
       BridgeSwap(
         id: 'swap1',

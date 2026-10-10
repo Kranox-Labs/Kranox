@@ -33,12 +33,13 @@ const _deposit = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
 /// One more address from the examples of EIP-55, that took part in no swap.
 const _other = '0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb';
 
-/// A synced wallet whose history the test sets: the subaddress of each payment that came in. The first unlock gives the
-/// receive page subaddress #2.
+/// A wallet whose history the test sets: the subaddress of each payment that came in. The first unlock gives the
+/// receive page subaddress #2. It has caught up with its node unless the test says otherwise.
 final class _Wallet implements WalletBackend {
-  _Wallet(this.indexes);
+  _Wallet(this.indexes, {this.synchronized = true});
 
   final List<int> indexes;
+  final bool synchronized;
   int _subaddress = 1;
 
   @override
@@ -49,7 +50,7 @@ final class _Wallet implements WalletBackend {
         unlocked: XmrAmount.parse('10'),
         walletHeight: 100,
         nodeHeight: 100,
-        synchronized: true,
+        synchronized: synchronized,
         connection: NodeConnection.connected,
       ),
       ReadHistory() => [
@@ -72,7 +73,7 @@ final class _Wallet implements WalletBackend {
         index: _subaddress,
       ),
       ReadSubaddress(:final index) => ReceiveAddress(address: 'subaddress-$index', index: index),
-      ReadFileKey() => Uint8List(32),
+      ReadFileKeys() => FileKeys(key: Uint8List(32)),
       _ => null,
     };
     return answer as T;
@@ -162,6 +163,7 @@ final class _Scanner implements ChainScanClient {
       transactions: const [],
       tokenTransfers: const [],
       holdings: const [],
+      fundingSure: true,
     );
   }
 }
@@ -174,13 +176,13 @@ void main() {
   late _Scanner scanner;
 
   /// A wallet with payments to [indexes], whose bridge holds a payment from XMR to [_paid] two days ago, and [swaps].
-  Future<void> start(List<int> indexes, {List<BridgeSwap> swaps = const []}) async {
+  Future<void> start(List<int> indexes, {List<BridgeSwap> swaps = const [], bool synchronized = true}) async {
     root = Directory.systemTemp.createTempSync('kranox-receive-privacy');
     final storage = AppStorage(root.path);
     await storage.prepareWalletFolder(MoneroNetwork.mainnet);
     File('${storage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
     final store = BridgeStore(storage.bridgePath);
-    await store.read(Uint8List(32));
+    await store.read(FileKeys(key: Uint8List(32)));
     await store.write([
       BridgeSwap(
         direction: SwapDirection.pay,
@@ -196,7 +198,10 @@ void main() {
       ),
       ...swaps,
     ]);
-    wallet = WalletController(worker: _Wallet(indexes), storage: storage);
+    wallet = WalletController(
+      worker: _Wallet(indexes, synchronized: synchronized),
+      storage: storage,
+    );
     await wallet.start();
     await wallet.unlock('password');
     relay = _Relay();
@@ -333,6 +338,9 @@ void main() {
     await tester.pump();
     expect(find.text(Copy.addressCheckAgain), findsOneWidget);
     expect(find.text(Copy.bridgeCreate), findsOneWidget);
+    // Without its scan, the refund address is not checked, so the card says so instead of "All clear".
+    expect(find.text(Copy.privacyRefundUnchecked), findsOneWidget);
+    expect(find.text(Copy.privacyNotChecked(1)), findsOneWidget);
     await tester.tap(find.text(Copy.addressCheckAgain));
     await tester.pump();
     await tester.pump();
@@ -411,6 +419,14 @@ void main() {
     }
     expect(find.text(Copy.privacySubaddressUnused(3)), findsOneWidget);
     expect(find.text(Copy.privacyClear), findsOneWidget);
+  });
+
+  testWidgets('before the wallet caught up, a subaddress without a payment is not checked yet', (tester) async {
+    await tester.runAsync(() => start(const [], synchronized: false));
+    await show(tester, ReceivePage(controller: wallet, bridge: bridge));
+    expect(find.text(Copy.privacySubaddressUnchecked(2)), findsOneWidget);
+    expect(find.text(Copy.privacyNotChecked(1)), findsOneWidget);
+    expect(find.text(Copy.privacyClear), findsNothing);
   });
 
   testWidgets('one payment to the subaddress is a tip, since the same payer may pay again', (tester) async {

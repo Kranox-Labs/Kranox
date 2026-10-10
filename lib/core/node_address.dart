@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// The highest port number of TCP.
 const int _maxPort = 65535;
 
@@ -20,6 +22,16 @@ String parseNodeAddress(String text) {
   if (port < 1 || port > _maxPort) {
     throw const NodeAddressException();
   }
+  return value;
+}
+
+/// Checks the address of a SOCKS proxy, such as Tor at 127.0.0.1:9050: an IPv4 address, or an IPv6 address in
+/// brackets, then a colon and a port. wallet2 reads a proxy as an IP address only and refuses a host name, so the app
+/// takes none either: a host name that the relay took and the node refused left the node without the proxy, the
+/// sharp-edges scan of 10 Oct 2026 found. Gives the address without spaces around it.
+String parseProxyAddress(String text) {
+  final value = parseNodeAddress(text);
+  if (InternetAddress.tryParse(splitNodeAddress(value).host) == null) throw const NodeAddressException();
   return value;
 }
 

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../core/amount.dart';
 import '../core/unlock.dart';
 
@@ -112,4 +114,18 @@ final class SentPayment {
   final String transactionId;
   final XmrAmount amount;
   final XmrAmount fee;
+}
+
+/// The keys of the files of the app that belong to the open wallet, such as the swaps of the bridge (wallet O-007 of
+/// the second security review).
+final class FileKeys {
+  const FileKeys({required this.key, this.earlierKey});
+
+  /// The key that seals the files, from the secret spend key, which no holder of the view key has.
+  final Uint8List key;
+
+  /// The key of the files that builds before 10 Oct 2026 sealed, from the secret view key, while the wallet has not
+  /// yet recorded that its files are sealed with [key]. Null after it, when the store takes no file of an earlier form:
+  /// neither this one nor the plain file of a release before the seal (the sharp-edges scan of 10 Oct 2026).
+  final Uint8List? earlierKey;
 }

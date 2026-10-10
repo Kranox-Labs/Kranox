@@ -10,4 +10,12 @@ void main() {
     expect(passwordProblem('twelve-chars', 'twelve-chars'), isNull);
     expect(passwordProblem('twelve-chars', 'twelve-charz'), Copy.passwordMismatch);
   });
+
+  test('counts a character beyond the basic plane once, such as an emoji of two code units', () {
+    final six = '🔐' * 6;
+    expect(six.length, 12, reason: 'Dart counts code units');
+    expect(passwordProblem(six, six), Copy.passwordTooShort(12));
+    final twelve = '🔐' * 12;
+    expect(passwordProblem(twelve, twelve), isNull);
+  });
 }

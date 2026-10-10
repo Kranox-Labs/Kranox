@@ -1,14 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import '../core/file_cipher.dart';
+import '../wallet/models.dart' show FileKeys;
 import 'models.dart';
 
 /// The swaps of the bridge in a file of the support folder, so that the app follows a swap again after a restart.
 /// The file holds the id, the amounts, the addresses, and the read token of each swap, no key of the wallet. It is
 /// sealed with the key of the files of the open wallet (wallet O-007 of the second security review), so that it reads
-/// only while that wallet is open: the store reads it with the key, keeps the key for its writes, and forgets it when
+/// only while that wallet is open: the store reads it with the keys, keeps the key for its writes, and forgets it when
 /// the wallet locks.
 final class BridgeStore {
   BridgeStore(this.path);
@@ -25,23 +25,33 @@ final class BridgeStore {
   String? get recoveredFrom => _recoveredFrom;
   String? _recoveredFrom;
 
-  /// Reads the swaps with [key], the key of the files of the open wallet, and keeps the key for the writes after it.
+  /// Reads the swaps with [keys], the keys of the files of the open wallet, and keeps its key for the writes after it.
   /// A file that the app cannot read whole, after a crash, from a newer release, or of another wallet, moves aside
   /// with the time in its name, so that the app still starts and the file stays for support; the entries that read
-  /// stay. The plain file of a release before the seal is sealed now.
-  Future<List<BridgeSwap>> read(Uint8List key) async {
-    final cipher = _cipher = FileCipher(key, purpose: _purpose);
+  /// stay. While the keys hold the earlier key, a file of an earlier form is sealed again with the key: the plain file
+  /// of a release before the seal, or one under the earlier key. After it, either counts as a file that the app cannot
+  /// read, since the app writes neither any more (the sharp-edges scan of 10 Oct 2026).
+  Future<List<BridgeSwap>> read(FileKeys keys) async {
+    final cipher = _cipher = FileCipher(keys.key, purpose: _purpose);
+    final earlier = switch (keys.earlierKey) {
+      final key? => FileCipher(key, purpose: _purpose),
+      null => null,
+    };
     final file = File(path);
     if (!await file.exists()) return const [];
     final swaps = <BridgeSwap>[];
     var whole = true;
-    var plain = false;
+    var reseal = false;
     try {
       var data = jsonDecode(await file.readAsString());
       if (FileCipher.isSealed(data)) {
-        data = jsonDecode(cipher.open(data));
+        final (text, underEarlier) = _open(data, cipher, earlier);
+        data = jsonDecode(text);
+        reseal = underEarlier;
+      } else if (earlier == null) {
+        throw FormatException('The bridge file is plain, and the wallet seals its files.', path);
       } else {
-        plain = true;
+        reseal = true;
       }
       if (data is! List<Object?>) throw FormatException('The bridge file holds no list.', path);
       for (final item in data) {
@@ -60,10 +70,21 @@ final class BridgeStore {
       await file.rename(aside);
       _recoveredFrom = aside;
       await write(swaps);
-    } else if (plain) {
+    } else if (reseal) {
       await write(swaps);
     }
     return swaps;
+  }
+
+  /// The text of the sealed [data] under [cipher], or under [earlier] when there is one and [cipher] does not open it,
+  /// with whether it took [earlier].
+  static (String, bool) _open(Object? data, FileCipher cipher, FileCipher? earlier) {
+    try {
+      return (cipher.open(data), false);
+    } on FormatException {
+      if (earlier == null) rethrow;
+      return (earlier.open(data), true);
+    }
   }
 
   /// Forgets the key, as when the wallet locks. A write after it fails, until the next read.

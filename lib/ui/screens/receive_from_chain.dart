@@ -337,6 +337,7 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
               bridge.swaps,
               refund != null && _checkedRefund == refund ? _refundReport : null,
               DateTime.now(),
+              scanning: bridge.scanner != null,
             ),
           ),
           const SizedBox(height: Metrics.gap),
@@ -370,8 +371,15 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
 /// The rules of the privacy check of a receive from Robinhood Chain: what ties the refund address [refund] to the user,
 /// from the swaps of the bridge ([swaps]) and, once it is in, from its scan ([report]), which also knows the receives
 /// whose coin it sent in and its public history; where to send the deposit from; and what to do once the XMR comes in.
-/// The owner asked on 10 Oct 2026 for privacy kept at its most.
-List<PrivacyRule> _receiveRules(String? refund, List<BridgeSwap> swaps, ChainPrivacyReport? report, DateTime now) {
+/// The owner asked on 10 Oct 2026 for privacy kept at its most. With a scan on offer ([scanning]), a refund address
+/// whose scan has not come in is not checked: only the scan knows its history.
+List<PrivacyRule> _receiveRules(
+  String? refund,
+  List<BridgeSwap> swaps,
+  ChainPrivacyReport? report,
+  DateTime now, {
+  required bool scanning,
+}) {
   final links = refund == null ? const <KranoxLink>[] : report?.kranox ?? kranoxLinks(refund, swaps);
   final paid = links.whereType<GotPay>().firstOrNull;
   final used = links.firstOrNull;
@@ -380,12 +388,18 @@ List<PrivacyRule> _receiveRules(String? refund, List<BridgeSwap> swaps, ChainPri
   return [
     PrivacyRule(
       label: Copy.privacyRefundRuleLabel,
-      state: refund != null && (used != null || history) ? RuleState.warning : RuleState.passed,
+      state: switch (refund) {
+        null => RuleState.passed,
+        _ when used != null || history => RuleState.warning,
+        _ when scanning && report == null => RuleState.unchecked,
+        _ => RuleState.passed,
+      },
       text: switch ((refund, paid, used)) {
         (null, _, _) => Copy.privacyRefundNone,
         (_, final pay?, _) => Copy.privacyRefundPaid(ago(pay)),
         (_, _, final receive?) => Copy.privacyRefundReused(ago(receive)),
         _ when history => Copy.privacyRefundHistory,
+        _ when scanning && report == null => Copy.privacyRefundUnchecked,
         _ => Copy.privacyRefundUnused,
       },
     ),

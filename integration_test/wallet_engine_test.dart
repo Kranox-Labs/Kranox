@@ -1,6 +1,6 @@
 // Runs the wallet without a window, with the real Monero library and a stagenet node: it makes a wallet, waits
 // until the wallet has caught up with the node, makes a subaddress, tries a payment that the balance does not cover,
-// reads the seed and the key of its files, locks the wallet and opens it again, and restores a second wallet from the
+// reads the seed and the keys of its files, records their seal across a lock, and restores a second wallet from the
 // same seed, which gives the same key.
 //
 // Run in apps/wallet, after sh tool/fetch_monero_c.sh: fvm flutter test integration_test/wallet_engine_test.dart
@@ -92,10 +92,21 @@ void main() {
     await controller.unlock(_password);
     expect(controller.phase, WalletPhase.open);
     final nodeHeight = controller.status.nodeHeight;
-    // The key of the files of the wallet, which seals the swaps of the bridge (O-007), comes from its view key.
-    final fileKey = await controller.readFileKey();
+    // The keys of the files of the wallet, which seal the swaps of the bridge (O-007): the key from its spend key, and
+    // the earlier one from its view key until the wallet records that its files are sealed, which a lock keeps.
+    final keys = await controller.readFileKeys();
+    final fileKey = keys.key;
     expect(fileKey, hasLength(32));
-    expect(await controller.readFileKey(), fileKey);
+    expect(keys.earlierKey, hasLength(32));
+    expect(keys.earlierKey, isNot(fileKey));
+    expect((await controller.readFileKeys()).key, fileKey);
+    await controller.markFilesSealed();
+    expect((await controller.readFileKeys()).earlierKey, isNull);
+    await controller.lock();
+    await controller.unlock(_password);
+    final reopened = await controller.readFileKeys();
+    expect(reopened.key, fileKey);
+    expect(reopened.earlierKey, isNull, reason: 'the wallet file keeps the record of the seal');
     await controller.shutdown();
 
     // A wallet restored from the seed derives the same subaddresses.
@@ -104,7 +115,7 @@ void main() {
     await restored.restore(seed: seed, restoreHeight: nodeHeight, password: _password);
     expect(restored.phase, WalletPhase.open);
     expect(restored.receiveAddress!.address, first.address);
-    expect(await restored.readFileKey(), fileKey, reason: 'the swaps of the bridge open again after a restore');
+    expect((await restored.readFileKeys()).key, fileKey, reason: 'the swaps of the bridge open again after a restore');
     await restored.shutdown();
 
     root.deleteSync(recursive: true);

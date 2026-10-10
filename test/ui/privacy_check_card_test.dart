@@ -70,6 +70,7 @@ ChainScan _freshScan(String address) => ChainScan(
   transactions: const [],
   tokenTransfers: const [],
   holdings: const [],
+  fundingSure: true,
 );
 
 /// An address that an exchange with a public name funded first, and that sent ETH to [_ownAddress] later.
@@ -102,6 +103,7 @@ ChainScan _linkedScan(String address) {
     ],
     tokenTransfers: const [],
     holdings: const [],
+    fundingSure: true,
   );
 }
 
@@ -142,6 +144,7 @@ ChainScan _fundedReceiveScan(String address) => ChainScan(
   ],
   tokenTransfers: const [],
   holdings: const [],
+  fundingSure: true,
 );
 
 /// A finished payment from XMR to [recipient] three days ago.
@@ -201,7 +204,7 @@ final class _Wallet implements WalletBackend {
         amount: XmrAmount(amountUnits),
         fee: XmrAmount.parse('0.00003'),
       ),
-      ReadFileKey() => Uint8List(32),
+      ReadFileKeys() => FileKeys(key: Uint8List(32)),
       _ => null,
     };
     return answer as T;
@@ -288,7 +291,7 @@ void main() {
     await storage.prepareWalletFolder(MoneroNetwork.mainnet);
     File('${storage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
     final store = BridgeStore(storage.bridgePath);
-    await store.read(Uint8List(32));
+    await store.read(FileKeys(key: Uint8List(32)));
     await store.write(swaps);
     engine = _Wallet();
     wallet = WalletController(worker: engine, storage: storage);
@@ -387,11 +390,15 @@ void main() {
     scanner.hold = Completer<void>();
     await reviewPay(tester);
 
-    // The check starts with the review, without a click, and the payment waits for it.
+    // The check starts with the review, without a click, and the payment waits for it. Until it comes in, the rule of
+    // the address is not checked, so the card never says "All clear".
     expect(scanner.asked, [_chainRecipient.toLowerCase()]);
     expect(find.text(Copy.addressChecking), findsOneWidget);
     expect(find.text(Copy.addressCheckWait), findsOneWidget);
     expect(find.text(Copy.payNow), findsNothing);
+    expect(find.text(Copy.privacyAddressUnchecked), findsOneWidget);
+    expect(find.text(Copy.privacyNotChecked(1)), findsOneWidget);
+    expect(find.text(Copy.privacyClear), findsNothing);
 
     scanner.hold!.complete();
     await settle(tester);
@@ -399,6 +406,7 @@ void main() {
     expect(find.text(Copy.payRecipientFreshNote), findsOneWidget);
     expect(find.text(Copy.addressChecking), findsNothing);
     expect(find.text(Copy.payNow), findsOneWidget);
+    expect(find.text(Copy.privacyAddressClear), findsOneWidget);
   });
 
   testWidgets('pay checks a recipient that an exchange funded and that dealt with an address of the user', (

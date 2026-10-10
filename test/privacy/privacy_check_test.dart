@@ -278,6 +278,7 @@ void main() {
         ],
         tokenTransfers: const [],
         holdings: const [],
+        fundingSure: true,
       );
       final report = _check('0.5', swaps: [receive], chain: _pay(250));
       expect(report.ownAddress, isNull, reason: 'the records alone do not know who sent the coin in');

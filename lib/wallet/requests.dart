@@ -114,9 +114,15 @@ final class ReadSeed extends WalletRequest {
   final String password;
 }
 
-/// Gives the key of the files of the app that belong to the open wallet, such as the swaps of the bridge.
-final class ReadFileKey extends WalletRequest {
-  const ReadFileKey();
+/// Gives the keys of the files of the app that belong to the open wallet, such as the swaps of the bridge.
+final class ReadFileKeys extends WalletRequest {
+  const ReadFileKeys();
+}
+
+/// Records in the wallet that its files are sealed with the key that [ReadFileKeys] gives, so that the app takes no
+/// file of an earlier form after it.
+final class MarkFilesSealed extends WalletRequest {
+  const MarkFilesSealed();
 }
 
 /// Writes the state of the wallet to its file.

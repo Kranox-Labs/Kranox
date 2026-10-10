@@ -11,6 +11,7 @@ import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/bridge/store.dart';
 import 'package:kranox_wallet/config/app_config.dart';
 import 'package:kranox_wallet/config/network.dart';
+import 'package:kranox_wallet/core/file_cipher.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
 import 'package:kranox_wallet/wallet/failure.dart';
 import 'package:kranox_wallet/wallet/models.dart';
@@ -31,8 +32,16 @@ const _otherRecipient = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
 /// A deposit address of the exchanger on Robinhood Chain for the sample swaps, in lowercase, which carries no checksum.
 const _chainDeposit = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984';
 
-/// The key of the files of the sample wallet.
+/// The key of the files of the sample wallet, and the key of the builds before 10 Oct 2026, under the view key.
 final _fileKey = Uint8List.fromList(List.filled(32, 7));
+final _earlierKey = Uint8List.fromList(List.filled(32, 9));
+
+/// The keys of the sample wallet once it recorded that its files are sealed, and before it did.
+final _keys = FileKeys(key: _fileKey);
+final _firstKeys = FileKeys(key: _fileKey, earlierKey: _earlierKey);
+
+/// The purpose of the seal of the swaps, as the store gives it.
+const _bridgePurpose = 'kranox/bridge/1';
 
 /// A wallet engine that opens every wallet, hands out subaddresses with rising indexes, and builds and sends payments
 /// with a fixed fee.
@@ -47,6 +56,9 @@ final class _SampleWallet implements WalletBackend {
 
   /// The refusal of wallet2 for the next send, when a test wants one.
   WalletException? confirmFailure;
+
+  /// Whether the wallet recorded that its files are sealed, after which it gives no earlier key.
+  bool filesSealed = false;
 
   @override
   Future<T> call<T>(WalletRequest request) async {
@@ -70,10 +82,16 @@ final class _SampleWallet implements WalletBackend {
         fee: XmrAmount.parse('0.00003'),
       ),
       ConfirmSend() => SentPayment(transactionId: 'c4f27a91', amount: _prepared!.amount, fee: _prepared!.fee),
-      ReadFileKey() => _fileKey,
+      ReadFileKeys() => filesSealed ? _keys : _firstKeys,
+      MarkFilesSealed() => _markFilesSealed(),
       _ => null,
     };
     return answer as T;
+  }
+
+  Null _markFilesSealed() {
+    filesSealed = true;
+    return null;
   }
 
   @override
@@ -297,15 +315,15 @@ void main() {
     final newer = {...good, 'id': 'newer1', 'direction': 'swap-of-a-newer-release'};
     File(path).writeAsStringSync(jsonEncode([good, newer, 'no object']));
     final store = BridgeStore(path);
-    final swaps = await store.read(_fileKey);
+    final swaps = await store.read(_firstKeys);
     expect(swaps.map((swap) => swap.id), ['good1']);
     expect(store.recoveredFrom, isNotNull);
     expect(File(store.recoveredFrom!).existsSync(), isTrue, reason: 'the damaged file stays for support');
-    expect((await BridgeStore(path).read(_fileKey)).single.id, 'good1', reason: 'the file now holds what the app read');
+    expect((await BridgeStore(path).read(_keys)).single.id, 'good1', reason: 'the file now holds what the app read');
 
     File(path).writeAsStringSync('[{"id": "cut in the mid');
     final cut = BridgeStore(path);
-    expect(await cut.read(_fileKey), isEmpty, reason: 'a file cut by a crash still lets the app start');
+    expect(await cut.read(_keys), isEmpty, reason: 'a file cut by a crash still lets the app start');
     expect(cut.recoveredFrom, isNotNull);
   });
 
@@ -324,13 +342,13 @@ void main() {
       createdAt: DateTime.utc(2026, 10, 7),
       stage: SwapStage.waiting,
     );
-    await store.read(_fileKey);
+    await store.read(_keys);
     await Future.wait([
       store.write([swap('a')]),
       store.write([swap('a'), swap('b')]),
       store.write([swap('c')]),
     ]);
-    expect((await store.read(_fileKey)).map((saved) => saved.id), ['c']);
+    expect((await store.read(_keys)).map((saved) => saved.id), ['c']);
     expect(File('${root.path}/bridge.json.tmp').existsSync(), isFalse);
   });
 
@@ -346,7 +364,7 @@ void main() {
     final root = Directory.systemTemp.createTempSync('kranox-bridge-store');
     addTearDown(() => root.deleteSync(recursive: true));
     final store = BridgeStore('${root.path}/bridge.json');
-    expect(await store.read(_fileKey), isEmpty);
+    expect(await store.read(_keys), isEmpty);
     final swap = BridgeSwap(
       id: 'abc123',
       asset: BridgeAsset.usdg,
@@ -359,7 +377,7 @@ void main() {
       stage: SwapStage.waiting,
     ).withState(const SwapState(stage: SwapStage.sending, amountOut: 0.0268, depositHash: '0xhash'));
     await store.write([swap]);
-    final read = (await store.read(_fileKey)).single;
+    final read = (await store.read(_keys)).single;
     expect(read.toJson(), swap.toJson());
     expect(read.stage, SwapStage.sending);
     expect(read.amountOut, 0.0268);
@@ -385,23 +403,60 @@ void main() {
       );
       File(path).writeAsStringSync(jsonEncode([swap.toJson()]));
       final store = BridgeStore(path);
-      expect((await store.read(_fileKey)).single.id, 'plain1');
+      expect((await store.read(_firstKeys)).single.id, 'plain1');
       expect(store.recoveredFrom, isNull);
       final sealed = File(path).readAsStringSync();
       for (final secret in ['plain1', 'subaddress-3', _chainDeposit, 'token-plain1']) {
         expect(sealed, isNot(contains(secret)), reason: 'the file holds no $secret in plain text');
       }
-      expect((await BridgeStore(path).read(_fileKey)).single.id, 'plain1');
+      expect((await BridgeStore(path).read(_keys)).single.id, 'plain1');
 
       store.close();
       expect(() => store.write([swap]), throwsStateError, reason: 'no write while no wallet is open');
 
       final otherWallet = BridgeStore(path);
-      expect(await otherWallet.read(Uint8List(32)), isEmpty, reason: 'the swaps of another wallet stay closed');
+      expect(
+        await otherWallet.read(FileKeys(key: Uint8List(32), earlierKey: Uint8List(32))),
+        isEmpty,
+        reason: 'the swaps of another wallet stay closed',
+      );
       expect(otherWallet.recoveredFrom, isNotNull);
       expect(File(otherWallet.recoveredFrom!).readAsStringSync(), sealed, reason: 'the file stays for support');
     },
   );
+
+  test('takes a file of an earlier form only until the wallet records its seal, then keeps it aside', () async {
+    final root = Directory.systemTemp.createTempSync('kranox-bridge-earlier');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final path = '${root.path}/bridge.json';
+    final swap = BridgeSwap(
+      id: 'early1',
+      asset: BridgeAsset.eth,
+      amount: 0.0055,
+      xmrAmount: 0.0275,
+      depositAddress: _chainDeposit,
+      payoutAddress: 'subaddress-3',
+      subaddressIndex: 3,
+      createdAt: DateTime.utc(2026, 10, 7),
+      stage: SwapStage.waiting,
+    );
+    final plain = jsonEncode([swap.toJson()]);
+    final underEarlierKey = FileCipher(_earlierKey, purpose: _bridgePurpose).seal(plain);
+
+    // A file that a build before 10 Oct 2026 sealed under the view key opens once, and the store seals it again.
+    File(path).writeAsStringSync(underEarlierKey);
+    expect((await BridgeStore(path).read(_firstKeys)).single.id, 'early1');
+    expect((await BridgeStore(path).read(_keys)).single.id, 'early1', reason: 'the file holds the seal of the key');
+
+    // Once the wallet recorded its seal, the app writes neither form, so either one is a file that it cannot read.
+    for (final planted in [plain, underEarlierKey]) {
+      File(path).writeAsStringSync(planted);
+      final store = BridgeStore(path);
+      expect(await store.read(_keys), isEmpty, reason: planted);
+      expect(store.recoveredFrom, isNotNull);
+      expect(File(store.recoveredFrom!).readAsStringSync(), planted, reason: 'the file stays for support');
+    }
+  });
 
   test('keeps the furthest step when a swap fails, and follows a failed swap until its card closes', () {
     final swap = BridgeSwap(
@@ -548,6 +603,16 @@ void main() {
       root.deleteSync(recursive: true);
     });
 
+    test('records in the wallet that its files are sealed, once, after the store has read them', () async {
+      expect(engine.requests.whereType<MarkFilesSealed>(), hasLength(1));
+      expect(engine.filesSealed, isTrue);
+      await wallet.lock();
+      await wallet.unlock('password');
+      await _quoteSettles();
+      expect(engine.requests.whereType<ReadFileKeys>(), hasLength(2), reason: 'the swaps open again at the unlock');
+      expect(engine.requests.whereType<MarkFilesSealed>(), hasLength(1), reason: 'the record stays in the wallet');
+    });
+
     test('quotes an amount and allows a swap only above the minimum', () async {
       expect(bridge.available, isTrue);
       expect(bridge.minimum, isNull);
@@ -598,7 +663,7 @@ void main() {
       expect(bridge.activeSwap, isNull);
       expect(bridge.swaps.single.stage, SwapStage.finished);
       expect(bridge.swaps.single.amountOut, 0.0274);
-      final saved = await BridgeStore(storage.bridgePath).read(_fileKey);
+      final saved = await BridgeStore(storage.bridgePath).read(_keys);
       expect(saved.single.stage, SwapStage.finished);
     });
 
@@ -631,8 +696,27 @@ void main() {
       expect(swap.readToken, 'token-swap1');
       await bridge.refresh();
       expect(exchanger.readTokens.last, 'token-swap1');
-      expect((await BridgeStore(storage.bridgePath).read(_fileKey)).single.readToken, 'token-swap1');
+      expect((await BridgeStore(storage.bridgePath).read(_keys)).single.readToken, 'token-swap1');
     });
+
+    test(
+      'takes the refund address that ChangeNOW recorded in another case, and no other address (wallet O-003)',
+      () async {
+        bridge.setAmount('0.0055');
+        await _quoteSettles();
+        const refund = '0x57f31ad4b64095347F87eDB1675566DAfF5EC886';
+        exchanger.swapRefundOverride = refund.toLowerCase();
+        final swap = await bridge.createSwap(refundAddress: refund);
+        expect(swap.refundAddress, refund, reason: 'the swap keeps the address as the user gave it');
+        exchanger.swapRefundOverride = '0x0000000000000000000000000000000000000001';
+        bridge.setAmount('0.006');
+        await _quoteSettles();
+        await expectLater(
+          bridge.createSwap(refundAddress: refund),
+          throwsA(isA<BridgeException>().having((error) => error.detail, 'detail', contains('another refund address'))),
+        );
+      },
+    );
 
     test('shows an ended swap until its card closes', () async {
       bridge.setAmount('0.0055');
@@ -647,7 +731,7 @@ void main() {
       await bridge.closeSwap(swap.id);
       expect(bridge.openSwapsOf(SwapDirection.receive), isEmpty);
       expect(bridge.activeSwap, isNull);
-      expect((await BridgeStore(storage.bridgePath).read(_fileKey)).single.closed, isTrue);
+      expect((await BridgeStore(storage.bridgePath).read(_keys)).single.closed, isTrue);
     });
 
     test('keeps every swap that runs open, and an expired one until its card closes', () async {
@@ -759,7 +843,7 @@ void main() {
       exchanger.stage = SwapStage.finished;
       await bridge.refresh();
       expect(bridge.activeSwapOf(SwapDirection.pay), isNull);
-      final saved = (await BridgeStore(storage.bridgePath).read(_fileKey)).single;
+      final saved = (await BridgeStore(storage.bridgePath).read(_keys)).single;
       expect(saved.direction, SwapDirection.pay);
       expect(saved.stage, SwapStage.finished);
     });
@@ -960,12 +1044,12 @@ void main() {
       engine.holdConfirm = Completer<void>();
       final confirming = pay.confirm(password: 'password');
       await pumpEventQueue();
-      final before = (await BridgeStore(storage.bridgePath).read(_fileKey)).single;
+      final before = (await BridgeStore(storage.bridgePath).read(_keys)).single;
       expect(before.id, review.created.id, reason: 'a quit now keeps the exchange id');
       expect(before.depositHash, isNull);
       engine.holdConfirm!.complete();
       final swap = await confirming;
-      final after = (await BridgeStore(storage.bridgePath).read(_fileKey)).single;
+      final after = (await BridgeStore(storage.bridgePath).read(_keys)).single;
       expect(after.id, swap.id);
       expect(after.depositHash, 'c4f27a91');
     });
@@ -979,7 +1063,7 @@ void main() {
       engine.confirmFailure = const WalletException(WalletFailure.notEnoughUnlocked, 'not enough money');
       await expectLater(pay.confirm(password: 'password'), throwsA(isA<WalletException>()));
       expect(bridge.swapsOf(SwapDirection.pay), isEmpty);
-      expect(await BridgeStore(storage.bridgePath).read(_fileKey), isEmpty);
+      expect(await BridgeStore(storage.bridgePath).read(_keys), isEmpty);
     });
 
     test('drops the review when the wallet locks, because the wallet drops its payment', () async {

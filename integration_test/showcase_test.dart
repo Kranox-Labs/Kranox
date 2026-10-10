@@ -158,7 +158,7 @@ final class _SampleBackend implements WalletBackend {
       ),
       ConfirmSend() => _send(),
       CancelSend() => null,
-      ReadFileKey() => Uint8List(32),
+      ReadFileKeys() => FileKeys(key: Uint8List(32)),
       ReadHistory() => _history,
       ReadStatus() => WalletStatus(
         balance: _xmr('1286.4219'),

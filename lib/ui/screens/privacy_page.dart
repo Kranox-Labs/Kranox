@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../bridge/chain_scan.dart' show LabelSource;
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
 import '../../config/app_config.dart';
@@ -445,7 +446,11 @@ PrivacyCheck _fundingCheck(FirstFunding? funding, {required bool sure, required 
     null when !sure => Copy.privacyFundingUnsureLine,
     null => Copy.privacyFundingNoneLine,
     FirstFunding(links: true, fromOwn: true) => Copy.privacyFundingOwnLine,
-    FirstFunding(links: true, :final label?) => Copy.privacyFundingNamedLine(label),
+    FirstFunding(links: true, :final label?, :final labelSource) => switch (labelSource) {
+      LabelSource.tag => Copy.privacyFundingNamedLine(label),
+      LabelSource.contract => Copy.privacyFundingContractLine(label),
+      LabelSource.domain => Copy.privacyFundingDomainLine(label),
+    },
     FirstFunding(sure: false) => Copy.privacyFundingUnsureLine,
     FirstFunding(fromPay: _?) => Copy.privacyFundingPayLine,
     FirstFunding() => Copy.privacyFundingPlainLine,
@@ -457,10 +462,11 @@ PrivacyCheck _fundingCheck(FirstFunding? funding, {required bool sure, required 
       shortText(transfer.from.address),
       formatTime(transfer.time, now),
     ),
-    FirstFunding(links: true, :final label?, :final transfer) => Copy.privacyFundingNamed(
-      label,
-      formatTime(transfer.time, now),
-    ),
+    FirstFunding(links: true, :final label?, :final labelSource, :final transfer) => switch (labelSource) {
+      LabelSource.tag => Copy.privacyFundingNamed(label, formatTime(transfer.time, now)),
+      LabelSource.contract => Copy.privacyFundingContract(label, formatTime(transfer.time, now)),
+      LabelSource.domain => Copy.privacyFundingDomain(label, formatTime(transfer.time, now)),
+    },
     FirstFunding(sure: false, :final transfer) => Copy.privacyFundingUnsure(
       shortText(transfer.from.address),
       formatTime(transfer.time, now),

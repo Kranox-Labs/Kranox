@@ -157,7 +157,10 @@ class _SendToChainState extends State<SendToChain> {
   PrivacyReport _withRecipientScan(PrivacyReport report, PayReview review) {
     final recipient = review.created.payoutAddress;
     final scanned = _checkedRecipient == recipient ? _recipientReport : null;
-    if (scanned == null) return report;
+    // While the scan runs, or after it failed, the rule of the address has not read what it needs.
+    if (scanned == null) {
+      return widget.bridge.scanner == null ? report : report.withOwnAddress(report.ownAddress, checked: false);
+    }
     return report.withOwnAddress(
       ownAddressOf(
         recipient,
