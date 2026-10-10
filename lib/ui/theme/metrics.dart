@@ -47,10 +47,12 @@ abstract final class Metrics {
   static const EdgeInsets centeredPagePadding = EdgeInsets.fromLTRB(pagePaddingX, 64, pagePaddingX, pagePaddingY);
 
   /// The board of the menu Privacy, a dashboard in the middle of the page that the owner chose on 8 Oct 2026: its
-  /// column, the least width for its two columns of tiles, and the room inside a tile.
+  /// column, the room inside a row of a check, the room between the mark of a check and its text, and the room inside
+  /// the tag beside the title of a check.
   static const double boardWidth = 760;
-  static const double boardTwoColumns = 560;
   static const double tilePadding = 18;
+  static const double checkMarkGap = gapSmall + 2;
+  static const EdgeInsets tagPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 3);
 
   /// The ring at the head of a board, with one part for each check: its size, its stroke, and the room between two
   /// parts.

@@ -66,10 +66,12 @@ WalletPrivacyReport _check({
   List<WalletTransfer> transfers = const [],
   List<BridgeSwap> swaps = const [],
   String balance = '10',
+  int? receiveIndex,
 }) => checkWallet(
   node: node,
   proxy: proxy,
   transfers: transfers,
+  receiveIndex: receiveIndex,
   swaps: swaps,
   // The parser refuses an amount of 0, which a balance can be.
   balance: balance == '0' ? XmrAmount.zero : XmrAmount.parse(balance),
@@ -140,6 +142,19 @@ void main() {
     expect(report.toImprove, 1);
   });
 
+  test('a reused subaddress counts as something to improve only while the receive page gives it out', () {
+    final transfers = [_transfer('a1', index: 2), _transfer('a2', index: 2), _transfer('b1', index: 3)];
+    final inUse = _check(node: '127.0.0.1:18081', transfers: transfers, receiveIndex: 2);
+    expect(inUse.reused.single.inUse, isTrue);
+    expect(inUse.toImprove, 1);
+
+    // A new subaddress on the receive page leaves the reuse in the history only.
+    final movedOn = _check(node: '127.0.0.1:18081', transfers: transfers, receiveIndex: 4);
+    expect(movedOn.reused.single.inUse, isFalse);
+    expect(movedOn.reuseInUse, isFalse);
+    expect(movedOn.toImprove, 0);
+  });
+
   test('pairs a receive and a later payment that sit close in time or amount', () {
     final receive = _swap(
       'receive',
@@ -162,6 +177,7 @@ void main() {
     final pairs = {for (final pair in report.pairs) pair.pay.id: (pair.closeInTime, pair.closeInAmount)};
     expect(pairs, {'both': (true, true), 'time': (true, false), 'amount': (false, true)});
     expect(report.pairs.first.pay.id, 'amount', reason: 'the newest payment first');
+    expect(report.toImprove, 1, reason: 'a pair is already on the chain, a note, and only the public node counts');
   });
 
   test('leaves out a receive that the user never paid into and a payment whose XMR never left', () {
@@ -206,6 +222,7 @@ void main() {
     expect(report.links.single.address, _address);
     expect(report.links.single.receivedAt, _now.subtract(const Duration(days: 9)));
     expect(report.links.single.paidAt, _now.subtract(const Duration(days: 4)));
+    expect(report.toImprove, 1, reason: 'a linked refund address is a note, and only the public node counts');
   });
 
   test('notes new XMR in the balance, and when all of it is older', () {
