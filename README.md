@@ -15,9 +15,9 @@ Robinhood Chain as XMR. ChangeNOW handles each exchange.
 - **Kranox 0.2.0** is the current release. Get it from
   [the latest release](https://github.com/Kranox-Labs/Kranox/releases/latest) or from
   [kranox.cash/downloads](https://kranox.cash/downloads).
-- **Kranox 0.3.1 beta** holds the privacy check, the menu Privacy, and the fixes of the first
-  [security review](#audit). Get it from
-  [its release page](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.1), and start with small amounts.
+- **Kranox 0.3.2 beta** holds the privacy check, the menu Privacy, and the fixes of the
+  [security reviews](#audit). Get it from
+  [its release page](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.2), and start with small amounts.
 
 Kranox runs on macOS 12 or later, on Apple Silicon and Intel. Apple has not notarized it yet, so macOS blocks it
 the first time. To open it, go to System Settings, then Privacy & Security, and click "Open Anyway" next to the
@@ -49,6 +49,8 @@ The fingerprint of the key is `A874 6F51 F58D 8E30 C23B 8158 439F 7602 F0C5 53D1
   away.
 - From 0.3.1, reach your node through a proxy such as Tor, and scan the code of a deposit from Robinhood Chain as
   a payment link that names the chain, the coin, and the amount.
+- From 0.3.2, the proxy covers the relay too, a privacy check runs before each receive from Robinhood Chain and as
+  each review opens, each open swap has a page of its own, and the file of your swaps on the Mac is encrypted.
 
 ## The relay
 
@@ -56,14 +58,14 @@ The app reaches ChangeNOW through the [Kranox relay](https://github.com/Kranox-L
 holds the partner key of ChangeNOW, so that the key never sits in the app. The relay keeps no log of a request.
 It sees the addresses and the amounts of a swap, as ChangeNOW does, and never your keys or your balance. For a
 scan of an address on Robinhood Chain, it sees that address and asks the explorer for you, so the explorer never
-sees your IP address. From 0.3.1 the app trusts an answer of the relay only with the signature of its key. The
-proxy in Settings covers the node only, so the relay still sees your IP address, as the
-[second review](#second-review-kranox-031) notes.
+sees your IP address. From 0.3.1 the app trusts an answer of the relay only with the signature of its key, and from
+0.3.2 that signature also covers the request that it answers. From 0.3.2 the proxy in Settings, such as Tor, covers
+the relay as well as the node, so the relay sees the address of the proxy, not yours.
 
 ## Audit
 
-Kranox has two security reviews, each made with the skills of a different firm. Neither review is an audit by that
-firm.
+Kranox has two security reviews, each made with the skills of a different firm, and a scan of the code after the
+second one. None of them is an audit by a firm.
 
 ### First review: Kranox 0.2.0
 
@@ -116,15 +118,41 @@ new. None of them lets an attacker on the internet take funds or keys from a wal
 | No severity | 1 | 0 | 1 |
 | Total | 17 | 9 | 8 |
 
-The new Medium findings are open:
+The new Medium findings are fixed:
 
-- The app reaches the relay without the proxy of Settings, so Tor hides your IP address from the node only.
-- The signature of an answer of the relay does not bind the request that it answers. The review found this gap in
+- The app reached the relay without the proxy of Settings, so Tor hid your IP address from the node only.
+- The signature of an answer of the relay did not bind the request that it answered. The review found this gap in
   the wallet and in the relay.
-- The file of your swaps on the Mac is not encrypted.
+- The file of your swaps on the Mac was not encrypted.
 
-The full report gives every finding with its impact and its plan:
+The fixes of the wallet ship in Kranox 0.3.2 beta, and the relay runs its fixes from 9 Oct 2026. Of the 9 new
+findings, 8 are fixed and one is partly fixed: a new password needs 12 characters, and more rounds of the key
+function wait for more research.
+
+The full report gives every finding with its impact and its fix:
 [audit/security-review-consensys-0.3.1.md](audit/security-review-consensys-0.3.1.md).
+
+### Third scan: the code after 0.3.1
+
+Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 10 Oct 2026, at the commit `630c1ea`
+of the wallet and the commit `c30fc70` of the relay. Not an audit by Trail of Bits.
+
+Claude ran the skill `sharp-edges` in Claude Code on the code that the wallet and the relay gained after the second
+review, and wrote every finding. No person at Trail of Bits or at another firm read the code. The skill looks for
+designs that make mistakes easy, such as dangerous defaults and silent failures.
+
+The scan found 13 findings: 1 High, 3 Medium, and 9 Low, and nothing Critical. None of them lets an attacker on the
+internet take funds or keys from a wallet. Every one is fixed. The fixes of the wallet ship in Kranox 0.3.2 beta,
+and the relay runs its fixes after its next deploy.
+
+- High: a proxy given by its name, such as `localhost:9050`, never reached the node, while the app said it did. The
+  proxy is now an IP address and a port, such as `127.0.0.1:9050`, and a proxy that the Monero library refuses
+  keeps the wallet away from its node.
+- Medium: a privacy check could say "All clear" while the scan behind it failed, and the relay could call a first
+  funding sure when the explorer had missed part of it.
+
+The full report gives every finding with its impact and its fix:
+[audit/security-review-sharp-edges-2026-10-10.md](audit/security-review-sharp-edges-2026-10-10.md).
 
 ## Build from source
 
