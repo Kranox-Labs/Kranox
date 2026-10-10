@@ -17,6 +17,9 @@ enum WalletFailure {
   /// The node asked for a network fee above the most that the app pays; the wallet dropped the payment: nothing was
   /// sent. The detail holds the fee in XMR.
   feeTooHigh,
+
+  /// wallet2 refused the proxy, so the wallet stays away from its node until the user sets another one.
+  proxyRefused,
   native,
 }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../bridge/chain_scan.dart' show LabelSource;
 import '../../privacy/chain_privacy.dart';
 import '../copy.dart';
 import '../format.dart';
@@ -136,7 +137,14 @@ List<(CheckState, String)> _lines(ChainPrivacyReport report, DateTime now) {
       CheckState.warning,
       Copy.payRecipientFundedOwn(shortText(transfer.from.address), day),
     ),
-    FirstFunding(links: true, :final label?) => (CheckState.warning, Copy.payRecipientFundedNamed(label, day)),
+    FirstFunding(links: true, :final label?, :final labelSource) => (
+      CheckState.warning,
+      switch (labelSource) {
+        LabelSource.tag => Copy.payRecipientFundedNamed(label, day),
+        LabelSource.contract => Copy.payRecipientFundedContract(label, day),
+        LabelSource.domain => Copy.payRecipientFundedDomain(label, day),
+      },
+    ),
     FirstFunding(sure: false) => (CheckState.note, Copy.payRecipientFundedUnsure(day)),
     FirstFunding(fromPay: _?) => (CheckState.good, Copy.payRecipientFundedByPay(day)),
     FirstFunding() => (CheckState.good, Copy.payRecipientFundedPlain(day)),

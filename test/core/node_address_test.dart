@@ -23,6 +23,14 @@ void main() {
     }
   });
 
+  test('takes a proxy as an IP address and a port only, as wallet2 does', () {
+    expect(parseProxyAddress(' 127.0.0.1:9050 '), '127.0.0.1:9050');
+    expect(parseProxyAddress('[::1]:9150'), '[::1]:9150');
+    for (final text in ['localhost:9050', 'tor.example.org:9050', '999.1.1.1:9050', '127.0.0.1', '']) {
+      expect(() => parseProxyAddress(text), throwsA(isA<NodeAddressException>()), reason: text);
+    }
+  });
+
   test('splits an address into its host and its port', () {
     expect(splitNodeAddress(' 127.0.0.1:9050 '), (host: '127.0.0.1', port: 9050));
     expect(splitNodeAddress('[::1]:9150'), (host: '::1', port: 9150));

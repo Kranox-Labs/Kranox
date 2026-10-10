@@ -6,17 +6,24 @@ import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/node_address.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
 import 'package:kranox_wallet/wallet/models.dart';
+import 'package:kranox_wallet/wallet/settings.dart';
+import 'package:kranox_wallet/wallet/failure.dart';
 import 'package:kranox_wallet/wallet/requests.dart';
 import 'package:kranox_wallet/wallet/storage.dart';
 import 'package:kranox_wallet/wallet/worker.dart';
 
-/// A wallet engine that opens every wallet and keeps the requests it gets, so that a test can check them.
+/// A wallet engine that opens every wallet and keeps the requests it gets, so that a test can check them. With
+/// [refusesProxies], it refuses every proxy as wallet2 refuses one that it cannot read.
 final class _RecordingBackend implements WalletBackend {
   final List<WalletRequest> requests = [];
+  bool refusesProxies = false;
 
   @override
   Future<T> call<T>(WalletRequest request) async {
     requests.add(request);
+    if (request is ConnectNode && request.proxy != null && refusesProxies) {
+      throw const WalletException(WalletFailure.proxyRefused, 'Failed to parse proxy address');
+    }
     final Object? answer = switch (request) {
       ReadReceiveAddress() || ReadSubaddress() => const ReceiveAddress(address: 'sample', index: 1),
       ReadHistory() => const <WalletTransfer>[],
@@ -106,6 +113,23 @@ void main() {
     expect(controller.node, 'my.node:18081');
   });
 
+  test('makes and restores no wallet under a password shorter than the rule, whatever the screen checked', () async {
+    final controller = await started();
+    final short = '🔐' * 6;
+    expect(() => controller.create(short), throwsArgumentError);
+    expect(
+      () => controller.restore(seed: List.filled(25, 'abbey'), restoreHeight: 0, password: 'eleven-char'),
+      throwsArgumentError,
+    );
+    expect(backend.requests.whereType<CreateWallet>(), isEmpty);
+    expect(backend.requests.whereType<RestoreWallet>(), isEmpty);
+    try {
+      await controller.create('eleven-char');
+    } on ArgumentError catch (error) {
+      expect(error.toString(), isNot(contains('eleven-char')), reason: 'the error never holds the password');
+    }
+  });
+
   test('connects through a proxy such as Tor, and straight again without one (K-11)', () async {
     final controller = await started();
     await controller.unlock('password');
@@ -118,5 +142,22 @@ void main() {
     await controller.changeProxy('');
     expect(controller.proxy, isNull);
     expect(backend.requests.whereType<ConnectNode>().last.proxy, isNull);
+    expect(() => controller.changeProxy('localhost:9050'), throwsA(isA<NodeAddressException>()));
+  });
+
+  test('a proxy that wallet2 refuses leaves the wallet open and away from its node, and says so', () async {
+    await storage.writeSettings(const AppSettings().withProxy('127.0.0.1:9050'));
+    backend.refusesProxies = true;
+    final controller = await started();
+    await controller.unlock('password');
+    expect(controller.phase, WalletPhase.open, reason: 'the user can still reach the settings');
+    expect(controller.proxyRefused, isTrue);
+    await expectLater(
+      controller.changeProxy('127.0.0.1:9150'),
+      throwsA(isA<WalletException>().having((error) => error.failure, 'failure', WalletFailure.proxyRefused)),
+    );
+    backend.refusesProxies = false;
+    await controller.changeProxy('127.0.0.1:9150');
+    expect(controller.proxyRefused, isFalse);
   });
 }

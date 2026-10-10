@@ -4,7 +4,7 @@ import '../config/app_config.dart';
 
 /// The transfer that first brought coins to the scanned address.
 final class FirstFunding {
-  const FirstFunding({required this.transfer, required this.fromOwn, this.fromPay, this.sure = true});
+  const FirstFunding({required this.transfer, required this.fromOwn, required this.sure, this.fromPay});
 
   final ChainTransfer transfer;
 
@@ -20,8 +20,9 @@ final class FirstFunding {
   /// never counts as clean, though one that links still warns.
   final bool sure;
 
-  /// The public name of the sender, such as the name of an exchange.
+  /// The public name of the sender, such as the name of an exchange, and where it comes from.
   String? get label => transfer.from.label;
+  LabelSource get labelSource => transfer.from.labelSource;
 
   /// A funding from another address of the user, or from a sender with a public name, links the address to it; the
   /// payout of a payment of the user from XMR does not.

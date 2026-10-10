@@ -63,7 +63,7 @@ final class _Wallet implements WalletBackend {
         index: _subaddress,
       ),
       ReadSubaddress(:final index) => ReceiveAddress(address: 'subaddress-$index', index: index),
-      ReadFileKey() => Uint8List(32),
+      ReadFileKeys() => FileKeys(key: Uint8List(32)),
       _ => null,
     };
     return answer as T;
@@ -126,6 +126,7 @@ final class _Scanner implements ChainScanClient {
         ),
       ],
       holdings: const [],
+      fundingSure: true,
     );
   }
 }
@@ -152,6 +153,7 @@ final class _PlainScanner implements ChainScanClient {
     transactions: const [],
     tokenTransfers: const [],
     holdings: const [],
+    fundingSure: true,
   );
 }
 
@@ -175,6 +177,42 @@ final class _UnsureScanner implements ChainScanClient {
       firstFunding: plain.firstTransaction,
       fundingRead: true,
       fundingSure: false,
+    );
+  }
+}
+
+/// The scan of an address whose first funding the relay read for sure, from [_funder] under [label] of [source].
+final class _NamedFunderScanner implements ChainScanClient {
+  _NamedFunderScanner(this.label, this.source);
+
+  final String label;
+  final LabelSource source;
+
+  @override
+  Future<ChainScan> scanAddress(String address) async {
+    final plain = await _PlainScanner().scanAddress(address);
+    final funding = ChainTransfer(
+      hash: _fundingHash(address),
+      from: ChainParty(address: _funder, label: label, isContract: source == LabelSource.contract, labelSource: source),
+      to: ChainParty(address: address, label: null, isContract: false),
+      value: BigInt.from(5),
+      token: null,
+      time: plain.firstTransaction!.time,
+    );
+    return ChainScan(
+      address: plain.address,
+      isContract: false,
+      balanceWei: BigInt.zero,
+      transactionCount: plain.transactionCount,
+      tokenTransferCount: 0,
+      firstTransaction: funding,
+      firstTokenTransfer: null,
+      transactions: const [],
+      tokenTransfers: const [],
+      holdings: const [],
+      firstFunding: funding,
+      fundingRead: true,
+      fundingSure: true,
     );
   }
 }
@@ -240,7 +278,7 @@ void main() {
     File('${storage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
     final store = BridgeStore(storage.bridgePath);
     if (swaps.isNotEmpty) {
-      await store.read(Uint8List(32));
+      await store.read(FileKeys(key: Uint8List(32)));
       await store.write(swaps);
     }
     engine = _Wallet(indexes);
@@ -494,6 +532,35 @@ void main() {
     expect(find.text(Copy.privacyChainUnsureLead), findsOneWidget);
     expect(find.text(Copy.privacyClear), findsNothing);
     expect(find.text(Copy.privacyFundingUnsureLine), findsOneWidget);
+  });
+
+  testWidgets('a funder named by a contract or a domain reads as such on the tab of Robinhood Chain, and still warns', (
+    tester,
+  ) async {
+    await tester.runAsync(() => start([1, 2]));
+    for (final (label, source, line, detail) in [
+      ('Disperse', LabelSource.contract, Copy.privacyFundingContractLine('Disperse'), 'The contract Disperse funded'),
+      ('friend.eth', LabelSource.domain, Copy.privacyFundingDomainLine('friend.eth'), 'Anyone can register a domain'),
+    ]) {
+      final scans = ChainScans(_NamedFunderScanner(label, source));
+      addTearDown(scans.dispose);
+      // A new page each time, so that no open row of the last one carries over.
+      await tester.pumpWidget(const SizedBox());
+      await show(tester, scans: scans);
+      await tester.tap(find.text(Copy.privacyChainTab.toUpperCase()));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), _address);
+      await tester.tap(find.text(Copy.privacyChainScan));
+      for (var round = 0; round < 4; round++) {
+        await tester.pump();
+      }
+      expect(find.text(line), findsOneWidget, reason: label);
+      expect(find.text(Copy.privacyFundingNamedLine(label)), findsNothing, reason: label);
+      expect(find.text(Copy.privacyToImprove(1)), findsOneWidget, reason: 'a named funder still ties the address');
+      await tester.tap(find.text(Copy.privacyFundingTitle));
+      await tester.pumpAndSettle();
+      expect(find.textContaining(detail), findsOneWidget, reason: label);
+    }
   });
 
   testWidgets('the note on a refund address paid from XMR names it and scans it on the tab of Robinhood Chain', (

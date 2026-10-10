@@ -53,6 +53,7 @@ ChainScan _scan({
   transactions: transactions,
   tokenTransfers: tokenTransfers,
   holdings: holdings,
+  fundingSure: true,
 );
 
 BridgeSwap _swap(
@@ -336,7 +337,7 @@ void main() {
       answer(
         funding: {
           'hash': '0xinternal',
-          'from': {'address': _exchange, 'label': 'Disperse', 'isContract': true},
+          'from': {'address': _exchange, 'label': 'Disperse', 'labelSource': 'contract', 'isContract': true},
           'to': {'address': _me, 'label': null, 'isContract': false},
           'value': '1000000000000000',
           'token': null,
@@ -348,6 +349,13 @@ void main() {
     expect(funded.fundingRead, isTrue);
     expect(funded.fundingSure, isTrue);
     expect(funded.firstFunding!.from.isContract, isTrue);
+    expect(funded.firstFunding!.from.labelSource, LabelSource.contract);
+    ChainParty party(Object? source) =>
+        ChainParty.fromJson({'address': _exchange, 'label': 'x', 'labelSource': source, 'isContract': false});
+    expect(party('domain').labelSource, LabelSource.domain);
+    expect(party('tag').labelSource, LabelSource.tag);
+    expect(party(null).labelSource, LabelSource.tag, reason: 'a relay before 10 Oct 2026 names no source');
+    expect(party('a source of a newer relay').labelSource, LabelSource.tag);
     final none = ChainScan.fromJson(answer(sure: false));
     expect(none.fundingRead, isTrue);
     expect(none.firstFunding, isNull);

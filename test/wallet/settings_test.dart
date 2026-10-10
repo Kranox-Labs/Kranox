@@ -45,6 +45,14 @@ void main() {
     expect(read.nodeOf(MoneroNetwork.mainnet), AppConfig.defaultNode(MoneroNetwork.mainnet));
   });
 
+  test('reads the proxy of an earlier release as wallet2 does: localhost as its address, empty text as none', () {
+    AppSettings read(String proxy) => AppSettings.fromJson({'proxy': proxy});
+    expect(read('localhost:9050').proxy, '127.0.0.1:9050');
+    expect(read(' ').proxy, isNull);
+    expect(read('[::1]:9150').proxy, '[::1]:9150');
+    expect(() => read('tor.example.org:9050'), throwsFormatException, reason: 'wallet2 would refuse the name');
+  });
+
   test('rejects settings of the wrong form', () {
     for (final data in [
       'text',

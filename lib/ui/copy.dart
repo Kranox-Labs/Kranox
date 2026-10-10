@@ -59,8 +59,8 @@ abstract final class Copy {
   // The notice after the start moved a file that it could not read aside, K-09 of the security review of 0.2.0.
   static const String recoveryTitle = 'Kranox moved a damaged file aside';
   static String recoverySettings(String file) =>
-      'It could not read its settings, so it started with the defaults. Check your network and node in Settings. '
-      'The old file stays as $file.';
+      'It could not read its settings, so it started with the defaults and without a proxy. Check your network, node, '
+      'and proxy in Settings. The old file stays as $file.';
   static String recoverySwaps(String file) =>
       'It could not read every saved swap. The swaps that it could read stay, and the old file stays as $file.';
   static const String recoveryWalletsSafe = 'Your wallets and their keys live in other files, which did not change.';
@@ -144,6 +144,8 @@ abstract final class Copy {
   static const String privacyTitle = 'Privacy check';
   static const String privacyClear = 'All clear';
   static String privacyWarnings(int count) => count == 1 ? '1 warning' : '$count warnings';
+  // From 10 Oct 2026 a rule that could not read what it needs yet keeps the check from "All clear".
+  static String privacyNotChecked(int count) => count == 1 ? '1 not checked' : '$count not checked';
   static const String privacyAmountLabel = 'Amount';
   static const String privacyTimingLabel = 'Timing';
   static const String privacyAddressLabel = 'Address';
@@ -164,6 +166,8 @@ abstract final class Copy {
   // From 10 Oct 2026 the rule reads every swap of the recipient, and names ChangeNOW as the one that can tie them, as
   // the review of a receive does; the owner asked for privacy kept at its most.
   static const String privacyAddressClear = 'It ties this payment to none of your swaps.';
+  static const String privacyAddressUnchecked =
+      'Not checked on Robinhood Chain yet, so Kranox cannot tell whether it ties this payment to a swap of yours.';
   static String privacyAddressRefund(String day) =>
       'You gave it as the refund address of a receive on $day. Paying it from XMR lets ChangeNOW tie this payment to '
       'that receive.';
@@ -178,6 +182,8 @@ abstract final class Copy {
   // refund address of a receive from Robinhood Chain.
   static const String privacySubaddressLabel = 'Subaddress';
   static String privacySubaddressUnused(int index) => '#$index never took a payment. Give it to one payer only.';
+  static String privacySubaddressUnchecked(int index) =>
+      'The wallet is still reading its history, so Kranox cannot tell yet whether #$index took a payment.';
   static String privacySubaddressOnce(int index) =>
       '#$index took 1 payment. If someone else pays next, give them a new address.';
   static String privacySubaddressShared(int index, int payments) =>
@@ -189,6 +195,8 @@ abstract final class Copy {
   static const String privacyRefundNone =
       'You gave none, so this receive names no address of yours on Robinhood Chain.';
   static const String privacyRefundUnused = 'It took part in none of your swaps.';
+  static const String privacyRefundUnchecked =
+      'Not checked on Robinhood Chain yet, so Kranox cannot tell whether it ties this receive to you.';
   // The owner asked on 10 Oct 2026 that the warning name who can tie the two sides: ChangeNOW, which handled both.
   static String privacyRefundPaid(String ago) =>
       'ChangeNOW saw you pay it from XMR $ago. As the refund address here, it lets ChangeNOW tie this receive to that '
@@ -323,6 +331,10 @@ abstract final class Copy {
   static const String privacyFundingNoneLine = 'No first funding found';
   static const String privacyFundingOwnLine = 'Funded by an address of yours';
   static String privacyFundingNamedLine(String name) => 'Funded by $name';
+  // From 10 Oct 2026 the name of a sender says where it comes from: the name of a contract or a domain is no public tag
+  // (the sharp-edges scan of 10 Oct 2026).
+  static String privacyFundingContractLine(String name) => 'Funded through the contract $name';
+  static String privacyFundingDomainLine(String name) => 'Funded by the domain $name';
   static const String privacyFundingPlainLine = 'Funded by an address without a name';
   static const String privacyFundingPayLine = 'Funded by your payment from XMR';
   static const String privacyFundingUnsureLine = 'Not sure of its first funding';
@@ -349,6 +361,12 @@ abstract final class Copy {
       'Your address $sender funded it first on $day, so the two are linked in public.';
   static String privacyFundingNamed(String name, String day) =>
       '$name funded it first on $day. If $name knows who you are, it can tie you to this address.';
+  static String privacyFundingContract(String name, String day) =>
+      'The contract $name funded it first on $day. Its name says what the contract does, not who used it, and the '
+      'address that used it is tied to this one in public.';
+  static String privacyFundingDomain(String name, String day) =>
+      'The domain $name funded it first on $day. Anyone can register a domain, so the name may not be who it seems. '
+      'If its owner knows who you are, they can tie you to this address.';
   static String privacyFundingPlain(String sender, String day) =>
       '$sender funded it first on $day, and that address has no public name.';
   static String privacyFundingUnsure(String sender, String day) =>
@@ -625,6 +643,9 @@ abstract final class Copy {
   static const String payRecipientFresh = 'No public history yet';
   static const String payRecipientFreshNote = 'A clean start, if this address is yours.';
   static String payRecipientFundedNamed(String name, String day) => 'First funded by $name on $day';
+  static String payRecipientFundedContract(String name, String day) =>
+      'First funded through the contract $name on $day';
+  static String payRecipientFundedDomain(String name, String day) => 'First funded by the domain $name on $day';
   static String payRecipientFundedOwn(String address, String day) =>
       'First funded by $address, an address of yours, on $day';
   static String payRecipientFundedPlain(String day) => 'First funded on $day by an address without a name';
@@ -705,7 +726,10 @@ abstract final class Copy {
   static const String proxyNote =
       'With Tor on this Mac, 127.0.0.1:9050 carries the traffic to the node and to the relay through Tor. Leave it '
       'empty to reach both straight.';
-  static const String proxyInvalid = 'Enter the proxy as host:port, such as 127.0.0.1:9050.';
+  // From 10 Oct 2026 the proxy is an IP address and a port, the only form that wallet2 takes.
+  static const String proxyInvalid = 'Enter the proxy as an IP address and a port, such as 127.0.0.1:9050.';
+  static const String proxyRefused =
+      'The wallet could not use this proxy, so it stays away from its node until you set one that works.';
   static const String relayTitle = 'Relay';
   static const String relayLead =
       'The service of Kranox that talks to ChangeNOW when you receive from Robinhood Chain. It never sees your keys '

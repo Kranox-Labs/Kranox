@@ -9,6 +9,7 @@ import '../config/network.dart';
 import '../core/evm_address.dart';
 import '../wallet/controller.dart';
 import '../wallet/failure.dart';
+import '../wallet/models.dart' show FileKeys;
 import 'attempt.dart';
 import 'chain_scan.dart';
 import 'client.dart';
@@ -170,16 +171,25 @@ final class BridgeController extends ChangeNotifier {
     if (open == _swapsOpen) return;
     _swapsOpen = open;
     if (open) {
-      final Uint8List key;
+      final FileKeys keys;
       try {
-        key = await _wallet.readFileKey();
+        keys = await _wallet.readFileKeys();
       } on WalletException {
         // The wallet locked while its key was on the way; its change syncs again. A wallet that stays open fails loud.
         _swapsOpen = false;
         if (_wallet.phase == WalletPhase.open) rethrow;
         return;
       }
-      _swaps = await _store.read(key);
+      _swaps = await _store.read(keys);
+      // The file holds the seal of the key now, so a file of an earlier form no longer counts. A wallet that locked
+      // in the meantime records it at its next unlock.
+      if (keys.earlierKey != null) {
+        try {
+          await _wallet.markFilesSealed();
+        } on WalletException {
+          if (_wallet.phase == WalletPhase.open) rethrow;
+        }
+      }
       _followSwaps();
     } else {
       _poll?.cancel();
@@ -282,7 +292,9 @@ final class BridgeController extends ChangeNotifier {
     if (created.payoutAddress != address) {
       throw const BridgeException(BridgeFailure.failed, 'The exchanger made the swap for another address.');
     }
-    if (created.refundAddress != refundAddress) {
+    // From 10 Oct 2026 the relay answers the refund address that ChangeNOW recorded, which may differ from the address
+    // of the form in the case of its hex digits only: an address on Robinhood Chain is the same in any case.
+    if (created.refundAddress?.toLowerCase() != refundAddress?.toLowerCase()) {
       throw const BridgeException(BridgeFailure.failed, 'The exchanger made the swap with another refund address.');
     }
     if ((created.amount - double.parse(amount)).abs() > AppConfig.payAmountTolerance) {

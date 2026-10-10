@@ -63,7 +63,7 @@ final class _Wallet implements WalletBackend {
         amount: XmrAmount(amountUnits),
         fee: XmrAmount.parse('0.00003'),
       ),
-      ReadFileKey() => Uint8List(32),
+      ReadFileKeys() => FileKeys(key: Uint8List(32)),
       _ => null,
     };
     return answer as T;

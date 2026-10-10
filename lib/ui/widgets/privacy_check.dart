@@ -10,8 +10,9 @@ import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
 import '../theme/typography.dart';
 
-/// What one line of a privacy check says: its rule passed, its rule warns, or a tip that asks for nothing now.
-enum RuleState { passed, warning, tip }
+/// What one line of a privacy check says: its rule passed, its rule warns, a tip that asks for nothing now, or its rule
+/// could not read what it needs yet, which keeps the check from "All clear".
+enum RuleState { passed, warning, tip, unchecked }
 
 /// One line of a privacy check: the name of its rule, what it found, and a way to act on it.
 final class PrivacyRule {
@@ -35,6 +36,7 @@ class PrivacyRulesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final warnings = rules.where((rule) => rule.state == RuleState.warning).length;
+    final unchecked = rules.where((rule) => rule.state == RuleState.unchecked).length;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.field,
@@ -55,8 +57,18 @@ class PrivacyRulesCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  warnings == 0 ? Copy.privacyClear : Copy.privacyWarnings(warnings),
-                  style: KranoxType.smallStrong.copyWith(color: warnings == 0 ? palette.accent : palette.danger),
+                  switch ((warnings, unchecked)) {
+                    (0, 0) => Copy.privacyClear,
+                    (0, _) => Copy.privacyNotChecked(unchecked),
+                    _ => Copy.privacyWarnings(warnings),
+                  },
+                  style: KranoxType.smallStrong.copyWith(
+                    color: switch ((warnings, unchecked)) {
+                      (0, 0) => palette.accent,
+                      (0, _) => palette.inkSoft,
+                      _ => palette.danger,
+                    },
+                  ),
                 ),
               ],
             ),
@@ -132,8 +144,13 @@ class PrivacyCheckCard extends StatelessWidget {
         if (report.checksAddress)
           PrivacyRule(
             label: Copy.privacyAddressLabel,
-            state: own == null ? RuleState.passed : RuleState.warning,
+            state: switch (own) {
+              null when !report.addressChecked => RuleState.unchecked,
+              null => RuleState.passed,
+              _ => RuleState.warning,
+            },
             text: switch (own) {
+              null when !report.addressChecked => Copy.privacyAddressUnchecked,
               null => Copy.privacyAddressClear,
               OwnAddress(link: RefundOf(), :final usedAt) => Copy.privacyAddressRefund(formatTime(usedAt, now)),
               OwnAddress(link: FundedReceive(), :final usedAt) => Copy.privacyAddressFunded(formatTime(usedAt, now)),
@@ -158,6 +175,7 @@ class _RuleLine extends StatelessWidget {
       RuleState.passed => (Icons.check_circle_rounded, palette.accent),
       RuleState.warning => (Icons.error_rounded, palette.danger),
       RuleState.tip => (Icons.info_outline_rounded, palette.inkSoft),
+      RuleState.unchecked => (Icons.help_outline_rounded, palette.inkSoft),
     };
     return Padding(
       padding: const EdgeInsets.only(bottom: Metrics.gapSmall),

@@ -72,6 +72,24 @@ void main() {
     expect(find.text(Copy.payRecipientFundedPlain(formatTime(_start, _now))), findsOneWidget);
   });
 
+  testWidgets('a funder named by a contract or a domain reads as such, never as a public tag', (tester) async {
+    ChainTransfer from(String label, LabelSource source) => ChainTransfer(
+      hash: '0xfund',
+      from: ChainParty(address: _funder, label: label, isContract: source == LabelSource.contract, labelSource: source),
+      to: const ChainParty(address: _me, label: null, isContract: false),
+      value: BigInt.from(1000),
+      token: null,
+      time: _start,
+    );
+    final day = formatTime(_start, _now);
+    await _show(tester, _scan(funding: from('Disperse', LabelSource.contract), sure: true));
+    expect(find.text(Copy.payRecipientFundedContract('Disperse', day)), findsOneWidget);
+    await _show(tester, _scan(funding: from('friend.eth', LabelSource.domain), sure: true));
+    expect(find.text(Copy.payRecipientFundedDomain('friend.eth', day)), findsOneWidget);
+    await _show(tester, _scan(funding: from('Big Exchange', LabelSource.tag), sure: true));
+    expect(find.text(Copy.payRecipientFundedNamed('Big Exchange', day)), findsOneWidget);
+  });
+
   testWidgets('a first funding that the relay could not read for sure is a note, never a clean line', (tester) async {
     await _show(tester, _scan(funding: _transfer('0xfund', _funder, _me, Duration.zero), sure: false));
     expect(find.text(Copy.payRecipientFundedUnsure(formatTime(_start, _now))), findsOneWidget);

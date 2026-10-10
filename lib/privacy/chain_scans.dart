@@ -52,10 +52,15 @@ final class ChainScans extends ChangeNotifier {
 }
 
 /// Asks [client] for the scan of [address], and turns an answer of the wrong form into a failure of the bridge, so that
-/// a caller catches one kind of failure.
+/// a caller catches one kind of failure. The scan of another address is one: its checks would speak of an address that
+/// the user never gave (the sharp-edges scan of 10 Oct 2026). An address on Robinhood Chain is the same in any case.
 Future<ChainScan> readScan(ChainScanClient client, String address) async {
   try {
-    return await client.scanAddress(address);
+    final scan = await client.scanAddress(address);
+    if (scan.address.toLowerCase() != address.toLowerCase()) {
+      throw const FormatException('The relay answered the scan of another address.');
+    }
+    return scan;
   } on FormatException catch (error) {
     throw BridgeException(BridgeFailure.failed, error.message);
   }

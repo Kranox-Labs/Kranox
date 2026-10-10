@@ -29,9 +29,18 @@ const int _statusOk = 0;
 /// The separator that the app gives to monero_c for lists in one string.
 const String _listSeparator = ',';
 
-/// The label of the key of the files of the app, and the block length of SHA-256 for its HMAC.
-const String _fileKeyLabel = 'kranox/file-key/1';
+/// The labels of the keys of the files of the app, and the block length of SHA-256 for its HMAC. The key of the
+/// second label, under the secret spend key, seals the files from 10 Oct 2026; the first, under the secret view key,
+/// sealed them in the builds before. A view key goes to auditors and to view-only wallets, and its holder could read
+/// the swaps and write a file that opens (the sharp-edges scan of 10 Oct 2026).
+const String _earlierFileKeyLabel = 'kranox/file-key/1';
+const String _fileKeyLabel = 'kranox/file-key/2';
 const int _hmacBlockLength = 64;
+
+/// The attribute in the cache of the wallet, which wallet2 encrypts in the wallet file, that records that the files
+/// of the app are sealed with the key of [_fileKeyLabel], and its value.
+const String _filesSealedAttribute = 'kranox.files-sealed';
+const String _filesSealedValue = '2';
 
 /// Runs the requests of the app on wallet2. It lives in the worker isolate, one request at a time, because
 /// wallet2 does not take two calls at once.
@@ -44,6 +53,10 @@ final class WalletEngine {
   late final monero.WalletManager _manager;
   monero.wallet? _wallet;
   String? _path;
+
+  // Whether wallet2 refused the proxy of the last connection. It then keeps the connection of the init before, which
+  // may reach the node straight, so the engine asks the node nothing until a connection works.
+  bool _proxyRefused = false;
 
   /// The payment that wallet2 built last and has not sent. A confirm sends it only when it names this payment.
   final PendingSlot<monero.PendingTransaction> _slot = PendingSlot();
@@ -62,7 +75,8 @@ final class WalletEngine {
     ConfirmSend() => _confirmSend(request),
     CancelSend() => _cancelSend(request),
     ReadSeed() => _seed(request),
-    ReadFileKey() => _fileKey(),
+    ReadFileKeys() => _fileKeys(),
+    MarkFilesSealed() => _markFilesSealed(),
     StoreWallet() => _store(),
     CloseWallet() => _close(),
   };
@@ -121,8 +135,15 @@ final class WalletEngine {
     // wallet2 sets the proxy on each init, so an empty one turns a proxy of an earlier connection off.
     final initialized = monero.Wallet_init(wallet, daemonAddress: request.address, proxyAddress: request.proxy ?? '');
     if (!initialized) {
-      throw WalletException(WalletFailure.nodeUnreachable, monero.Wallet_errorString(wallet));
+      final message = monero.Wallet_errorString(wallet);
+      if (request.proxy != null) {
+        monero.Wallet_pauseRefresh(wallet);
+        _proxyRefused = true;
+        throw WalletException(WalletFailure.proxyRefused, message);
+      }
+      throw WalletException(WalletFailure.nodeUnreachable, message);
     }
+    _proxyRefused = false;
     monero.Wallet_setTrustedDaemon(wallet, arg: false);
     monero.Wallet_startRefresh(wallet);
     monero.Wallet_setAutoRefreshInterval(wallet, millis: AppConfig.autoRefreshInterval.inMilliseconds);
@@ -132,12 +153,13 @@ final class WalletEngine {
 
   WalletStatus _status() {
     final wallet = _requireWallet();
-    final connection = monero.Wallet_connected(wallet);
+    // Both calls below ask the node, which a refused proxy leaves without the proxy.
+    final connection = _proxyRefused ? NodeConnection.disconnected.index : monero.Wallet_connected(wallet);
     return WalletStatus(
       balance: XmrAmount(monero.Wallet_balance(wallet, accountIndex: AppConfig.accountIndex)),
       unlocked: XmrAmount(monero.Wallet_unlockedBalance(wallet, accountIndex: AppConfig.accountIndex)),
       walletHeight: monero.Wallet_blockChainHeight(wallet),
-      nodeHeight: monero.Wallet_daemonBlockChainHeight(wallet),
+      nodeHeight: _proxyRefused ? 0 : monero.Wallet_daemonBlockChainHeight(wallet),
       synchronized: monero.Wallet_synchronized(wallet),
       connection: connection >= 0 && connection < NodeConnection.values.length
           ? NodeConnection.values[connection]
@@ -208,6 +230,7 @@ final class WalletEngine {
 
   PreparedSend _prepareSend(PrepareSend request) {
     final wallet = _requireWallet();
+    _refuseWithoutProxy();
     // monero_c reads an amount of 0 as a sweep of the whole balance, so the engine refuses it here, below every form.
     if (request.amountUnits <= 0) {
       throw const WalletException(WalletFailure.native, 'A payment needs an amount above zero.');
@@ -238,6 +261,7 @@ final class WalletEngine {
     final wallet = _requireWallet();
     // A wrong password sends nothing and keeps the payment, so that the user can type it again.
     _checkPassword(request.password);
+    _refuseWithoutProxy();
     final pending = _slot.take(
       id: request.id,
       address: request.address,
@@ -278,19 +302,42 @@ final class WalletEngine {
     return _seedWords(wallet);
   }
 
-  /// The key of the files of the app that belong to the open wallet (wallet O-007 of the second security review):
-  /// HMAC-SHA256 under the secret view key over a fixed label. Only the open wallet gives it, the wallet of the same
-  /// seed gives it again after a restore, and the view key never leaves the engine.
-  Uint8List _fileKey() {
-    final viewKey = monero.Wallet_secretViewKey(_requireWallet());
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(viewKey)) {
-      throw const WalletException(WalletFailure.native, 'wallet2 gave no secret view key.');
+  /// The keys of the files of the app that belong to the open wallet (wallet O-007 of the second security review):
+  /// HMAC-SHA256 under the secret spend key over a fixed label. Only the open wallet gives it, the wallet of the same
+  /// seed gives it again after a restore, and no secret key leaves the engine. Until the wallet records that its files
+  /// are sealed with it, the engine also gives the key of the builds before 10 Oct 2026, so that the store can seal
+  /// their file again.
+  FileKeys _fileKeys() {
+    final wallet = _requireWallet();
+    final sealed = monero.Wallet_getCacheAttribute(wallet, key: _filesSealedAttribute) == _filesSealedValue;
+    return FileKeys(
+      key: _keyUnder(monero.Wallet_secretSpendKey(wallet), _fileKeyLabel, 'spend'),
+      earlierKey: sealed ? null : _keyUnder(monero.Wallet_secretViewKey(wallet), _earlierFileKeyLabel, 'view'),
+    );
+  }
+
+  /// HMAC-SHA256 over [label] under [secretKey], the secret [name] key of wallet2 in hex.
+  static Uint8List _keyUnder(String secretKey, String label, String name) {
+    // A wallet without the key, such as a view-only one for the spend key, gives zeros.
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(secretKey) || RegExp(r'^0{64}$').hasMatch(secretKey)) {
+      throw WalletException(WalletFailure.native, 'wallet2 gave no secret $name key.');
     }
     final keyBytes = Uint8List.fromList([
-      for (var i = 0; i < viewKey.length; i += 2) int.parse(viewKey.substring(i, i + 2), radix: 16),
+      for (var i = 0; i < secretKey.length; i += 2) int.parse(secretKey.substring(i, i + 2), radix: 16),
     ]);
     final mac = HMac(SHA256Digest(), _hmacBlockLength)..init(KeyParameter(keyBytes));
-    return mac.process(Uint8List.fromList(utf8.encode(_fileKeyLabel)));
+    return mac.process(Uint8List.fromList(utf8.encode(label)));
+  }
+
+  /// Records in the cache of the wallet that its files are sealed with the key of [_fileKeys]. The wallet writes the
+  /// cache when it has caught up, when it makes a subaddress for the bridge, and when it closes; a crash before
+  /// then costs only a second record at the next unlock, since the file opens with the key either way.
+  Null _markFilesSealed() {
+    final wallet = _requireWallet();
+    if (!monero.Wallet_setCacheAttribute(wallet, key: _filesSealedAttribute, value: _filesSealedValue)) {
+      throw WalletException(WalletFailure.native, monero.Wallet_errorString(wallet));
+    }
+    return null;
   }
 
   /// Checks [password] against the key file of the open wallet. Throws a [WalletException] when it does not open it.
@@ -319,11 +366,22 @@ final class WalletEngine {
     return null;
   }
 
+  /// A payment asks the node for its outputs and sends to it, which a refused proxy leaves without the proxy.
+  void _refuseWithoutProxy() {
+    if (_proxyRefused) {
+      throw const WalletException(
+        WalletFailure.proxyRefused,
+        'The wallet stays away from its node until the proxy works.',
+      );
+    }
+  }
+
   Null _close() {
     final wallet = _wallet;
     if (wallet == null) {
       return null;
     }
+    _proxyRefused = false;
     _slot.clear();
     _wallet = null;
     _path = null;

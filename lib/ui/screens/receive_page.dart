@@ -160,7 +160,11 @@ class _ReceivePageState extends State<ReceivePage> {
             const SizedBox(height: Metrics.gap),
             PrivacyRulesCard(
               note: Copy.privacyLocalNote,
-              rules: _subaddressRules(address.index, widget.controller.transfers),
+              rules: _subaddressRules(
+                address.index,
+                widget.controller.transfers,
+                synchronized: widget.controller.status.synchronized,
+              ),
             ),
           ],
           ErrorLine(_error),
@@ -181,18 +185,21 @@ class _ReceivePageState extends State<ReceivePage> {
 
 /// The rules of the privacy check of the subaddress [index] that the page gives out: the payments that it already took,
 /// and what to do once the XMR comes in. One payment is a tip, since the same payer may pay again; more payments warn,
-/// as the check "Subaddresses" of the menu Privacy does.
-List<PrivacyRule> _subaddressRules(int index, List<WalletTransfer> transfers) {
+/// as the check "Subaddresses" of the menu Privacy does. Until the wallet has [synchronized], no payment yet says
+/// nothing for sure, such as right after a restore, when an older install may have handed the subaddress out.
+List<PrivacyRule> _subaddressRules(int index, List<WalletTransfer> transfers, {required bool synchronized}) {
   final payments = paymentsTo(index, transfers);
   return [
     PrivacyRule(
       label: Copy.privacySubaddressLabel,
       state: switch (payments) {
+        0 when !synchronized => RuleState.unchecked,
         0 => RuleState.passed,
         1 => RuleState.tip,
         _ => RuleState.warning,
       },
       text: switch (payments) {
+        0 when !synchronized => Copy.privacySubaddressUnchecked(index),
         0 => Copy.privacySubaddressUnused(index),
         1 => Copy.privacySubaddressOnce(index),
         _ => Copy.privacySubaddressShared(index, payments),

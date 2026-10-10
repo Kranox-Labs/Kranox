@@ -37,7 +37,8 @@ class _SettingsPageState extends State<SettingsPage> {
   late final _proxy = TextEditingController(text: widget.controller.proxy ?? '');
   final _password = TextEditingController();
   String? _nodeError;
-  String? _proxyError;
+  // A proxy that wallet2 refused at the unlock keeps the wallet offline, so the field says why from the start.
+  late String? _proxyError = widget.controller.proxyRefused ? Copy.proxyRefused : null;
   String? _nodeNote;
   bool _savingNode = false;
   bool _switchingNetwork = false;
@@ -72,6 +73,9 @@ class _SettingsPageState extends State<SettingsPage> {
         await widget.controller.changeProxy(_proxy.text);
       } on NodeAddressException {
         setState(() => _proxyError = Copy.proxyInvalid);
+        return;
+      } on WalletException catch (error) {
+        setState(() => _proxyError = failureText(error));
         return;
       }
       await widget.controller.changeNode(_node.text);
