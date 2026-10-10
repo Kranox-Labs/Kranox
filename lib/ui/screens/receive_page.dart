@@ -27,15 +27,19 @@ enum _ReceiveWay { monero, robinhood }
 
 /// The receive page: the newest subaddress as a code to scan and as text, with its privacy check from 10 Oct 2026 and a
 /// button for a new subaddress, or the receive from Robinhood Chain. Its content stands in a column in the middle, as
-/// on the send page; the owner asked for that on 6 Oct 2026 ("receive belum simple dan di tengah").
+/// on the send page; the owner asked for that on 6 Oct 2026 ("receive belum simple dan di tengah"). The page of a swap
+/// from Robinhood Chain shows in its place until the user goes back.
 class ReceivePage extends StatefulWidget {
-  const ReceivePage({super.key, required this.controller, required this.bridge, this.scans});
+  const ReceivePage({super.key, required this.controller, required this.bridge, this.scans, this.reselect = 0});
 
   final WalletController controller;
   final BridgeController bridge;
 
   /// The addresses that the user scanned in the menu Privacy, for the check of the refund address of a receive.
   final ChainScans? scans;
+
+  /// Counts the clicks on Receive in the sidebar while this page shows, so that a click leaves the page of a swap.
+  final int reselect;
 
   @override
   State<ReceivePage> createState() => _ReceivePageState();
@@ -48,6 +52,15 @@ class _ReceivePageState extends State<ReceivePage> {
       : _ReceiveWay.robinhood;
   bool _busy = false;
   String? _error;
+
+  // The swap whose page shows in place of this page, or null.
+  String? _swapId;
+
+  @override
+  void didUpdateWidget(ReceivePage old) {
+    super.didUpdateWidget(old);
+    if (widget.reselect != old.reselect) _swapId = null;
+  }
 
   Future<void> _newAddress() async {
     setState(() {
@@ -65,6 +78,9 @@ class _ReceivePageState extends State<ReceivePage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_swapId case final id?) {
+      return ReceiveSwapPage(bridge: widget.bridge, swapId: id, onBack: () => setState(() => _swapId = null));
+    }
     final fromChain = _way == _ReceiveWay.robinhood;
     return PageFrame(
       title: Copy.receiveTitle,
@@ -93,7 +109,14 @@ class _ReceivePageState extends State<ReceivePage> {
           ],
         ),
         const SizedBox(height: Metrics.gap),
-        if (fromChain) ReceiveFromChain(bridge: widget.bridge, scans: widget.scans) else _subaddress(context),
+        if (fromChain)
+          ReceiveFromChain(
+            bridge: widget.bridge,
+            scans: widget.scans,
+            onOpenSwap: (swap) => setState(() => _swapId = swap.id),
+          )
+        else
+          _subaddress(context),
       ],
     );
   }

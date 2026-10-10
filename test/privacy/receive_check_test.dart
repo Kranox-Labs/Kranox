@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kranox_wallet/bridge/models.dart';
 import 'package:kranox_wallet/core/amount.dart';
+import 'package:kranox_wallet/privacy/chain_privacy.dart';
 import 'package:kranox_wallet/privacy/receive_check.dart';
 import 'package:kranox_wallet/wallet/models.dart';
 
@@ -62,10 +63,10 @@ void main() {
     expect(paymentsTo(4, transfers), 0);
   });
 
-  test('finds the newest payment from XMR to a refund address, in any case of its letters', () {
+  test('finds every swap that a refund address took part in, the newest first, in any case of its letters', () {
     final swaps = [
       _swap('older', direction: SwapDirection.pay, age: const Duration(days: 5), payout: _address),
-      _swap('newer', direction: SwapDirection.pay, age: const Duration(days: 2), payout: _address.toLowerCase()),
+      _swap('newer', direction: SwapDirection.receive, age: const Duration(days: 2), refund: _address.toLowerCase()),
       _swap(
         'other',
         direction: SwapDirection.pay,
@@ -73,15 +74,11 @@ void main() {
         payout: '0x0000000000000000000000000000000000000001',
       ),
     ];
-    expect(
-      lastPaidFromXmr(_address.toUpperCase().replaceFirst('0X', '0x'), swaps),
-      _now.subtract(const Duration(days: 2)),
-    );
-  });
-
-  test('a receive with the address as its refund address is no payment from XMR', () {
-    final swaps = [_swap('in', direction: SwapDirection.receive, age: const Duration(days: 1), refund: _address)];
-    expect(lastPaidFromXmr(_address, swaps), isNull);
-    expect(lastPaidFromXmr(_address, const []), isNull);
+    final links = kranoxLinks(_address.toUpperCase().replaceFirst('0X', '0x'), swaps);
+    expect([for (final link in links) link.swap.id], ['newer', 'older']);
+    expect(links.first, isA<RefundOf>());
+    expect(links.last, isA<GotPay>());
+    expect(onBothSides(links), isTrue);
+    expect(kranoxLinks(_address, const []), isEmpty);
   });
 }

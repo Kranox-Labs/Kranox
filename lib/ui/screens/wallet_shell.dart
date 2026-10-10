@@ -46,7 +46,11 @@ class _WalletShellState extends State<WalletShell> {
   // The send page opens on pay once, after the way to a clean start of the menu Privacy.
   bool _startOnPay = false;
 
+  // The clicks on the page that shows already, which take its page of a swap back to the page itself.
+  int _reselect = 0;
+
   void _go(WalletPage page) => setState(() {
+    if (page == _page) _reselect++;
     _page = page;
     _startOnPay = false;
   });
@@ -90,8 +94,14 @@ class _WalletShellState extends State<WalletShell> {
                           bridge: widget.bridge,
                           scans: _scans,
                           startOnPay: _startOnPay,
+                          reselect: _reselect,
                         ),
-                        WalletPage.receive => ReceivePage(controller: controller, bridge: widget.bridge, scans: _scans),
+                        WalletPage.receive => ReceivePage(
+                          controller: controller,
+                          bridge: widget.bridge,
+                          scans: _scans,
+                          reselect: _reselect,
+                        ),
                         WalletPage.activity => ActivityPage(controller: controller),
                         WalletPage.privacy => PrivacyPage(
                           controller: controller,

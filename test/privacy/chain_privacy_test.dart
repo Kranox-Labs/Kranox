@@ -61,6 +61,7 @@ BridgeSwap _swap(
   String deposit = _deposit,
   String payout = 'subaddress-3',
   String? refund,
+  String? payoutHash,
 }) => BridgeSwap(
   direction: direction,
   id: id,
@@ -73,6 +74,7 @@ BridgeSwap _swap(
   createdAt: _t0.add(const Duration(days: 2)),
   stage: SwapStage.finished,
   refundAddress: refund,
+  payoutHash: payoutHash,
 );
 
 void main() {
@@ -111,6 +113,20 @@ void main() {
       );
       expect(refund.funding!.fromOwn, isTrue);
     });
+
+    test(
+      'reads the payout of a payment of the user from XMR as a clean start, whatever name the explorer gives it',
+      () {
+        final report = analyzeChain(
+          _scan(first: _transfer('0xPayout', _exchange, _me, fromLabel: 'ChangeNOW')),
+          swaps: [_swap('paid', SwapDirection.pay, payout: _me, payoutHash: '0xpayout')],
+          ownAddresses: const [],
+        );
+        expect(report.funding!.fromPay!.id, 'paid');
+        expect(report.funding!.links, isFalse);
+        expect(report.toImprove, 0, reason: 'one swap alone ties nothing else to it');
+      },
+    );
 
     test('finds no funding when the oldest transfer went out', () {
       final report = analyzeChain(
@@ -158,7 +174,7 @@ void main() {
     expect(report.toImprove, 1);
   });
 
-  test('notes the swaps of Kranox that the address takes part in, without counting them as things to improve', () {
+  test('counts an address that ties swaps together as something to improve, on one side or on both', () {
     final report = analyzeChain(
       _scan(tokenTransfers: [_transfer('in', _me, _deposit, token: true)]),
       swaps: [
@@ -173,7 +189,31 @@ void main() {
       {for (final link in report.kranox) link.swap.id: link.runtimeType},
       {'funded': FundedReceive, 'refund': RefundOf, 'paid': GotPay},
     );
-    expect(report.toImprove, 0);
+    expect(report.tiesSwaps, isTrue);
+    expect(onBothSides(report.kranox), isTrue);
+    expect(report.toImprove, 1);
+
+    // Two receives tie each other too, on one side.
+    final receives = analyzeChain(
+      _scan(),
+      swaps: [
+        _swap('first', SwapDirection.receive, refund: _me),
+        _swap('second', SwapDirection.receive, refund: _me),
+      ],
+      ownAddresses: const [],
+    );
+    expect(receives.tiesSwaps, isTrue);
+    expect(onBothSides(receives.kranox), isFalse);
+
+    // One swap is how a swap goes.
+    final one = analyzeChain(
+      _scan(),
+      swaps: [_swap('paid', SwapDirection.pay, payout: _me)],
+      ownAddresses: const [],
+    );
+    expect(one.kranox, hasLength(1));
+    expect(one.tiesSwaps, isFalse);
+    expect(one.toImprove, 0);
   });
 
   test('says what everyone sees: the counts, the tokens it holds, its first day, and its hours', () {
@@ -272,6 +312,104 @@ void main() {
     expect(scan.transactions.single.to, isNull);
     expect(scan.tokenTransfers.single.token!.decimals, 6);
     expect(scan.holdings.single.value, BigInt.from(75000000));
+    expect(scan.fundingRead, isFalse, reason: 'a relay before 10 Oct 2026 reads no first funding of its own');
+    expect(scan.fundingSure, isFalse);
     expect(() => ChainScan.fromJson({'address': _me, 'transactions': 'many'}), throwsA(isA<FormatException>()));
+  });
+
+  test('reads the first funding that the relay read, and whether it is sure', () {
+    Map<String, Object?> answer({Object? funding, Object? sure}) => {
+      'address': _me,
+      'isContract': false,
+      'balanceWei': '0',
+      'transactionCount': 0,
+      'tokenTransferCount': 0,
+      'firstTransaction': null,
+      'firstTokenTransfer': null,
+      'transactions': const <Object?>[],
+      'tokenTransfers': const <Object?>[],
+      'holdings': const <Object?>[],
+      'firstFunding': funding,
+      'fundingSure': sure,
+    };
+    final funded = ChainScan.fromJson(
+      answer(
+        funding: {
+          'hash': '0xinternal',
+          'from': {'address': _exchange, 'label': 'Disperse', 'isContract': true},
+          'to': {'address': _me, 'label': null, 'isContract': false},
+          'value': '1000000000000000',
+          'token': null,
+          'time': '2026-08-29T09:39:00.000Z',
+        },
+        sure: true,
+      ),
+    );
+    expect(funded.fundingRead, isTrue);
+    expect(funded.fundingSure, isTrue);
+    expect(funded.firstFunding!.from.isContract, isTrue);
+    final none = ChainScan.fromJson(answer(sure: false));
+    expect(none.fundingRead, isTrue);
+    expect(none.firstFunding, isNull);
+    expect(none.fundingSure, isFalse);
+  });
+
+  group('the first funding that the relay read', () {
+    ChainScan read(ChainTransfer? funding, {bool sure = true, ChainTransfer? first}) => ChainScan(
+      address: _me,
+      isContract: false,
+      balanceWei: BigInt.zero,
+      transactionCount: 1,
+      tokenTransferCount: 0,
+      firstTransaction: first,
+      firstTokenTransfer: null,
+      transactions: const [],
+      tokenTransfers: const [],
+      holdings: const [],
+      firstFunding: funding,
+      fundingRead: true,
+      fundingSure: sure,
+    );
+
+    test('stands over the oldest transactions, which may miss the ETH that a contract sent', () {
+      final report = analyzeChain(
+        read(
+          _transfer('internal', _exchange, _me, fromLabel: 'Disperse'),
+          first: _transfer('later', _shop, _me, after: const Duration(days: 3)),
+        ),
+        swaps: const [],
+        ownAddresses: const [],
+      );
+      expect(report.funding!.transfer.hash, 'internal');
+      expect(report.funding!.links, isTrue);
+      expect(report.toImprove, 1);
+    });
+
+    test('a funding that the relay could not read for sure stays unsure, and one that links still warns', () {
+      final plain = analyzeChain(
+        read(_transfer('eth', _shop, _me), sure: false),
+        swaps: const [],
+        ownAddresses: const [],
+      );
+      expect(plain.funding!.sure, isFalse);
+      expect(plain.funding!.links, isFalse);
+      expect(plain.toImprove, 0);
+      final named = analyzeChain(
+        read(_transfer('eth', _exchange, _me, fromLabel: 'Big Exchange'), sure: false),
+        swaps: const [],
+        ownAddresses: const [],
+      );
+      expect(named.funding!.links, isTrue);
+      expect(named.toImprove, 1);
+    });
+
+    test('none found is no funding, even with an older transaction in that the relay left out', () {
+      final report = analyzeChain(
+        read(null, first: _transfer('eth', _shop, _me)),
+        swaps: const [],
+        ownAddresses: const [],
+      );
+      expect(report.funding, isNull);
+    });
   });
 }

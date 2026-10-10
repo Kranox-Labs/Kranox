@@ -10,33 +10,29 @@ import 'bits.dart';
 import 'buttons.dart';
 import 'privacy_board.dart';
 
-/// The check of an address on Robinhood Chain on a review: a button that scans it, then what its public history shows.
-/// Pay checks its recipient from 8 Oct 2026, and a receive its refund address from 10 Oct 2026. It advises; the user
-/// can still go on.
+/// The check of an address on Robinhood Chain on a review: the scan of the address, which starts as the review opens,
+/// then what its public history shows. Pay checks its recipient from 8 Oct 2026, and a receive its refund address from
+/// 10 Oct 2026. It advises; the user can still go on.
 class AddressCheck extends StatelessWidget {
   const AddressCheck({
     super.key,
     required this.report,
-    required this.checking,
     required this.error,
-    required this.onCheck,
+    required this.onRetry,
     required this.now,
-    required this.lead,
     required this.freshNote,
     required this.apartNote,
   });
 
-  /// What the scan of the recipient found; null before the check.
+  /// What the scan of the address found; null while it runs.
   final ChainPrivacyReport? report;
-  final bool checking;
+
+  /// Why the scan failed, with [onRetry] to scan again.
   final String? error;
-  final VoidCallback? onCheck;
+  final VoidCallback? onRetry;
 
   /// The moment that the days of the lines count from.
   final DateTime now;
-
-  /// Beside the button: why the user may want the check.
-  final String lead;
 
   /// Under an address without a public history.
   final String freshNote;
@@ -45,29 +41,34 @@ class AddressCheck extends StatelessWidget {
   final String apartNote;
 
   @override
-  Widget build(BuildContext context) => switch (report) {
-    null => _offer(context),
-    final found => _found(context, found),
+  Widget build(BuildContext context) => switch ((report, error)) {
+    (final found?, _) => _found(context, found),
+    (null, final failure?) => _failed(context, failure),
+    (null, null) => _checking(context),
   };
 
-  Widget _offer(BuildContext context) => Column(
+  Widget _checking(BuildContext context) {
+    final color = context.palette.inkSoft;
+    return Row(
+      children: [
+        SizedBox.square(
+          dimension: _Line._mark,
+          child: CircularProgressIndicator(strokeWidth: 2, color: color),
+        ),
+        const SizedBox(width: Metrics.gapTiny),
+        Expanded(
+          child: Text(Copy.addressChecking, style: KranoxType.small.copyWith(color: color)),
+        ),
+      ],
+    );
+  }
+
+  Widget _failed(BuildContext context, String failure) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Row(
-        children: [
-          SmallPillButton(
-            label: Copy.payCheckRecipient,
-            busy: checking,
-            busyLabel: Copy.payCheckingRecipient,
-            onPressed: onCheck,
-          ),
-          const SizedBox(width: Metrics.gapSmall),
-          Expanded(
-            child: Text(lead, style: KranoxType.small.copyWith(color: context.palette.inkSoft)),
-          ),
-        ],
-      ),
-      ErrorLine(error),
+      ErrorLine(failure),
+      const SizedBox(height: Metrics.gapTiny),
+      SmallPillButton(label: Copy.addressCheckAgain, onPressed: onRetry),
     ],
   );
 
@@ -91,21 +92,33 @@ class AddressCheck extends StatelessWidget {
 }
 
 /// An address without a transaction and without a token transfer has no public history.
-bool _isFresh(ChainPrivacyReport report) => report.exposure.transactions == 0 && report.exposure.tokenTransfers == 0;
+/// An address without a transaction, a token transfer, or a first funding, as the relay read for sure, has no public
+/// history: ETH that a contract sent counts in none of the counts.
+bool _isFresh(ChainPrivacyReport report) =>
+    report.exposure.transactions == 0 &&
+    report.exposure.tokenTransfers == 0 &&
+    report.funding == null &&
+    report.scan.fundingSure;
 
-/// What the history of the address shows, one line each: no history, or its first funding, its direct transfers with
-/// other addresses of the user, and how much it did.
+/// What the history of the address shows, one line each: no history, or its first funding or that it is not sure, its
+/// direct transfers with other addresses of the user, look-alike senders, and how much it did. A look-alike sender is
+/// a trap for whoever copies an address from a history, not a link to the user, so it warns without a count in the
+/// privacy check; the owner asked for it on 10 Oct 2026.
 List<(CheckState, String)> _lines(ChainPrivacyReport report, DateTime now) {
   if (_isFresh(report)) return const [(CheckState.good, Copy.payRecipientFresh)];
   final own = report.own;
   final since = report.exposure.firstSeen;
   return [
-    if (report.funding case final funding?) _fundingLine(funding, now),
+    if (report.funding case final funding?)
+      _fundingLine(funding, now)
+    else if (!report.scan.fundingSure)
+      (CheckState.note, Copy.payRecipientFundingUnsure),
     if (own.isNotEmpty)
       (
         CheckState.warning,
         own.length == 1 ? Copy.payRecipientOwn(shortText(own.first.other)) : Copy.payRecipientOwnMany(own.length),
       ),
+    if (report.lookAlikes.isNotEmpty) (CheckState.warning, Copy.payRecipientLookAlike(report.lookAlikes.length)),
     (
       CheckState.note,
       Copy.payRecipientHistory(report.exposure.transactions, since == null ? null : formatTime(since, now)),
@@ -114,15 +127,18 @@ List<(CheckState, String)> _lines(ChainPrivacyReport report, DateTime now) {
 }
 
 /// The first funding of the address: from another address of the user or from a sender with a public name ties it to
-/// them; from a sender without a name, it does not.
+/// them; from a sender without a name, or from a payment of the user from XMR, it does not, once the relay is sure that
+/// no older transfer came in.
 (CheckState, String) _fundingLine(FirstFunding funding, DateTime now) {
   final day = formatTime(funding.transfer.time, now);
   return switch (funding) {
-    FirstFunding(fromOwn: true, :final transfer) => (
+    FirstFunding(links: true, fromOwn: true, :final transfer) => (
       CheckState.warning,
       Copy.payRecipientFundedOwn(shortText(transfer.from.address), day),
     ),
-    FirstFunding(:final label?) => (CheckState.warning, Copy.payRecipientFundedNamed(label, day)),
+    FirstFunding(links: true, :final label?) => (CheckState.warning, Copy.payRecipientFundedNamed(label, day)),
+    FirstFunding(sure: false) => (CheckState.note, Copy.payRecipientFundedUnsure(day)),
+    FirstFunding(fromPay: _?) => (CheckState.good, Copy.payRecipientFundedByPay(day)),
     FirstFunding() => (CheckState.good, Copy.payRecipientFundedPlain(day)),
   };
 }

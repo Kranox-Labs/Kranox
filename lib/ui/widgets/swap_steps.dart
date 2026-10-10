@@ -15,7 +15,7 @@ import 'surfaces.dart';
 // The steps of a swap of the bridge, from its deposit to its payout, as the receive and the send pages show them.
 
 /// How a step of a swap stands, for its mark.
-enum SwapMark { done, active, pending, failed, held, refunded }
+enum SwapMark { done, active, pending, failed, held, refunded, expired }
 
 /// One step of a swap: its mark, its title, and its facts.
 final class SwapStep {
@@ -84,7 +84,7 @@ class SwapStepRow extends StatelessWidget {
 }
 
 /// The mark of a step: a check when done, a spinner while it runs, an empty ring before it, and a sign for a
-/// failure, a check, and a refund.
+/// failure, a check, a refund, and a deposit that did not come in time.
 class _StepMark extends StatelessWidget {
   const _StepMark({required this.mark});
 
@@ -115,26 +115,28 @@ class _StepMark extends StatelessWidget {
         ),
         SwapMark.held => ring(palette.accent, child: Icon(Icons.pause_rounded, size: 14, color: palette.accent)),
         SwapMark.refunded => ring(palette.accent, child: Icon(Icons.undo_rounded, size: 14, color: palette.accent)),
+        SwapMark.expired => ring(
+          palette.inkSoft,
+          child: Icon(Icons.schedule_rounded, size: 14, color: palette.inkSoft),
+        ),
         SwapMark.pending => ring(palette.line),
       },
     );
   }
 }
 
-/// The head of the card of a swap: its title, with a button to check it now while it runs; when it started and last
-/// changed; while it runs, when the app last checked it with the exchanger, and [notes] that tell the user what to
+/// The head of the card of a swap, under the title of its page: when it started and last changed; while it runs, when
+/// the app last checked it with the exchanger, with a button to check it now, and [notes] that tell the user what to
 /// expect. The owner asked on 6 Oct 2026 for a card that keeps a user calm through a long wait.
 class SwapCardHeader extends StatelessWidget {
   const SwapCardHeader({
     super.key,
-    required this.title,
     required this.swap,
     required this.checkedAt,
     required this.onRefresh,
     this.notes = const [],
   });
 
-  final String title;
   final BridgeSwap swap;
   final DateTime? checkedAt;
   final Future<void> Function() onRefresh;
@@ -148,24 +150,30 @@ class SwapCardHeader extends StatelessWidget {
     final checked = checkedAt;
     final running = !swap.stage.isFinal;
     final soft = KranoxType.small.copyWith(color: palette.inkSoft);
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        CardTitle(
-          title,
-          trailing: running ? PillButton(label: Copy.bridgeRefresh, tone: PillTone.quiet, onPressed: onRefresh) : null,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          Copy.bridgeSwapTimes(
-            formatTime(swap.createdAt, now),
-            updated == null ? null : formatTime(updated, now),
-            checked: running && checked != null ? formatClock(checked) : null,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                Copy.bridgeSwapTimes(
+                  formatTime(swap.createdAt, now),
+                  updated == null ? null : formatTime(updated, now),
+                  checked: running && checked != null ? formatClock(checked) : null,
+                ),
+                style: soft,
+              ),
+              if (running)
+                for (final note in notes) ...[const SizedBox(height: 2), Text(note, style: soft)],
+            ],
           ),
-          style: soft,
         ),
-        if (running)
-          for (final note in notes) ...[const SizedBox(height: 2), Text(note, style: soft)],
+        if (running) ...[
+          const SizedBox(width: Metrics.gapSmall),
+          PillButton(label: Copy.bridgeRefresh, tone: PillTone.quiet, onPressed: onRefresh),
+        ],
       ],
     );
   }
@@ -212,13 +220,15 @@ class SwapCopyLine extends StatelessWidget {
 }
 
 /// The steps of a swap as it stands: the steps of a good swap up to the furthest one it reached, then either the rest
-/// of the way, or the check, the failure, or the refund in place of the step where it stopped. [step] gives a step of
-/// the way with its mark, and [refunded] and [failed] the step that ends a swap that went wrong.
+/// of the way, or the check, the failure, the refund, or the end of the wait in place of the step where it stopped.
+/// [step] gives a step of the way with its mark, and [refunded], [failed], and [expired] the step that ends a swap that
+/// went wrong.
 List<SwapStep> swapSteps(
   BridgeSwap swap, {
   required SwapStep Function(SwapStage stage, SwapMark mark) step,
   required SwapStep refunded,
   required SwapStep failed,
+  required SwapStep expired,
 }) {
   final stage = swap.stage;
   final path = SwapStage.path;
@@ -247,19 +257,121 @@ List<SwapStep> swapSteps(
       for (var index = reached + 1; index < path.length; index++) step(path[index], SwapMark.pending),
     ],
     SwapStage.refunded => [...before, refunded],
+    SwapStage.expired => [...before, expired],
     _ => [...before, failed],
   };
 }
 
+/// The mark of a swap as it stands, for its card in a list: a spinner while it runs, and the mark of the step where it
+/// ended.
+SwapMark swapMarkOf(SwapStage stage) => switch (stage) {
+  SwapStage.finished => SwapMark.done,
+  SwapStage.failed => SwapMark.failed,
+  SwapStage.refunded => SwapMark.refunded,
+  SwapStage.expired => SwapMark.expired,
+  SwapStage.verifying => SwapMark.held,
+  SwapStage.waiting || SwapStage.confirming || SwapStage.exchanging || SwapStage.sending => SwapMark.active,
+};
+
+/// The swaps of one way that a page keeps in view under its form, the newest first: every one that runs, and every one
+/// that ended until the user closes it. The owner asked on 10 Oct 2026 for each in a simple card of its own, so that a
+/// user can start another swap while one runs, and for its steps on a page of its own, which a click on the card
+/// opens through [onOpen]. Without swaps it shows nothing; with swaps, it keeps the room of a gap above them.
+class SwapCards extends StatelessWidget {
+  const SwapCards({super.key, required this.title, required this.swaps, required this.headline, required this.onOpen});
+
+  final String title;
+  final List<BridgeSwap> swaps;
+
+  /// The title of a swap, as its page names it.
+  final String Function(BridgeSwap swap) headline;
+  final ValueChanged<BridgeSwap> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (swaps.isEmpty) return const SizedBox.shrink();
+    final palette = context.palette;
+    final now = DateTime.now();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: Metrics.gapTiny, top: Metrics.gap, bottom: Metrics.gapSmall),
+          child: Text(title.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
+        ),
+        for (final (index, swap) in swaps.indexed) ...[
+          if (index > 0) const SizedBox(height: Metrics.gapSmall),
+          _Opens(
+            onTap: () => onOpen(swap),
+            child: Surface(
+              padding: const EdgeInsets.symmetric(horizontal: Metrics.heroPadding, vertical: Metrics.tilePadding),
+              child: Row(
+                children: [
+                  _StepMark(mark: swapMarkOf(swap.stage)),
+                  const SizedBox(width: Metrics.checkMarkGap),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(headline(swap), style: KranoxType.cardTitle.copyWith(color: palette.ink)),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${Copy.swapStage(swap.direction, swap.stage)} · '
+                          '${Copy.bridgeSwapTimes(formatTime(swap.createdAt, now), null)}',
+                          style: KranoxType.small.copyWith(
+                            color: swap.stage == SwapStage.failed ? palette.danger : palette.inkSoft,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: Metrics.gapSmall),
+                  Icon(Icons.chevron_right_rounded, color: palette.inkFaint),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A part that opens something with a click, with the hand of a link over it.
+class _Opens extends StatelessWidget {
+  const _Opens({required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    child: MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: child),
+    ),
+  );
+}
+
 /// The swaps of one way on this device, the newest first, with their state: [line] names each one, and [trailing]
-/// gives its amount, or null when it has none to show.
+/// gives its amount, or null when it has none to show. A click on a line opens the page of its swap through [onOpen],
+/// so that the transactions of an older swap stay at hand.
 class SwapHistory extends StatelessWidget {
-  const SwapHistory({super.key, required this.title, required this.swaps, required this.line, required this.trailing});
+  const SwapHistory({
+    super.key,
+    required this.title,
+    required this.swaps,
+    required this.line,
+    required this.trailing,
+    required this.onOpen,
+  });
 
   final String title;
   final List<BridgeSwap> swaps;
   final String Function(BridgeSwap swap) line;
   final String? Function(BridgeSwap swap) trailing;
+  final ValueChanged<BridgeSwap> onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -272,27 +384,32 @@ class SwapHistory extends StatelessWidget {
           CardTitle(title),
           const SizedBox(height: Metrics.gapSmall),
           for (final swap in swaps)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(line(swap), style: KranoxType.body.copyWith(color: palette.ink)),
-                        Text(
-                          '${formatTime(swap.createdAt, now)} · ${Copy.swapStage(swap.direction, swap.stage)}',
-                          style: KranoxType.small.copyWith(
-                            color: swap.stage == SwapStage.failed ? palette.danger : palette.inkSoft,
+            _Opens(
+              onTap: () => onOpen(swap),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(line(swap), style: KranoxType.body.copyWith(color: palette.ink)),
+                          Text(
+                            '${formatTime(swap.createdAt, now)} · ${Copy.swapStage(swap.direction, swap.stage)}',
+                            style: KranoxType.small.copyWith(
+                              color: swap.stage == SwapStage.failed ? palette.danger : palette.inkSoft,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  if (trailing(swap) case final amount?)
-                    Text(amount, style: KranoxType.body.copyWith(color: palette.ink)),
-                ],
+                    if (trailing(swap) case final amount?)
+                      Text(amount, style: KranoxType.body.copyWith(color: palette.ink)),
+                    const SizedBox(width: Metrics.gapTiny),
+                    Icon(Icons.chevron_right_rounded, size: 20, color: palette.inkFaint),
+                  ],
+                ),
               ),
             ),
         ],

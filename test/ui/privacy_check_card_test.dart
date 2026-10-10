@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,6 +12,7 @@ import 'package:kranox_wallet/bridge/store.dart';
 import 'package:kranox_wallet/config/app_config.dart';
 import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
+import 'package:kranox_wallet/privacy/chain_scans.dart';
 import 'package:kranox_wallet/ui/copy.dart';
 import 'package:kranox_wallet/ui/format.dart';
 import 'package:kranox_wallet/ui/screens/send_page.dart';
@@ -43,9 +45,13 @@ final class _Scanner implements ChainScanClient {
   final ChainScan Function(String address) answer;
   final List<String> asked = [];
 
+  /// Keeps the answer back until it completes, so that the review shows while the check runs.
+  Completer<void>? hold;
+
   @override
   Future<ChainScan> scanAddress(String address) async {
     asked.add(address);
+    await hold?.future;
     return answer(address);
   }
 }
@@ -112,6 +118,45 @@ BridgeSwap _receive(String refundAddress) => BridgeSwap(
   stage: SwapStage.finished,
   depositHash: '0xdeposit',
   refundAddress: refundAddress,
+  closed: true,
+);
+
+/// An address that sent the coin of [_receive] into the exchanger.
+ChainScan _fundedReceiveScan(String address) => ChainScan(
+  address: address,
+  isContract: false,
+  balanceWei: BigInt.zero,
+  transactionCount: 1,
+  tokenTransferCount: 0,
+  firstTransaction: null,
+  firstTokenTransfer: null,
+  transactions: [
+    ChainTransfer(
+      hash: '0xin',
+      from: _party(address),
+      to: _party('0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984'),
+      value: BigInt.one,
+      token: null,
+      time: DateTime.now().subtract(const Duration(days: 5)),
+    ),
+  ],
+  tokenTransfers: const [],
+  holdings: const [],
+);
+
+/// A finished payment from XMR to [recipient] three days ago.
+BridgeSwap _payment(String recipient) => BridgeSwap(
+  direction: SwapDirection.pay,
+  id: 'pay0',
+  asset: BridgeAsset.usdg,
+  amount: 20,
+  xmrAmount: 0.05,
+  depositAddress: _deposit,
+  payoutAddress: recipient,
+  subaddressIndex: 4,
+  createdAt: DateTime.now().subtract(const Duration(days: 3)),
+  stage: SwapStage.finished,
+  depositHash: '0xpaid',
   closed: true,
 );
 
@@ -260,14 +305,14 @@ void main() {
     root.deleteSync(recursive: true);
   });
 
-  Future<void> showSendPage(WidgetTester tester, {bool startOnPay = false}) async {
+  Future<void> showSendPage(WidgetTester tester, {bool startOnPay = false, ChainScans? scans}) async {
     await tester.binding.setSurfaceSize(const Size(1400, 2600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
         theme: KranoxTheme.build(Palette.of(activeLook)),
         home: Scaffold(
-          body: SendPage(controller: wallet, bridge: bridge, startOnPay: startOnPay),
+          body: SendPage(controller: wallet, bridge: bridge, startOnPay: startOnPay, scans: scans),
         ),
       ),
     );
@@ -281,8 +326,8 @@ void main() {
   }
 
   /// Opens pay, asks for 0.16 XMR to [_chainRecipient], and reviews the payment.
-  Future<void> reviewPay(WidgetTester tester) async {
-    await showSendPage(tester);
+  Future<void> reviewPay(WidgetTester tester, {ChainScans? scans}) async {
+    await showSendPage(tester, scans: scans);
     await tester.tap(find.text(Copy.sendChainTab.toUpperCase()));
     await tester.pump();
     await tester.enterText(find.byType(TextField).at(0), '0.16');
@@ -327,26 +372,33 @@ void main() {
     await tester.runAsync(() => start(swaps: [_receive(_chainRecipient)]));
     await reviewPay(tester);
 
-    // Without the scan of the relay, the review offers no check of the recipient.
-    expect(find.text(Copy.payCheckRecipient), findsNothing);
+    // Without the scan of the relay, the review has no check of the recipient.
+    expect(find.text(Copy.addressChecking), findsNothing);
     expect(find.text(Copy.privacyAddressLabel), findsOneWidget);
     expect(find.textContaining('refund address of a receive'), findsOneWidget);
     expect(find.text(Copy.privacyWarnings(1)), findsOneWidget);
   });
 
-  testWidgets('pay checks a recipient without a history on Robinhood Chain and calls it a clean start', (tester) async {
+  testWidgets('pay checks a recipient without a history on Robinhood Chain as the review opens, a clean start', (
+    tester,
+  ) async {
     final scanner = _Scanner(_freshScan);
     await tester.runAsync(() => start(scanner: scanner));
+    scanner.hold = Completer<void>();
     await reviewPay(tester);
-    expect(find.text(Copy.payCheckRecipient), findsOneWidget);
-    expect(scanner.asked, isEmpty, reason: 'the check waits for the user');
 
-    await tester.tap(find.text(Copy.payCheckRecipient));
-    await settle(tester);
+    // The check starts with the review, without a click, and the payment waits for it.
     expect(scanner.asked, [_chainRecipient.toLowerCase()]);
+    expect(find.text(Copy.addressChecking), findsOneWidget);
+    expect(find.text(Copy.addressCheckWait), findsOneWidget);
+    expect(find.text(Copy.payNow), findsNothing);
+
+    scanner.hold!.complete();
+    await settle(tester);
     expect(find.text(Copy.payRecipientFresh), findsOneWidget);
     expect(find.text(Copy.payRecipientFreshNote), findsOneWidget);
-    expect(find.text(Copy.payCheckRecipient), findsNothing);
+    expect(find.text(Copy.addressChecking), findsNothing);
+    expect(find.text(Copy.payNow), findsOneWidget);
   });
 
   testWidgets('pay checks a recipient that an exchange funded and that dealt with an address of the user', (
@@ -354,13 +406,45 @@ void main() {
   ) async {
     await tester.runAsync(() => start(swaps: [_receive(_ownAddress)], scanner: _Scanner(_linkedScan)));
     await reviewPay(tester);
-    await tester.tap(find.text(Copy.payCheckRecipient));
     await settle(tester);
 
     expect(find.textContaining(Copy.payRecipientFundedNamed('Big Exchange', '')), findsOneWidget);
     expect(find.text(Copy.payRecipientOwn(shortText(_ownAddress))), findsOneWidget);
     expect(find.textContaining('At least 7 transactions'), findsOneWidget);
     expect(find.text(Copy.payRecipientApart), findsOneWidget);
+  });
+
+  testWidgets('pay warns when the scan finds that the recipient sent in the coin of a receive of the user', (
+    tester,
+  ) async {
+    await tester.runAsync(() => start(swaps: [_receive(_ownAddress)], scanner: _Scanner(_fundedReceiveScan)));
+    await reviewPay(tester);
+    await settle(tester);
+    expect(
+      find.text(Copy.privacyAddressFunded(formatTime(_receive(_ownAddress).createdAt, DateTime.now()))),
+      findsOneWidget,
+    );
+    expect(find.text(Copy.privacyAddressClear), findsNothing);
+  });
+
+  testWidgets('pay warns about an address of the user that it paid before, and not about anyone paid again', (
+    tester,
+  ) async {
+    await tester.runAsync(() => start(swaps: [_payment(_chainRecipient)], scanner: _Scanner(_freshScan)));
+    final scans = ChainScans(_Scanner(_freshScan));
+    addTearDown(scans.dispose);
+    await reviewPay(tester, scans: scans);
+    await settle(tester);
+    expect(find.text(Copy.privacyAddressClear), findsOneWidget, reason: 'paying someone again is fine');
+    await tester.tap(find.text(Copy.cancel));
+    await settle(tester);
+
+    // Once the user scanned it as theirs, the earlier payment ties this one to it.
+    await tester.runAsync(() => scans.scan(_chainRecipient));
+    await tester.tap(find.text(Copy.review));
+    await settle(tester);
+    final paidOn = formatTime(_payment(_chainRecipient).createdAt, DateTime.now());
+    expect(find.text(Copy.privacyAddressPaid(paidOn)), findsOneWidget);
   });
 
   testWidgets('the send page opens on pay when asked, as the way to a clean start does', (tester) async {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../bridge/controller.dart';
@@ -78,6 +80,19 @@ class _PrivacyPageState extends State<PrivacyPage> {
     await scans.scan(address);
   }
 
+  /// Opens the tab of Robinhood Chain on the scan of [address], an address of the user that a note of the wallet names.
+  /// The scan works on mainnet only, where the relay of the bridge answers.
+  void _scanFromNote(String address) {
+    final scans = widget.bridge.available ? widget.scans : null;
+    if (scans == null) return;
+    setState(() {
+      _tab = _PrivacyTab.robinhood;
+      _chainAddress.text = address;
+      _chainAddressError = null;
+    });
+    unawaited(scans.scan(address));
+  }
+
   /// Makes a new subaddress for the receive page and opens it, so that the user can give it to the next payer.
   Future<void> _newSubaddress() async {
     setState(() {
@@ -151,7 +166,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
       _nodeCheck(report),
       _subaddressCheck(report),
       _swapsCheck(report.pairs, now),
-      _refundCheck(report.links, now),
+      _refundCheck(report.links, now, onScan: _scanFromNote),
       _newCoinsCheck(report.newCoins, now),
       _lockCheck(),
     ]);
@@ -247,6 +262,8 @@ class _PrivacyPageState extends State<PrivacyPage> {
     }
     final report = analyzeChain(scan, swaps: widget.bridge.swaps, ownAddresses: scans.scanned);
     final checks = warningsFirst(_chainChecks(report, DateTime.now()));
+    // From 10 Oct 2026 an address that ties swaps of the user together counts as something to improve, so that "All
+    // clear" means no trace that Kranox can find; the owner asked for privacy kept at its most.
     final toImprove = report.toImprove;
     return [
       _scanForm(scans),
@@ -254,8 +271,17 @@ class _PrivacyPageState extends State<PrivacyPage> {
       PrivacySummary(
         checks: checks,
         subject: Copy.privacyChainResult(shortText(scan.address)),
-        headline: toImprove == 0 ? Copy.privacyClear : Copy.privacyToImprove(toImprove),
-        lead: toImprove == 0 ? Copy.privacyChainClearLead : Copy.privacyCleanStart,
+        // A first funding that the relay could not read for sure leaves nothing to call clear.
+        headline: switch ((toImprove, scan.fundingSure)) {
+          (0, true) => Copy.privacyClear,
+          (0, false) => Copy.privacyNothingFound,
+          _ => Copy.privacyToImprove(toImprove),
+        },
+        lead: switch ((toImprove, scan.fundingSure)) {
+          (0, true) => Copy.privacyChainClearLead,
+          (0, false) => Copy.privacyChainUnsureLead,
+          _ => Copy.privacyCleanStart,
+        },
         action: toImprove == 0
             ? null
             : SmallPillButton(
@@ -315,6 +341,7 @@ PrivacyCheck _swapsCheck(List<SwapPair> pairs, DateTime now) => PrivacyCheck(
       Copy.privacySwapsPair(
         '${formatDecimal(newest.receive.amount)} ${newest.receive.asset.label}',
         '${formatDecimal(newest.pay.amount)} ${newest.pay.asset.label}',
+        shortText(newest.pay.payoutAddress),
         formatTime(newest.receive.createdAt, now),
         formatTime(newest.pay.createdAt, now),
         switch ((newest.closeInTime, newest.closeInAmount)) {
@@ -329,8 +356,9 @@ PrivacyCheck _swapsCheck(List<SwapPair> pairs, DateTime now) => PrivacyCheck(
   },
 );
 
-/// A refund address paid from XMR is already on both sides, so it is a note, like a swap pair.
-PrivacyCheck _refundCheck(List<LinkedRefund> links, DateTime now) => PrivacyCheck(
+/// A refund address paid from XMR is already on both sides, so it is a note, like a swap pair. The address is the
+/// user's own, so the note offers its scan through [onScan], where the scan of Robinhood Chain works.
+PrivacyCheck _refundCheck(List<LinkedRefund> links, DateTime now, {ValueChanged<String>? onScan}) => PrivacyCheck(
   title: Copy.privacyRefundTitle,
   state: links.isEmpty ? CheckState.good : CheckState.note,
   tag: links.isEmpty ? null : Copy.privacyFromHistory,
@@ -345,6 +373,13 @@ PrivacyCheck _refundCheck(List<LinkedRefund> links, DateTime now) => PrivacyChec
       ),
       if (links.length > 1) Copy.privacyRefundMore(links.length - 1),
     ].join(' '),
+  },
+  action: switch ((links, onScan)) {
+    ([final newest, ...], final scan?) => SmallPillButton(
+      label: Copy.privacyScanIt,
+      onPressed: () => scan(newest.address),
+    ),
+    _ => null,
   },
 );
 
@@ -388,37 +423,59 @@ const List<PrivacyCheck> _pendingChainChecks = [
 
 /// The checks of a scanned address in their order: four that can find a link, then what everyone sees.
 List<PrivacyCheck> _chainChecks(ChainPrivacyReport report, DateTime now) => [
-  _fundingCheck(report.funding, now),
+  _fundingCheck(report.funding, sure: report.scan.fundingSure, now: now),
   _ownCheck(report.own, now),
   _lookAlikeCheck(report.lookAlikes, now),
   _kranoxCheck(report.kranox, now),
   _exposureCheck(report.exposure, now),
 ];
 
-PrivacyCheck _fundingCheck(FirstFunding? funding, DateTime now) => PrivacyCheck(
+/// The first funding of the address. One that links warns; one that the relay could not read for sure, or none found
+/// without being [sure], is a note and never clean, from 10 Oct 2026; a clean one says that the explorer still misses
+/// some transfers that contracts made.
+PrivacyCheck _fundingCheck(FirstFunding? funding, {required bool sure, required DateTime now}) => PrivacyCheck(
   title: Copy.privacyFundingTitle,
   state: switch (funding) {
     null => CheckState.note,
     FirstFunding(links: true) => CheckState.warning,
+    FirstFunding(sure: false) => CheckState.note,
     FirstFunding() => CheckState.good,
   },
   line: switch (funding) {
+    null when !sure => Copy.privacyFundingUnsureLine,
     null => Copy.privacyFundingNoneLine,
-    FirstFunding(fromOwn: true) => Copy.privacyFundingOwnLine,
-    FirstFunding(:final label?) => Copy.privacyFundingNamedLine(label),
+    FirstFunding(links: true, fromOwn: true) => Copy.privacyFundingOwnLine,
+    FirstFunding(links: true, :final label?) => Copy.privacyFundingNamedLine(label),
+    FirstFunding(sure: false) => Copy.privacyFundingUnsureLine,
+    FirstFunding(fromPay: _?) => Copy.privacyFundingPayLine,
     FirstFunding() => Copy.privacyFundingPlainLine,
   },
   detail: switch (funding) {
+    null when !sure => Copy.privacyFundingUnsureNone,
     null => Copy.privacyFundingNone,
-    FirstFunding(fromOwn: true, :final transfer) => Copy.privacyFundingOwn(
+    FirstFunding(links: true, fromOwn: true, :final transfer) => Copy.privacyFundingOwn(
       shortText(transfer.from.address),
       formatTime(transfer.time, now),
     ),
-    FirstFunding(:final label?, :final transfer) => Copy.privacyFundingNamed(label, formatTime(transfer.time, now)),
-    FirstFunding(:final transfer) => Copy.privacyFundingPlain(
+    FirstFunding(links: true, :final label?, :final transfer) => Copy.privacyFundingNamed(
+      label,
+      formatTime(transfer.time, now),
+    ),
+    FirstFunding(sure: false, :final transfer) => Copy.privacyFundingUnsure(
       shortText(transfer.from.address),
       formatTime(transfer.time, now),
     ),
+    FirstFunding(fromPay: final pay?) => [
+      Copy.privacyFundingPay(
+        '${formatDecimal(pay.amountOut ?? pay.amount)} ${pay.asset.label}',
+        formatTime(pay.createdAt, now),
+      ),
+      Copy.privacyFundingExplorerGap,
+    ].join(' '),
+    FirstFunding(:final transfer) => [
+      Copy.privacyFundingPlain(shortText(transfer.from.address), formatTime(transfer.time, now)),
+      Copy.privacyFundingExplorerGap,
+    ].join(' '),
   },
 );
 
@@ -448,7 +505,9 @@ PrivacyCheck _lookAlikeCheck(List<LookAlike> lookAlikes, DateTime now) => Privac
   },
 );
 
-/// A swap of Kranox is a note: on the chain it shows a transfer with the exchanger, and nothing more.
+/// The swaps of Kranox of the address: one is how a swap goes, and only the records of the exchanger tie the address to
+/// it; more tie those swaps together there, so the address counts as something to improve, with a new address as the
+/// way.
 PrivacyCheck _kranoxCheck(List<KranoxLink> kranox, DateTime now) {
   String amount(BridgeSwap swap) => '${formatDecimal(swap.amount)} ${swap.asset.label}';
   String linkText(KranoxLink link) => switch (link) {
@@ -458,14 +517,15 @@ PrivacyCheck _kranoxCheck(List<KranoxLink> kranox, DateTime now) {
   };
   return PrivacyCheck(
     title: Copy.privacyKranoxTitle,
-    state: kranox.isEmpty ? CheckState.good : CheckState.note,
+    state: kranox.length > 1 ? CheckState.warning : CheckState.good,
     line: kranox.isEmpty ? Copy.privacyKranoxClearLine : Copy.privacyKranoxLine(kranox.length),
     detail: switch (kranox) {
       [] => Copy.privacyKranoxClear,
+      [final only] => [linkText(only), Copy.privacyKranoxOne].join(' '),
       [final newest, ...] => [
         linkText(newest),
-        if (kranox.length > 1) Copy.privacyMoreSwaps(kranox.length - 1),
-        Copy.privacyKranoxNote,
+        Copy.privacyMoreSwaps(kranox.length - 1),
+        onBothSides(kranox) ? Copy.privacyKranoxBothSides : Copy.privacyKranoxTied(kranox.length),
       ].join(' '),
     },
   );

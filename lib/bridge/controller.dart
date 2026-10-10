@@ -119,14 +119,13 @@ final class BridgeController extends ChangeNotifier {
     return null;
   }
 
-  /// The swap of one way that its page shows with its steps: the newest one that runs, or that ended and that the user
-  /// has not closed yet, so that a result, above all a failure or a refund, stays in view until the user has read it.
-  BridgeSwap? shownSwapOf(SwapDirection direction) {
-    for (final swap in swapsOf(direction)) {
-      if (!swap.stage.isFinal || !swap.closed) return swap;
-    }
-    return null;
-  }
+  /// The swaps of one way that its page shows with their steps, the newest first: every one that runs, and every one
+  /// that ended and that the user has not closed yet, so that a result, above all a failure or a refund, stays in view
+  /// until the user has read it.
+  List<BridgeSwap> openSwapsOf(SwapDirection direction) => [
+    for (final swap in swapsOf(direction))
+      if (!swap.stage.isFinal || !swap.closed) swap,
+  ];
 
   /// Closes the card of an ended swap. The swap stays in the list.
   Future<void> closeSwap(String id) async {

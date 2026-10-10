@@ -4,22 +4,33 @@ import '../config/app_config.dart';
 
 /// The transfer that first brought coins to the scanned address.
 final class FirstFunding {
-  const FirstFunding({required this.transfer, required this.fromOwn});
+  const FirstFunding({required this.transfer, required this.fromOwn, this.fromPay, this.sure = true});
 
   final ChainTransfer transfer;
 
   /// Whether the sender is another address of the user that the app knows.
   final bool fromOwn;
 
+  /// The payment of the user from XMR whose payout this transfer is: the clean start that the menu Privacy offers. On
+  /// the chain it shows a transfer from the exchanger, whatever name an explorer gives it, and only the records of the
+  /// exchanger tie it to that one payment.
+  final BridgeSwap? fromPay;
+
+  /// Whether the relay read every kind of transfer in, so that no older one escaped it. A funding that is not sure
+  /// never counts as clean, though one that links still warns.
+  final bool sure;
+
   /// The public name of the sender, such as the name of an exchange.
   String? get label => transfer.from.label;
 
-  /// A funding from another address of the user, or from a sender with a public name, links the address to it.
-  bool get links => fromOwn || label != null;
+  /// A funding from another address of the user, or from a sender with a public name, links the address to it; the
+  /// payout of a payment of the user from XMR does not.
+  bool get links => fromPay == null && (fromOwn || label != null);
 }
 
 /// A swap of Kranox that the scanned address takes part in. On the chain it shows a transfer to or from the exchanger;
-/// only the records of the exchanger tie it to the XMR of the user.
+/// only the records of the exchanger tie it to the XMR of the user. One swap ties the address to that swap alone; more
+/// tie those swaps together in the records of the exchanger.
 sealed class KranoxLink {
   const KranoxLink(this.swap);
 
@@ -97,10 +108,20 @@ final class ChainPrivacyReport {
   final List<LookAlike> lookAlikes;
   final Exposure exposure;
 
-  /// The links of the funding and of other addresses of the user, and look-alike senders. The swaps of Kranox and what
-  /// everyone sees are notes.
-  int get toImprove => [funding?.links ?? false, own.isNotEmpty, lookAlikes.isNotEmpty].where((found) => found).length;
+  /// Whether the address ties swaps of the user together in the records of the exchanger: it took part in more than
+  /// one. The owner asked on 10 Oct 2026 for a perfect score that means no trace that Kranox can find, so this counts
+  /// as something to improve, with a new address as the way.
+  bool get tiesSwaps => kranox.length > 1;
+
+  /// The links of the funding and of other addresses of the user, look-alike senders, and swaps that the address ties
+  /// together. What everyone sees is a note.
+  int get toImprove =>
+      [funding?.links ?? false, own.isNotEmpty, lookAlikes.isNotEmpty, tiesSwaps].where((found) => found).length;
 }
+
+/// Whether [links] hold both sides of the bridge: a payment from XMR and a receive into XMR, which the records of the
+/// exchanger then tie together.
+bool onBothSides(List<KranoxLink> links) => links.any((link) => link is GotPay) && links.any((link) => link is! GotPay);
 
 /// Reads what [scan] gives away, with the swaps of the bridge ([swaps]) and the other addresses of the user that the
 /// app knows ([ownAddresses]): the refund addresses of receives and the addresses that the user scanned.
@@ -123,8 +144,8 @@ ChainPrivacyReport analyzeChain(
   ]);
   return ChainPrivacyReport(
     scan: scan,
-    funding: _funding(scan, me, own),
-    kranox: _kranox(me, transfers, swaps),
+    funding: _funding(scan, me, own, swaps),
+    kranox: kranoxLinks(me, swaps, transfers: transfers),
     own: _own(me, transfers, own),
     lookAlikes: _lookAlikes(me, transfers),
     exposure: _exposure(scan, transfers),
@@ -144,17 +165,37 @@ bool _to(ChainTransfer transfer, String address) => transfer.to?.address.toLower
 
 bool _from(ChainTransfer transfer, String address) => transfer.from.address.toLowerCase() == address;
 
-FirstFunding? _funding(ChainScan scan, String me, Set<String> own) {
-  final incoming = [
-    for (final transfer in [?scan.firstTransaction, ?scan.firstTokenTransfer])
-      if (_to(transfer, me)) transfer,
-  ];
-  if (incoming.isEmpty) return null;
-  final first = incoming.reduce((a, b) => b.time.isBefore(a.time) ? b : a);
-  return FirstFunding(transfer: first, fromOwn: own.contains(first.from.address.toLowerCase()));
+/// The first funding of the scanned address: the one that the relay read from every kind of transfer in, or, from a
+/// relay before 10 Oct 2026, the older of its oldest transaction and token transfer that came in.
+FirstFunding? _funding(ChainScan scan, String me, Set<String> own, List<BridgeSwap> swaps) {
+  final ChainTransfer first;
+  if (scan.fundingRead) {
+    final funding = scan.firstFunding;
+    if (funding == null) return null;
+    first = funding;
+  } else {
+    final incoming = [
+      for (final transfer in [?scan.firstTransaction, ?scan.firstTokenTransfer])
+        if (_to(transfer, me)) transfer,
+    ];
+    if (incoming.isEmpty) return null;
+    first = incoming.reduce((a, b) => b.time.isBefore(a.time) ? b : a);
+  }
+  final hash = first.hash.toLowerCase();
+  return FirstFunding(
+    transfer: first,
+    fromOwn: own.contains(first.from.address.toLowerCase()),
+    fromPay: swaps
+        .where((swap) => swap.direction == SwapDirection.pay && swap.payoutHash?.toLowerCase() == hash)
+        .firstOrNull,
+    sure: scan.fundingSure,
+  );
 }
 
-List<KranoxLink> _kranox(String me, List<ChainTransfer> transfers, List<BridgeSwap> swaps) {
+/// The swaps of Kranox that [address] takes part in, the newest first: from the records of the swaps, and with the
+/// [transfers] of a scan of the address also the receives whose coin it sent in.
+List<KranoxLink> kranoxLinks(String address, List<BridgeSwap> swaps, {List<ChainTransfer> transfers = const []}) {
+  final me = address.toLowerCase();
   final links = <KranoxLink>[];
   for (final swap in swaps) {
     if (swap.direction == SwapDirection.receive) {
