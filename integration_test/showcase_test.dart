@@ -505,6 +505,10 @@ void main() {
     await tester.enterText(find.byType(TextField).first, '0.006');
     await waitFor(estimate);
     await shoot('receive-chain-quote');
+    // The review with the privacy check of the receive comes before the exchanger makes the deposit address.
+    await tester.tap(find.text(Copy.bridgeReview));
+    await waitFor(find.text(Copy.receiveReviewTitle));
+    await shoot('receive-chain-review');
     await tester.tap(find.text(Copy.bridgeCreate));
     await waitFor(find.text(Copy.bridgeStepWaiting));
     await tester.pump(_frame);
@@ -530,6 +534,8 @@ void main() {
     sampleBridge.state = const SwapState(stage: SwapStage.waiting);
     await tester.enterText(find.byType(TextField).first, '0.006');
     await waitFor(estimate);
+    await tester.tap(find.text(Copy.bridgeReview));
+    await waitFor(find.text(Copy.receiveReviewTitle));
     await tester.tap(find.text(Copy.bridgeCreate));
     await waitFor(find.text(Copy.bridgeStepWaiting));
     await swapAt(const SwapState(stage: SwapStage.confirming, depositHash: _sampleDepositHash), 'receive-chain-step');

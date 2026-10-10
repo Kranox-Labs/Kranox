@@ -9,28 +9,31 @@ import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
 import '../theme/typography.dart';
 
-/// The privacy check on the review of a payment: one line for each rule, with a check mark or a warning, and the
-/// suggested amount of the rule of the amount as a button. It advises; the payment can still leave.
-class PrivacyCheckCard extends StatelessWidget {
-  const PrivacyCheckCard({super.key, required this.report, required this.now, this.onUseSuggestion});
+/// What one line of a privacy check says: its rule passed, its rule warns, or a tip that asks for nothing now.
+enum RuleState { passed, warning, tip }
 
-  final PrivacyReport report;
+/// One line of a privacy check: the name of its rule, what it found, and a way to act on it.
+final class PrivacyRule {
+  const PrivacyRule({required this.label, required this.state, required this.text, this.action});
 
-  /// The moment that the times of the lines count from.
-  final DateTime now;
+  final String label;
+  final RuleState state;
+  final String text;
+  final Widget? action;
+}
 
-  /// Builds the payment again with a suggested amount. Without it, the card shows no button.
-  final ValueChanged<XmrAmount>? onUseSuggestion;
+/// A privacy check before the user acts, such as on the review of a payment or of a receive: one line for each rule,
+/// the count of its warnings at the head, and [note] at the foot. It advises; the user can still go on.
+class PrivacyRulesCard extends StatelessWidget {
+  const PrivacyRulesCard({super.key, required this.rules, required this.note});
+
+  final List<PrivacyRule> rules;
+  final String note;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final warnings = report.warnings;
-    final match = report.amountMatch;
-    final fresh = report.fresh;
-    final own = report.ownAddress;
-    final suggestion = report.suggestion;
-    final use = onUseSuggestion;
+    final warnings = rules.where((rule) => rule.state == RuleState.warning).length;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.field,
@@ -57,49 +60,9 @@ class PrivacyCheckCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: Metrics.gapSmall),
-            _RuleLine(
-              label: Copy.privacyAmountLabel,
-              passed: match == null,
-              text: switch (match) {
-                null => Copy.privacyAmountClear,
-                XmrMatch(:final amount, :final at) => Copy.privacyAmountMatchesXmr(
-                  formatAmount(amount),
-                  formatAgo(now.difference(at)),
-                ),
-                ChainMatch(:final asset, :final sent, :final paid, :final at) => Copy.privacyAmountMatchesChain(
-                  formatDecimal(paid),
-                  formatDecimal(sent),
-                  asset.label,
-                  formatAgo(now.difference(at)),
-                ),
-              },
-              action: match != null && suggestion != null && use != null
-                  ? _SuggestionButton(amount: suggestion, onPressed: () => use(suggestion))
-                  : null,
-            ),
-            _RuleLine(
-              label: Copy.privacyTimingLabel,
-              passed: fresh == null,
-              text: switch (fresh) {
-                null => Copy.privacyTimingClear(AppConfig.privacyFreshWindow.inHours),
-                FreshCoins(:final since, :final clearsAt, fromChain: true) => Copy.privacyTimingFromChain(
-                  formatAgo(now.difference(since)),
-                  formatMoment(clearsAt, now),
-                ),
-                FreshCoins(:final since, :final clearsAt) => Copy.privacyTimingFresh(
-                  formatAgo(now.difference(since)),
-                  formatMoment(clearsAt, now),
-                ),
-              },
-            ),
-            if (report.checksAddress)
-              _RuleLine(
-                label: Copy.privacyAddressLabel,
-                passed: own == null,
-                text: own == null ? Copy.privacyAddressClear : Copy.privacyAddressOwn(formatTime(own.usedAt, now)),
-              ),
+            for (final rule in rules) _RuleLine(rule),
             const SizedBox(height: Metrics.gapTiny),
-            Text(Copy.privacyNote, style: KranoxType.small.copyWith(color: palette.inkFaint)),
+            Text(note, style: KranoxType.small.copyWith(color: palette.inkFaint)),
           ],
         ),
       ),
@@ -107,18 +70,89 @@ class PrivacyCheckCard extends StatelessWidget {
   }
 }
 
-/// One rule of the check: a check mark or a warning, the name of the rule, and what the rule found.
-class _RuleLine extends StatelessWidget {
-  const _RuleLine({required this.label, required this.passed, required this.text, this.action});
+/// The privacy check on the review of a payment: the rules of the amount, the timing, and, for pay, the address, with
+/// the suggested amount of the rule of the amount as a button.
+class PrivacyCheckCard extends StatelessWidget {
+  const PrivacyCheckCard({super.key, required this.report, required this.now, this.onUseSuggestion});
 
-  final String label;
-  final bool passed;
-  final String text;
-  final Widget? action;
+  final PrivacyReport report;
+
+  /// The moment that the times of the lines count from.
+  final DateTime now;
+
+  /// Builds the payment again with a suggested amount. Without it, the card shows no button.
+  final ValueChanged<XmrAmount>? onUseSuggestion;
+
+  @override
+  Widget build(BuildContext context) {
+    final match = report.amountMatch;
+    final fresh = report.fresh;
+    final own = report.ownAddress;
+    final suggestion = report.suggestion;
+    final use = onUseSuggestion;
+    return PrivacyRulesCard(
+      note: Copy.privacyNote,
+      rules: [
+        PrivacyRule(
+          label: Copy.privacyAmountLabel,
+          state: match == null ? RuleState.passed : RuleState.warning,
+          text: switch (match) {
+            null => Copy.privacyAmountClear,
+            XmrMatch(:final amount, :final at) => Copy.privacyAmountMatchesXmr(
+              formatAmount(amount),
+              formatAgo(now.difference(at)),
+            ),
+            ChainMatch(:final asset, :final sent, :final paid, :final at) => Copy.privacyAmountMatchesChain(
+              formatDecimal(paid),
+              formatDecimal(sent),
+              asset.label,
+              formatAgo(now.difference(at)),
+            ),
+          },
+          action: match != null && suggestion != null && use != null
+              ? _SuggestionButton(amount: suggestion, onPressed: () => use(suggestion))
+              : null,
+        ),
+        PrivacyRule(
+          label: Copy.privacyTimingLabel,
+          state: fresh == null ? RuleState.passed : RuleState.warning,
+          text: switch (fresh) {
+            null => Copy.privacyTimingClear(AppConfig.privacyFreshWindow.inHours),
+            FreshCoins(:final since, :final clearsAt, fromChain: true) => Copy.privacyTimingFromChain(
+              formatAgo(now.difference(since)),
+              formatMoment(clearsAt, now),
+            ),
+            FreshCoins(:final since, :final clearsAt) => Copy.privacyTimingFresh(
+              formatAgo(now.difference(since)),
+              formatMoment(clearsAt, now),
+            ),
+          },
+        ),
+        if (report.checksAddress)
+          PrivacyRule(
+            label: Copy.privacyAddressLabel,
+            state: own == null ? RuleState.passed : RuleState.warning,
+            text: own == null ? Copy.privacyAddressClear : Copy.privacyAddressOwn(formatTime(own.usedAt, now)),
+          ),
+      ],
+    );
+  }
+}
+
+/// One rule of a check: a mark of its state, the name of the rule, what the rule found, and its action.
+class _RuleLine extends StatelessWidget {
+  const _RuleLine(this.rule);
+
+  final PrivacyRule rule;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final (icon, color) = switch (rule.state) {
+      RuleState.passed => (Icons.check_circle_rounded, palette.accent),
+      RuleState.warning => (Icons.error_rounded, palette.danger),
+      RuleState.tip => (Icons.info_outline_rounded, palette.inkSoft),
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: Metrics.gapSmall),
       child: Row(
@@ -126,21 +160,17 @@ class _RuleLine extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.only(top: 1),
-            child: Icon(
-              passed ? Icons.check_circle_rounded : Icons.error_rounded,
-              size: 16,
-              color: passed ? palette.accent : palette.danger,
-            ),
+            child: Icon(icon, size: 16, color: color),
           ),
           const SizedBox(width: Metrics.gapSmall),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: KranoxType.smallStrong.copyWith(color: palette.ink)),
+                Text(rule.label, style: KranoxType.smallStrong.copyWith(color: palette.ink)),
                 const SizedBox(height: 2),
-                Text(text, style: KranoxType.small.copyWith(color: palette.inkSoft)),
-                if (action case final action?) ...[const SizedBox(height: Metrics.gapTiny), action],
+                Text(rule.text, style: KranoxType.small.copyWith(color: palette.inkSoft)),
+                if (rule.action case final action?) ...[const SizedBox(height: Metrics.gapTiny), action],
               ],
             ),
           ),

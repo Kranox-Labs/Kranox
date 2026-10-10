@@ -1,33 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../bridge/chain_scan.dart';
 import '../../bridge/client.dart';
 import '../../config/app_config.dart';
 import '../../bridge/controller.dart';
 import '../../bridge/models.dart';
 import '../../bridge/payment_link.dart';
 import '../../core/evm_address.dart';
+import '../../privacy/chain_privacy.dart';
+import '../../privacy/chain_scans.dart';
+import '../../privacy/receive_check.dart';
 import '../../wallet/failure.dart';
 import '../copy.dart';
 import '../format.dart';
 import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
 import '../theme/typography.dart';
+import '../widgets/address_check.dart';
 import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/field.dart';
+import '../widgets/privacy_check.dart';
 import '../widgets/qr_card.dart';
+import '../widgets/review_line.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/swap_box.dart';
 import '../widgets/swap_steps.dart';
 
 /// Receive from Robinhood Chain: the user sends ETH or USDG there, and ChangeNOW turns it into XMR for a new
 /// subaddress of this wallet. The part of the receive page under the choice "From Robinhood Chain", in the form of a
-/// swap as pay on the send page: the coin that the user sends above, the XMR that it buys below.
+/// swap as pay on the send page: the coin that the user sends above, the XMR that it buys below. From 10 Oct 2026 a
+/// review with the privacy check of the receive comes before the exchanger makes the deposit address.
 class ReceiveFromChain extends StatefulWidget {
-  const ReceiveFromChain({super.key, required this.bridge});
+  const ReceiveFromChain({super.key, required this.bridge, this.scans});
 
   final BridgeController bridge;
+
+  /// The addresses that the user scanned in the menu Privacy, which the check of the refund address counts as the
+  /// user's.
+  final ChainScans? scans;
 
   @override
   State<ReceiveFromChain> createState() => _ReceiveFromChainState();
@@ -43,6 +55,16 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
   // While a swap is on its way, the page shows that swap alone, until the user asks for the form of another one.
   bool _another = false;
 
+  // The review before the exchanger makes the deposit address, with the refund address of the form.
+  bool _reviewing = false;
+  String? _reviewRefund;
+
+  // The check of the refund address, for the address that it belongs to: what the scan found, or why it failed.
+  String? _checkedRefund;
+  ChainPrivacyReport? _refundReport;
+  String? _refundCheckError;
+  bool _checkingRefund = false;
+
   @override
   void initState() {
     super.initState();
@@ -57,7 +79,8 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     super.dispose();
   }
 
-  Future<void> _create() async {
+  /// Opens the review of the form, where the privacy check of the receive shows before the exchanger makes anything.
+  void _startReview() {
     final text = _refund.text.trim();
     // The refund address gets the checksum of EIP-55 too, as the recipient of pay does: a typo in an address of
     // mixed case would send a refund nowhere.
@@ -73,12 +96,21 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     setState(() {
       _refundError = null;
       _error = null;
+      _reviewing = true;
+      _reviewRefund = refund;
+    });
+  }
+
+  Future<void> _create() async {
+    setState(() {
+      _error = null;
       _creating = true;
     });
     try {
-      await widget.bridge.createSwap(refundAddress: refund);
+      await widget.bridge.createSwap(refundAddress: _reviewRefund);
       _amount.clear();
       _another = false;
+      _reviewing = false;
     } on BridgeException catch (error) {
       setState(() => _error = bridgeFailureText(error));
     } on WalletException catch (error) {
@@ -89,6 +121,43 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     } finally {
       if (mounted) setState(() => _creating = false);
     }
+  }
+
+  /// Scans the refund address [address] through the relay. The scan stays out of the scans of the menu Privacy, as the
+  /// check of the recipient of pay does.
+  Future<void> _checkRefund(String address, ChainScanClient scanner) async {
+    setState(() {
+      _checkedRefund = address;
+      _refundReport = null;
+      _refundCheckError = null;
+      _checkingRefund = true;
+    });
+    try {
+      final scan = await readScan(scanner, address);
+      final report = analyzeChain(scan, swaps: widget.bridge.swaps, ownAddresses: widget.scans?.scanned ?? const []);
+      if (mounted && _checkedRefund == address) setState(() => _refundReport = report);
+    } on BridgeException catch (error) {
+      if (mounted && _checkedRefund == address) setState(() => _refundCheckError = bridgeFailureText(error));
+    } finally {
+      if (mounted) setState(() => _checkingRefund = false);
+    }
+  }
+
+  /// The check of the refund address [refund] on the review, when the relay of the app offers the scan.
+  Widget? _refundCheck(String refund) {
+    final scanner = widget.bridge.scanner;
+    if (scanner == null) return null;
+    final mine = _checkedRefund == refund;
+    return AddressCheck(
+      report: mine ? _refundReport : null,
+      checking: mine && _checkingRefund,
+      error: mine ? _refundCheckError : null,
+      onCheck: _creating || _checkingRefund ? null : () => _checkRefund(refund, scanner),
+      now: DateTime.now(),
+      lead: Copy.receiveCheckRefundLead,
+      freshNote: Copy.receiveRefundFreshNote,
+      apartNote: Copy.receiveRefundApart,
+    );
   }
 
   @override
@@ -117,9 +186,12 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
                 onAnother: shown.stage.isFinal || _another ? null : () => setState(() => _another = true),
                 onClose: shown.stage.isFinal ? () => bridge.closeSwap(shown.id) : null,
               ),
-              if (_another && !shown.stage.isFinal) ...[const SizedBox(height: Metrics.gap), _form(context, bridge)],
+              if (_another && !shown.stage.isFinal) ...[
+                const SizedBox(height: Metrics.gap),
+                _formOrReview(context, bridge),
+              ],
             ] else
-              _form(context, bridge),
+              _formOrReview(context, bridge),
           ],
           if (bridge.swapsOf(SwapDirection.receive) case final swaps when swaps.isNotEmpty) ...[
             const SizedBox(height: Metrics.gap),
@@ -141,6 +213,9 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
     },
   );
 
+  Widget _formOrReview(BuildContext context, BridgeController bridge) =>
+      _reviewing ? _review(context, bridge) : _form(context, bridge);
+
   Widget _form(BuildContext context, BridgeController bridge) {
     final palette = context.palette;
     return Surface(
@@ -152,7 +227,7 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
               label: Copy.bridgeYouSend,
               amount: TextField(
                 controller: _amount,
-                onSubmitted: (_) => bridge.canSwap ? _create() : null,
+                onSubmitted: (_) => bridge.canSwap ? _startReview() : null,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [
                   LengthLimitingTextInputFormatter(AppConfig.amountFieldMaxLength),
@@ -190,12 +265,83 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
           ),
           ErrorLine(_error),
           const SizedBox(height: Metrics.gap + 4),
+          PillButton(label: Copy.bridgeReview, expand: true, onPressed: bridge.canSwap ? _startReview : null),
+          const SizedBox(height: Metrics.gapSmall),
+          Text(
+            Copy.bridgeSeenBy,
+            textAlign: TextAlign.center,
+            style: KranoxType.small.copyWith(color: palette.inkFaint),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The review of the form: the XMR that it buys, the refund address in full with its check, what goes where, the
+  /// privacy check of the receive, and the button that asks the exchanger for the deposit address.
+  Widget _review(BuildContext context, BridgeController bridge) {
+    final palette = context.palette;
+    final refund = _reviewRefund;
+    final estimate = bridge.quote?.estimatedXmr;
+    return Surface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            Copy.receiveReviewTitle,
+            textAlign: TextAlign.center,
+            style: KranoxType.cardTitle.copyWith(color: palette.ink),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            Copy.receiveReviewLead,
+            textAlign: TextAlign.center,
+            style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft),
+          ),
+          const SizedBox(height: Metrics.gap + 4),
+          Text(
+            Copy.bridgeYouGet.toUpperCase(),
+            textAlign: TextAlign.center,
+            style: KranoxType.label.copyWith(color: palette.inkSoft),
+          ),
+          const SizedBox(height: Metrics.gapTiny),
+          Center(
+            child: bridge.quoting
+                ? LoadingFigure(style: KranoxType.sendFigure)
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: AmountFigure(
+                      value: estimate == null ? Copy.amountHint : Copy.about(formatDecimal(estimate)),
+                      style: KranoxType.sendFigure,
+                      unitStyle: KranoxType.smallStrong,
+                    ),
+                  ),
+          ),
+          const SizedBox(height: Metrics.gap),
+          if (refund != null) ...[
+            ReviewAddress(label: Copy.receiveRefundTo, address: refund, check: _refundCheck(refund)),
+            const SizedBox(height: Metrics.gapSmall),
+          ],
+          ReviewLine(label: Copy.bridgeYouSend, value: '${bridge.amount} ${bridge.asset.label}'),
+          ReviewLine(label: Copy.to, value: Copy.receiveReviewNewSubaddress),
+          if (refund == null) ReviewLine(label: Copy.privacyRefundRuleLabel, value: Copy.receiveRefundNone),
+          const SizedBox(height: Metrics.gapSmall),
+          PrivacyRulesCard(note: Copy.privacyGoOnNote, rules: _receiveRules(refund, bridge.swaps, DateTime.now())),
+          const SizedBox(height: Metrics.gap),
           PillButton(
             label: Copy.bridgeCreate,
             busy: _creating,
             busyLabel: Copy.bridgeCreating,
             expand: true,
             onPressed: bridge.canSwap ? _create : null,
+          ),
+          ErrorLine(_error),
+          const SizedBox(height: Metrics.gapSmall),
+          PillButton(
+            label: Copy.back,
+            tone: PillTone.quiet,
+            expand: true,
+            onPressed: _creating ? null : () => setState(() => _reviewing = false),
           ),
           const SizedBox(height: Metrics.gapSmall),
           Text(
@@ -207,6 +353,28 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
       ),
     );
   }
+}
+
+/// The rules of the privacy check of a receive from Robinhood Chain: whether the user paid the refund address
+/// [refund] from XMR, and what to do once the XMR comes in.
+List<PrivacyRule> _receiveRules(String? refund, List<BridgeSwap> swaps, DateTime now) {
+  final paidAt = refund == null ? null : lastPaidFromXmr(refund, swaps);
+  return [
+    PrivacyRule(
+      label: Copy.privacyRefundRuleLabel,
+      state: paidAt == null ? RuleState.passed : RuleState.warning,
+      text: switch ((refund, paidAt)) {
+        (null, _) => Copy.privacyRefundNone,
+        (_, null) => Copy.privacyRefundNeverPaid,
+        (_, final paid?) => Copy.privacyRefundPaid(formatAgo(now.difference(paid))),
+      },
+    ),
+    PrivacyRule(
+      label: Copy.privacyAfterThis,
+      state: RuleState.tip,
+      text: Copy.privacyAfterReceive(AppConfig.privacyFreshWindow.inHours),
+    ),
+  ];
 }
 
 /// The least amount of the coin of the form, once a quote has given it, in the color of a failure while the amount
