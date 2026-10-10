@@ -69,7 +69,11 @@ The review found 17 distinct findings: 9 Medium, 7 Low, and 1 without a severity
 | No severity | 1 | 0 | 1 |
 | Total | 17 | 9 | 8 |
 
-On 9 Oct 2026, no new finding is fixed yet. When a fix ships, this report names its commit and its release.
+Eight of the 9 new findings are fixed, and one is partly fixed. The fixes of the wallet ship in
+[Kranox 0.3.2 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.2), and the relay runs its fixes from
+9 Oct 2026. Wallet O-004 stays partly fixed: a new password needs 12 characters, and more rounds of the key function
+wait for more research. A third scan, of the code after 0.3.1, ran on 10 Oct 2026 with Trail of Bits Skills:
+[security-review-sharp-edges-2026-10-10.md](security-review-sharp-edges-2026-10-10.md).
 
 ## Findings
 
@@ -80,13 +84,13 @@ repository on its own, so the wallet and the relay both have an O-001.
 
 | ID | Severity | Verdict | Finding | Relation | Status |
 |---|---|---|---|---|---|
-| O-001 | Medium | Confirmed | The app reaches the relay without the proxy of Settings | New | Open |
-| O-003 | Medium | Confirmed | The signature of an answer does not bind the request | New | Open |
-| O-007 | Medium | Confirmed | The file of the swaps is not encrypted | New | Open |
-| O-004 | Low | Confirmed | One round of the KDF, and a password of 8 characters | New | Open |
+| O-001 | Medium | Confirmed | The app reached the relay without the proxy of Settings | New | Fixed in 0.3.2 |
+| O-003 | Medium | Confirmed | The signature of an answer did not bind the request | New | Fixed in 0.3.2 |
+| O-007 | Medium | Confirmed | The file of the swaps was not encrypted | New | Fixed in 0.3.2 |
+| O-004 | Low | Confirmed | One round of the KDF, and a password of 8 characters | New | Partly fixed in 0.3.2 |
 | O-002 | Medium | Needs review | The link to the node is not encrypted | Same as K-11 | Open, as K-11 |
 | O-005 | Medium | Needs review | Library validation is off, and the app has an ad hoc signature | Same as K-13 | A choice |
-| O-006 | Low | Needs review | The app reads an answer of the relay without a size limit | New | Open |
+| O-006 | Low | Needs review | The app read an answer of the relay without a size limit | New | Fixed in 0.3.2 |
 | A-007 | None | Needs review | Neither repository shows how the prebuilt Monero library was built | Known | Known |
 
 ### Relay
@@ -96,11 +100,11 @@ repository on its own, so the wallet and the relay both have an O-001.
 | O-001 | Medium | Needs review | A swap reads without its token | Same as K-18 | Open, as K-18 |
 | O-002 | Medium | Needs review | All users share one budget of calls to ChangeNOW | Same as K-04 | Limited on the server |
 | O-003 | Medium | Needs review | A scan spends paid calls to the explorer | Same as K-04 | Limited on the server |
-| O-004 | Medium | Needs review | The signature leaves out the status, the method, and the path | New | Open |
-| O-005 | Low | Needs review | Two calls carry the partner key in the URL | New | Open |
-| O-006 | Low | Needs review | Addresses from Alchemy go into a URL without encoding | New | Open |
+| O-004 | Medium | Needs review | The signature left out the status, the method, and the path | New | Fixed |
+| O-005 | Low | Needs review | Two calls carried the partner key in the URL | New | Fixed |
+| O-006 | Low | Needs review | Addresses from Alchemy went into a URL without encoding | New | Fixed |
 | O-007 | Low | Needs review | The relay records no security event | A choice | A choice |
-| O-008 | Low | Needs review | A flood of keys can push out the idempotency key of a user | New, next to K-14 | Open |
+| O-008 | Low | Needs review | A flood of keys could push out the idempotency key of a user | New, next to K-14 | Fixed |
 | A-006 | Low | Needs review | The relay serves plain HTTP behind a proxy that no repository defines | Known | Known |
 
 ### Across the two
@@ -112,56 +116,71 @@ repository on its own, so the wallet and the relay both have an O-001.
 | SYS-003 | Medium | The proxy of Settings covers only the link to the node | Wallet O-001 |
 | SYS-004 | Medium | All wallets share one budget of calls through the relay | Relay O-002, K-04 |
 
-These four findings repeat findings of the wallet and the relay, so the count of 17 leaves them out.
+These four findings repeat findings of the wallet and the relay, so the count of 17 leaves them out. SYS-001 and
+SYS-003 are fixed with the findings that they repeat.
 
 ## Details of each finding
 
 Paths of the wallet point at this repository. Paths of the relay point at
 [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay).
 
-### Wallet O-001: the app reaches the relay without the proxy of Settings
+### Wallet O-001: the app reached the relay without the proxy of Settings
 
-- **Severity:** Medium. **Verdict:** confirmed. **Status:** open.
-- **What happens:** the proxy in Settings, such as Tor, carries the traffic to the node only. The client of the relay
-  in `lib/bridge/client.dart` connects straight, for quotes, swaps, payments, and scans.
-- **Impact:** with Tor set, the relay and Cloudflare still see the IP address of the Mac. They see it next to the
-  addresses and the amounts of each swap, and next to each address that you scan. Funds are not at risk.
-- **Plan:** send the calls to the relay through the same proxy.
+- **Severity:** Medium. **Verdict:** confirmed. **Status:** fixed in 0.3.2.
+- **What happened:** the proxy in Settings, such as Tor, carried the traffic to the node only. The client of the relay
+  in `lib/bridge/client.dart` connected straight, for quotes, swaps, payments, and scans.
+- **Impact:** with Tor set, the relay and Cloudflare still saw the IP address of the Mac. They saw it next to the
+  addresses and the amounts of each swap, and next to each address that you scanned. Funds were not at risk.
+- **Fix:** every call to the relay goes through the proxy of Settings when you set one. A SOCKS5 client of the app
+  (`lib/bridge/socks.dart`) hands the name of the relay to the proxy, and TLS runs inside the tunnel with the usual
+  check of the certificate. A proxy that fails fails the call, and the app never falls back to a straight
+  connection. Since S-01 of the third scan, the proxy is an IP address and a port, the only form that wallet2 takes.
+  Commit [`1f81a4f`](https://github.com/Kranox-Labs/Kranox/commit/1f81a4f).
 
-### Wallet O-003: the signature of an answer does not bind the request
+### Wallet O-003: the signature of an answer did not bind the request
 
-- **Severity:** Medium. **Verdict:** confirmed. **Status:** open.
-- **What happens:** the relay signs the nonce of the request and the body of the answer, and the app checks that
-  signature in `lib/bridge/relay_signature.dart`. The signature leaves out the method, the path, and the request
-  itself. The app does not compare the id and the refund address of a new swap with what it sent.
-- **Impact:** a party that can already intercept TLS on the Mac, such as a company proxy with its own certificate,
-  could give the app a signed answer that belongs to another request. The checks of the recipient, the amount, and
-  the deposit address still hold, so a payment still goes to its recipient. The refund of a failed swap could go to
-  that party. Without an interception of TLS, nobody can use this finding.
-- **Plan:** sign the status, the method, the path, and a hash of the request together with the nonce. The app then
-  also compares the id and the refund address of each new swap with what it sent.
+- **Severity:** Medium. **Verdict:** confirmed. **Status:** fixed in 0.3.2, with relay O-004.
+- **What happened:** the relay signed the nonce of the request and the body of the answer, and the app checked that
+  signature in `lib/bridge/relay_signature.dart`. The signature left out the method, the path, and the request
+  itself. The app did not compare the id and the refund address of a new swap with what it sent.
+- **Impact:** a party that could already intercept TLS on the Mac, such as a company proxy with its own certificate,
+  could give the app a signed answer that belonged to another request. The checks of the recipient, the amount, and
+  the deposit address still held, so a payment still went to its recipient. The refund of a failed swap could go to
+  that party. Without an interception of TLS, nobody could use this finding.
+- **Fix:** the relay signs each answer a second time, over the nonce, the method, the path with its query, the
+  SHA-256 of the body of the request, the status, and the body of the answer. The app checks only that signature,
+  and it compares the id of a state and the refund address of a new swap or payment with what it asked for. Commit
+  [`a08eccf`](https://github.com/Kranox-Labs/Kranox/commit/a08eccf), with the relay commit
+  [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c).
 
-### Wallet O-007: the file of the swaps is not encrypted
+### Wallet O-007: the file of the swaps was not encrypted
 
-- **Severity:** Medium. **Verdict:** confirmed. **Status:** open.
-- **What happens:** `bridge.json`, in the folder of the app, keeps each swap: its id and its read token, the
-  addresses, the amounts, and the transaction hashes. The password of the wallet does not protect this file, and the
-  file stays readable while the wallet is locked.
-- **Impact:** malware that runs as the user, a backup, or a disk without FileVault can read the swaps. The swaps link
-  the wallet to addresses on Robinhood Chain. A read token shows the state of its swap, and it cannot move funds.
-- **Plan:** encrypt the file with a key from the password of the wallet, or at least give the file permissions for
-  its owner only.
+- **Severity:** Medium. **Verdict:** confirmed. **Status:** fixed in 0.3.2.
+- **What happened:** `bridge.json`, in the folder of the app, kept each swap: its id and its read token, the
+  addresses, the amounts, and the transaction hashes. The password of the wallet did not protect this file, and the
+  file stayed readable while the wallet was locked.
+- **Impact:** malware that runs as the user, a backup, or a disk without FileVault could read the swaps. The swaps
+  link the wallet to addresses on Robinhood Chain. A read token shows the state of its swap, and it cannot move funds.
+- **Fix:** the file is sealed with AES-256-GCM (`lib/core/file_cipher.dart`) under a key that only the open wallet
+  gives, so the swaps open when the wallet opens and close when it locks. Since S-06 of the third scan, the key
+  comes from the secret spend key. The plain file of 0.3.1 is sealed at the first unlock, and after that, a plain
+  file moves aside (S-05 of the third scan). Commits [`a08eccf`](https://github.com/Kranox-Labs/Kranox/commit/a08eccf)
+  and [`a27472f`](https://github.com/Kranox-Labs/Kranox/commit/a27472f).
 
 ### Wallet O-004: one round of the KDF, and a password of 8 characters
 
-- **Severity:** Low. **Verdict:** confirmed. **Status:** open.
-- **What happens:** wallet2 stretches the password of the keys file with one round of its key function, which is its
-  default. A password needs 8 characters only (`lib/config/app_config.dart`).
+- **Severity:** Low. **Verdict:** confirmed. **Status:** partly fixed in 0.3.2.
+- **What happened:** wallet2 stretches the password of the keys file with one round of its key function, which is
+  its default. A password needed 8 characters only (`lib/config/app_config.dart`).
 - **Impact:** a person with a copy of the keys file can test passwords offline, at a low cost for each guess. With
   the right password, that person can spend the funds. A long password protects a copied file, and a short one does
   not.
-- **Plan:** more rounds for new wallets, and a longer minimum for the password. Until then, choose a long password,
-  such as a phrase of several random words.
+- **Fix:** a new password needs 12 characters, and since S-07 of the third scan the controller checks it too, by
+  code points. A wallet made before keeps its password. Commit
+  [`a08eccf`](https://github.com/Kranox-Labs/Kranox/commit/a08eccf).
+- **What stays:** more rounds of the key function. The shipped Monero library takes a number of rounds only when it
+  restores a wallet, not when it makes or opens one, so this part waits for more research. Until then, choose a long
+  password, such as a phrase of several random words.
 
 ### Wallet O-002: the link to the node is not encrypted
 
@@ -184,14 +203,15 @@ Paths of the wallet point at this repository. Paths of the relay point at
   Developer ID and a notarization need an Apple Developer account. Until then, check each download with `hashes.txt`
   and the release key, as [Check the download](../README.md#check-the-download) shows.
 
-### Wallet O-006: the app reads an answer of the relay without a size limit
+### Wallet O-006: the app read an answer of the relay without a size limit
 
-- **Severity:** Low. **Verdict:** needs review. **Status:** open.
-- **What happens:** the app reads the whole answer of the relay into memory before it checks the signature
-  (`lib/bridge/client.dart`). Only the timeout of 30 seconds limits the read.
-- **Impact:** a party that controls the connection to the relay could send a very large answer, and make the app slow
-  or stop it. No data leaks, and funds are not at risk.
-- **Plan:** a cap on the size of an answer, such as 1 MB.
+- **Severity:** Low. **Verdict:** needs review. **Status:** fixed in 0.3.2.
+- **What happened:** the app read the whole answer of the relay into memory before it checked the signature
+  (`lib/bridge/client.dart`). Only the timeout of 30 seconds limited the read.
+- **Impact:** a party that controlled the connection to the relay could send a very large answer, and make the app
+  slow or stop it. No data leaked, and funds were not at risk.
+- **Fix:** the app reads at most 1 MiB of an answer, with or without its length, before it checks the signature.
+  Commit [`a08eccf`](https://github.com/Kranox-Labs/Kranox/commit/a08eccf).
 
 ### Wallet A-007: neither repository shows how the prebuilt Monero library was built
 
@@ -234,35 +254,42 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Why it needs review:** the server gives scans their own limit for each client, and no repository holds that
   setup.
 
-### Relay O-004: the signature leaves out the status, the method, and the path
+### Relay O-004: the signature left out the status, the method, and the path
 
-- **Severity:** Medium. **Verdict:** needs review. **Status:** open.
-- **What happens:** the relay signs the nonce and the body of each answer, not the status code, the method, or the
-  path (`src/signing.mts`). A request without a nonce, as from an app before 0.3.1, gets an answer signed over an
+- **Severity:** Medium. **Verdict:** needs review. **Status:** fixed, live from 9 Oct 2026.
+- **What happened:** the relay signed the nonce and the body of each answer, not the status code, the method, or the
+  path (`src/signing.mts`). A request without a nonce, as from an app before 0.3.1, got an answer signed over an
   empty nonce.
 - **Impact:** this finding is the relay side of wallet O-003. An answer signed over an empty nonce could also answer
   another request without a nonce. The app 0.3.1 always sends a nonce of its own, so it refuses such an answer.
-- **Plan:** sign the status, the method, the path, and a hash of the request together with the nonce. Once the apps
-  before 0.3.1 are gone, refuse a request without a nonce on the routes that create exchanges.
+- **Fix:** every answer to a request with a nonce carries a second signature, over the nonce, the method, the path
+  with its query, the SHA-256 of the body of the request, the status, and the body. The first signature stays for
+  the apps 0.3.1, and a request without a nonce gets no signature. Since S-11 of the third scan, the signer itself
+  refuses a nonce of another form. Commit [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c).
+- **Later:** once the apps before 0.3.1 are gone, refuse a request without a nonce on the routes that create
+  exchanges.
 
-### Relay O-005: two calls carry the partner key in the URL
+### Relay O-005: two calls carried the partner key in the URL
 
-- **Severity:** Low. **Verdict:** needs review. **Status:** open.
-- **What happens:** two calls to version 1 of the API of ChangeNOW carry the partner key in the query string, next to
-  the header that also carries it (`src/changenow.mts`).
-- **Impact:** URLs often go into the logs of a server. A person who reads such logs at ChangeNOW, or at a proxy on the
-  way, could use the key and its budget. Funds are not at risk.
-- **Plan:** the key in the header only, if version 1 of the API accepts it there.
+- **Severity:** Low. **Verdict:** needs review. **Status:** fixed, live from 9 Oct 2026.
+- **What happened:** two calls to version 1 of the API of ChangeNOW carried the partner key in the query string, next
+  to the header that also carried it (`src/changenow.mts`).
+- **Impact:** URLs often go into the logs of a server. A person who read such logs at ChangeNOW, or at a proxy on the
+  way, could use the key and its budget. Funds were not at risk.
+- **Fix:** receive asks version 2 of the API for its range and its estimate, as pay does, so the key travels in the
+  header only. Commit [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c).
 
-### Relay O-006: addresses from Alchemy go into a URL without encoding
+### Relay O-006: addresses from Alchemy went into a URL without encoding
 
-- **Severity:** Low. **Verdict:** needs review. **Status:** open.
-- **What happens:** for the names of the addresses in a scan, the relay asks the metadata service of Blockscout. It
-  joins the addresses from the answers of Alchemy into that URL, without a check of their form and without encoding
+- **Severity:** Low. **Verdict:** needs review. **Status:** fixed, live from 9 Oct 2026.
+- **What happened:** for the names of the addresses in a scan, the relay asked the metadata service of Blockscout. It
+  joined the addresses from the answers of Alchemy into that URL, without a check of their form and without encoding
   (`src/alchemy.mts`).
 - **Impact:** only a compromised Alchemy could use this finding, and only to change the names that a scan shows. The
   host and the path of the URL are fixed.
-- **Plan:** keep only addresses of `0x` and 40 hex digits, and build the query with `URLSearchParams`.
+- **Fix:** only addresses of `0x` and 40 hex digits count, and the query is built with `URLSearchParams`. Commit
+  [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c). The third scan found the same kind of issue in
+  the reader of Blockscout, S-09.
 
 ### Relay O-007: the relay records no security event
 
@@ -273,15 +300,17 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Why it stays:** the relay keeps no log of a request, so that it holds nothing about its users. Counts without any
   data of a request can come later.
 
-### Relay O-008: a flood of keys can push out the idempotency key of a user
+### Relay O-008: a flood of keys could push out the idempotency key of a user
 
-- **Severity:** Low. **Verdict:** needs review. **Status:** open.
-- **What happens:** the relay keeps the idempotency keys of 2,000 creations for 10 minutes. Above 2,000, it drops the
-  oldest key, also when that key has not expired (`src/creations.mts`).
-- **Impact:** a flood of creations could push out the key of a user before the retry of that user, so the retry makes
-  a second exchange. The app pays only the exchange whose answer it has, so the first exchange gets no funds. Each
-  creation of the flood needs a valid request, and it makes a real exchange within the limits of the server.
-- **Plan:** drop the expired keys first, and keep more keys.
+- **Severity:** Low. **Verdict:** needs review. **Status:** fixed, live from 9 Oct 2026.
+- **What happened:** the relay kept the idempotency keys of 2,000 creations for 10 minutes. Above 2,000, it dropped
+  the oldest key, also when that key had not expired (`src/creations.mts`).
+- **Impact:** a flood of creations could push out the key of a user before the retry of that user, so the retry made
+  a second exchange. The app pays only the exchange whose answer it has, so the first exchange got no funds. Each
+  creation of the flood needed a valid request, and it made a real exchange within the limits of the server.
+- **Fix:** a full store refuses a new key with 503 and keeps every live key, and it holds 20,000 keys, more than the
+  budget of calls to ChangeNOW can fill in the lifetime of a key. Since S-12 of the third scan, the relay checks that
+  sum as it starts. Commit [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c).
 
 ### Relay A-006: the relay serves plain HTTP behind a proxy that no repository defines
 
