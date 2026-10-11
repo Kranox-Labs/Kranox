@@ -143,7 +143,7 @@ designs that make mistakes easy, such as dangerous defaults and silent failures.
 
 The scan found 13 findings: 1 High, 3 Medium, and 9 Low, and nothing Critical. None of them lets an attacker on the
 internet take funds or keys from a wallet. Every one is fixed. The fixes of the wallet ship in Kranox 0.3.2 beta,
-and the relay runs its fixes after its next deploy.
+and the relay runs its fixes from 11 Oct 2026.
 
 - High: a proxy given by its name, such as `localhost:9050`, never reached the node, while the app said it did. The
   proxy is now an IP address and a port, such as `127.0.0.1:9050`, and a proxy that the Monero library refuses

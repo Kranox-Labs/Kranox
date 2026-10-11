@@ -59,7 +59,7 @@ The scan found 13 findings: 1 High, 3 Medium, and 9 Low. Nothing is Critical.
 Every finding is fixed, with tests. The fixes of the wallet ship in
 [Kranox 0.3.2 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.2), in the commit
 [`a27472f`](https://github.com/Kranox-Labs/Kranox/commit/a27472f). The fixes of the relay are in its commit
-[`dd886be`](https://github.com/Kranox-Labs/Relay/commit/dd886be), and the relay runs them after its next deploy.
+[`dd886be`](https://github.com/Kranox-Labs/Relay/commit/dd886be), and the relay runs them from 11 Oct 2026.
 
 ## Findings
 
@@ -119,7 +119,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 
 ### S-03: a failure inside an answer of 200 counted as a complete list
 
-- **Severity:** Medium. **Part:** relay. **Status:** fixed in the relay, live after its next deploy.
+- **Severity:** Medium. **Part:** relay. **Status:** fixed in the relay, live from 11 Oct 2026.
 - **What happened:** the API of Blockscout in the style of Etherscan reports some failures inside an answer of 200,
   with a text in place of its rows. The relay read such an answer as a complete empty list, and it dropped rows that
   it could not read. The metadata service of Blockscout did the same with an answer that held no list of addresses.
@@ -130,7 +130,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 
 ### S-04: "no funding" was sure while the address held value
 
-- **Severity:** Medium. **Part:** relay. **Status:** fixed in the relay, live after its next deploy.
+- **Severity:** Medium. **Part:** relay. **Status:** fixed in the relay, live from 11 Oct 2026.
 - **What happened:** the explorer of Robinhood Chain still misses some transfers that contracts make. When the relay
   found no transfer in, it said so for sure, also for an address that held ETH or tokens, or had sent transactions. An
   address that the explorer had not seen yet got the same answer, and the relay kept it for 10 minutes.
@@ -182,7 +182,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 
 ### S-09: fields of rows from the explorer went into a path without a check
 
-- **Severity:** Low. **Part:** relay. **Status:** fixed in the relay, live after its next deploy.
+- **Severity:** Low. **Part:** relay. **Status:** fixed in the relay, live from 11 Oct 2026.
 - **What happened:** the relay took the sender of a row from the explorer as it came, and put it into the path of its
   next call to the explorer, which carries its key. The host and the key could not change, but the path and the query
   could. A transfer whose time did not read could also win as the oldest one. This is the same kind of issue as relay
@@ -193,7 +193,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 
 ### S-10: the check of the refund address passed when ChangeNOW left it out
 
-- **Severity:** Low. **Part:** relay. **Status:** fixed in 0.3.2, with the relay part after its next deploy.
+- **Severity:** Low. **Part:** relay. **Status:** fixed in 0.3.2, with the relay part live from 11 Oct 2026.
 - **What happened:** the relay passed an exchange whose answer named no refund address, and an exchange with a refund
   address that the request never named. It answered the app with the refund address of the request, so the check of
   the app compared its own value with itself.
@@ -205,7 +205,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 
 ### S-11: the signer left the check of the nonce to its callers
 
-- **Severity:** Low. **Part:** relay. **Status:** fixed in the relay, live after its next deploy.
+- **Severity:** Low. **Part:** relay. **Status:** fixed in the relay, live from 11 Oct 2026.
 - **What happened:** the signer of answers took an empty nonce, a nonce with a slash, and fields with a line break.
   The split between the two forms of signature, and the fix of relay O-004 of the second review, both rest on the form
   of the nonce. A later call could have signed over an empty nonce again.
@@ -214,7 +214,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 
 ### S-12: nothing enforced the sum behind the store of creation keys
 
-- **Severity:** Low. **Part:** relay. **Status:** fixed in the relay, live after its next deploy.
+- **Severity:** Low. **Part:** relay. **Status:** fixed in the relay, live from 11 Oct 2026.
 - **What happened:** the store keeps up to 20,000 creation keys for 10 minutes, because the budget of calls to
   ChangeNOW allows 12,000 in that time. Only a comment said so, and the store also took a lifetime or a capacity of 0.
 - **Impact:** a higher budget or a longer lifetime could let a flood of creations fill the store, so that a new swap
@@ -224,7 +224,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 
 ### S-13: the name of a sender did not say where it came from
 
-- **Severity:** Low. **Part:** relay. **Status:** fixed in 0.3.2, with the relay part after its next deploy.
+- **Severity:** Low. **Part:** relay. **Status:** fixed in 0.3.2, with the relay part live from 11 Oct 2026.
 - **What happened:** the name of a sender came from a public tag of the explorer, from the name of a verified
   contract, which its deployer chose, or from a domain, which anyone can register. Nothing said which, so a contract
   verified as "Binance" showed as the exchange.
