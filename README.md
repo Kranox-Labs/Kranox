@@ -178,6 +178,10 @@ fvm flutter test
 
 ## Licenses
 
+Kranox is free software under the GNU General Public License, version 3. `LICENSE` in this repository holds the
+text. You can run it, study it, change it, and share it under that license; a copy that you share must come with its
+source under the same license.
+
 The Monero library inside the app is `monero_c` under the LGPL-3.0. It ships as a separate file, so you can
 replace it with your own build. `THIRD-PARTY-NOTICES.txt` in the disk image lists every license.
 
