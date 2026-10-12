@@ -154,6 +154,23 @@ and the relay runs its fixes from 11 Oct 2026.
 The full report gives every finding with its impact and its fix:
 [audit/security-review-sharp-edges-2026-10-10.md](audit/security-review-sharp-edges-2026-10-10.md).
 
+### Fourth scan: the web app before its first release
+
+Scanned twice with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 12 Oct 2026: the web app of
+Kranox at its commit `bdeb2e8` with the change of the relay that answers it, and later that day the change that
+gave the web app its second provider, SimpleSwap, with the relay and the deploy tools for it. Not audits by Trail of
+Bits.
+
+Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another
+firm read the code. The first scan found 22 findings, 2 Medium, 13 Low, and 7 Info, and the second 28, 5 Medium,
+15 Low, and 8 Info; nothing Critical or High in either, and nothing that lets a swap go to another address, another
+amount, or another provider than the one the user saw. Every finding is fixed but a few notes, which each report
+names.
+
+The full reports give every finding with its impact and its fix:
+[audit/security-review-sharp-edges-2026-10-12.md](audit/security-review-sharp-edges-2026-10-12.md) and
+[audit/security-review-sharp-edges-2026-10-12-providers.md](audit/security-review-sharp-edges-2026-10-12-providers.md).
+
 ## Build from source
 
 You need macOS with Xcode and [fvm](https://fvm.app). The file `.fvmrc` pins Flutter 3.47.6. In the root of this
