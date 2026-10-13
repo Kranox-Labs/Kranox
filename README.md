@@ -245,6 +245,23 @@ anywhere but a checked answer of the relay. Every finding is fixed, as the repor
 The full report gives every finding with its impact and its fix:
 [audit/security-review-sharp-edges-2026-10-13-out.md](audit/security-review-sharp-edges-2026-10-13-out.md).
 
+### Ninth scan: Tor built into the app
+
+Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
+commit `3b5571e` of the app that built Tor into it, arti through the plugin `tor` of Foundation Devices, with the
+wallet and the relay reached through it. Not an audit by Trail of Bits.
+
+Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another
+firm read the code. The scan found 13 findings, 3 High, 5 Medium, and 5 Low, and nothing Critical. The High ones:
+the proxy of the user could be overwritten by "Save node" while Tor built in was on; an unlock while Tor was still
+starting would have stopped the app, since wallet2 answers a question about a node it was never connected to with
+an exception; and the connection of wallet2 to the node stayed straight while Tor started. All three are fixed,
+with tests, and so are the rest but a window inside the plugin and a note. Nothing lets the relay be reached
+without Tor while the switch is on.
+
+The full report gives every finding with its impact and its fix:
+[audit/security-review-sharp-edges-2026-10-13-tor.md](audit/security-review-sharp-edges-2026-10-13-tor.md).
+
 ## Build from source
 
 You need macOS with Xcode, [fvm](https://fvm.app), and [rustup](https://rustup.rs): the Tor built into the app is
