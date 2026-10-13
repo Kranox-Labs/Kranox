@@ -171,6 +171,38 @@ The full reports give every finding with its impact and its fix:
 [audit/security-review-sharp-edges-2026-10-12.md](audit/security-review-sharp-edges-2026-10-12.md) and
 [audit/security-review-sharp-edges-2026-10-12-providers.md](audit/security-review-sharp-edges-2026-10-12-providers.md).
 
+### Fifth scan: the node that does not answer, and the close of a running card
+
+Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
+commit `c241565` that lets the app say why its node or the relay does not answer, such as a proxy that is not
+running, and lets the user close the card of a swap that still runs. Not an audit by Trail of Bits.
+
+Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another
+firm read the code. The scan found 22 findings, 1 High, 6 Medium, 9 Low, and 6 Info, and nothing Critical. The High
+one was in the close of a card that still runs: the app stopped following such a swap the moment it failed, so a
+refund that came later never showed; the card of a closed swap comes back now whenever the swap needs the user.
+Nothing touches the keys, the seed, or a payment. Every finding is fixed, with the notes that the report names.
+
+The full report gives every finding with its impact and its fix:
+[audit/security-review-sharp-edges-2026-10-13-node-trouble.md](audit/security-review-sharp-edges-2026-10-13-node-trouble.md).
+
+### Sixth scan: Starknet as the second way into the web app
+
+Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
+commit `684f45e` of the web app and the commit `f665e33` of the relay that opened Starknet as the second chain the
+coins can come from, through the 1Click API of NEAR Intents and through ChangeNOW. Not an audit by Trail of Bits.
+
+Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another
+firm read the code. The scan found 26 findings, 5 Medium, 8 Low, and 13 Info, and nothing High or Critical. The
+Medium ones: an address of an EVM chain, such as the wallet on Robinhood Chain, passed as a Starknet refund address;
+a deposit that arrived in part showed as waiting and later as expired while NEAR Intents held the coins; one budget
+of calls to 1Click could be spent by reads alone; and a swap with an id of a form the app did not open. Nothing lets a
+swap go to another address or amount than the one the user saw. Every finding is fixed, with the notes that the
+report names.
+
+The full report gives every finding with its impact and its fix:
+[audit/security-review-sharp-edges-2026-10-13-starknet.md](audit/security-review-sharp-edges-2026-10-13-starknet.md).
+
 ## Build from source
 
 You need macOS with Xcode and [fvm](https://fvm.app). The file `.fvmrc` pins Flutter 3.47.6. In the root of this
