@@ -46,6 +46,11 @@ abstract final class AppConfig {
   /// Each step of a look, a connection to the proxy or to the host, may take this long.
   static const Duration probeTimeout = Duration(seconds: 4);
 
+  /// Tor built into the app may take this long to start before the app counts the start as failed: arti bootstraps
+  /// in seconds on a warm cache and in about a minute on an empty one (CHECKED 13 Oct 2026, 9 and 60 seconds), and
+  /// a network that blocks Tor keeps it trying far longer.
+  static const Duration torStartTimeout = Duration(minutes: 2);
+
   /// The app looks for the trouble once the node has stayed silent this long, so that the moment of a connection
   /// at the open of the wallet raises no notice.
   static const Duration nodeLookDelay = Duration(seconds: 5);

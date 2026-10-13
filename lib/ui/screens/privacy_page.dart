@@ -208,8 +208,10 @@ class _PrivacyPageState extends State<PrivacyPage> {
     WalletPrivacyReport(:final proxy?) => PrivacyCheck(
       title: Copy.privacyNodeTitle,
       state: CheckState.good,
-      line: Copy.privacyNodeProxyLine,
-      detail: Copy.privacyNodeProxy(report.node, proxy),
+      line: widget.controller.torBuiltIn ? Copy.privacyNodeTorLine : Copy.privacyNodeProxyLine,
+      detail: widget.controller.torBuiltIn
+          ? Copy.privacyNodeTor(report.node)
+          : Copy.privacyNodeProxy(report.node, proxy),
     ),
     _ => PrivacyCheck(
       title: Copy.privacyNodeTitle,

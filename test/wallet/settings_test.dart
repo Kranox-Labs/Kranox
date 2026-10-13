@@ -102,4 +102,29 @@ void main() {
     await storage.writeSettings(const AppSettings(network: MoneroNetwork.stagenet));
     expect((await storage.readSettings()).network, MoneroNetwork.stagenet);
   });
+
+  test('turns Tor built into the app on for a new install, and reads the switch back', () {
+    const settings = AppSettings();
+    expect(settings.torBuiltIn, isTrue);
+    final off = settings.withTorBuiltIn(false);
+    expect(off.torBuiltIn, isFalse);
+    expect(off.withNode(MoneroNetwork.mainnet, 'my.node:18081').torBuiltIn, isFalse, reason: 'a node keeps it');
+    expect(off.withProxy('127.0.0.1:9050').torBuiltIn, isFalse, reason: 'a proxy keeps it');
+    expect(off.withNetwork(MoneroNetwork.stagenet).torBuiltIn, isFalse, reason: 'a network keeps it');
+    expect(AppSettings.fromJson(jsonDecode(jsonEncode(off.toJson()))).torBuiltIn, isFalse);
+    expect(AppSettings.fromJson(jsonDecode(jsonEncode(settings.toJson()))).torBuiltIn, isTrue);
+  });
+
+  test(
+    'reads a file from before the switch: a proxy of the user keeps its place, and none means Tor (13 Oct 2026)',
+    () {
+      final withProxy = {'network': 'mainnet', 'proxy': '127.0.0.1:9050'};
+      expect(AppSettings.fromJson(withProxy).torBuiltIn, isFalse);
+      expect(AppSettings.fromJson(withProxy).proxy, '127.0.0.1:9050');
+      expect(AppSettings.fromJson(<String, Object?>{'network': 'mainnet'}).torBuiltIn, isTrue);
+      expect(AppSettings.fromJson(<String, Object?>{'network': 'mainnet', 'proxy': ''}).torBuiltIn, isTrue);
+      // A switch written by hand as something other than yes or no makes the file unreadable, like a bad proxy.
+      expect(() => AppSettings.fromJson(<String, Object?>{'torBuiltIn': 'yes'}), throwsFormatException);
+    },
+  );
 }

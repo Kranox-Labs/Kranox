@@ -218,9 +218,11 @@ const String _signatureHeader = 'Kranox-Signature-V2';
 /// The bridge through the relay of Kranox, over HTTP, and the scan of an address on Robinhood Chain through it.
 final class RelayBridgeClient implements BridgeClient, ChainScanClient {
   /// A release talks to its relay over HTTPS only, and trusts an answer only with a signature under [signingKeys].
-  /// Each call goes through the SOCKS proxy that `proxy` gives at that moment, such as Tor, or straight without one.
+  /// Each call goes through the SOCKS proxy that `proxy` gives at that moment, such as Tor, or straight without one;
+  /// while `blocked` says so, as while the wallet waits for Tor built into the app, no call goes out at all.
   RelayBridgeClient({
     required this._proxy,
+    this._blocked = _never,
     String baseUrl = AppConfig.bridgeRelay,
     List<String> signingKeys = AppConfig.relaySigningKeys,
   }) : _base = Uri.parse(baseUrl),
@@ -230,7 +232,10 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     }
   }
 
+  static bool _never() => false;
+
   final String? Function() _proxy;
+  final bool Function() _blocked;
   final Uri _base;
   final RelaySignature _signature;
   final Random _random = Random.secure();
@@ -364,6 +369,8 @@ final class RelayBridgeClient implements BridgeClient, ChainScanClient {
     Map<String, Object?>? body,
     Map<String, String> headers = const {},
   }) async {
+    // No call while the wallet waits for Tor built into the app: the relay would see this Mac otherwise.
+    if (_blocked()) throw const BridgeException(BridgeFailure.relayDown, 'Tor built into the app is not on yet.');
     // The relay may sit under a path of its address, so the path of the call follows it.
     final basePath = _base.path.endsWith('/') ? _base.path.substring(0, _base.path.length - 1) : _base.path;
     final uri = _base.replace(path: '$basePath$path', queryParameters: query);

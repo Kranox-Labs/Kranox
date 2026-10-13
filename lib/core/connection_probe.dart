@@ -27,6 +27,9 @@ enum ConnectionTrouble {
 
   /// The look itself failed, such as on an address that the look cannot read: the settings want a check.
   lookFailed,
+
+  /// Tor built into the app is not on yet, starting or failed, so nothing reaches the host; no look went out.
+  torNotReady,
 }
 
 /// Looks for what keeps the app from a host, with plain connections that carry nothing. A test gives another probe.

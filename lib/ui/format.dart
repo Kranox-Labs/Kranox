@@ -11,6 +11,7 @@ import '../core/connection_probe.dart';
 import '../core/evm_address.dart';
 import '../core/seed.dart';
 import '../wallet/controller.dart' show NodeReport, WalletController, isLongEnoughPassword;
+import '../wallet/tor_service.dart' show TorState;
 import '../wallet/failure.dart';
 import '../wallet/models.dart';
 import 'copy.dart';
@@ -145,40 +146,59 @@ String formatDecimal(double value, {int decimals = 6}) {
 /// that it runs; null while the node answers, and before the first look.
 String? nodeTroubleText(WalletController controller) {
   if (controller.status.connection != NodeConnection.disconnected) return null;
+  // The wallet waits for Tor built into the app before it reaches its node: the words say so, before any look.
+  if (controller.waitsForTor) {
+    return controller.tor?.state == TorState.failed ? Copy.torFailed : Copy.torStarting;
+  }
+  if (controller.torNameFailed) return Copy.nodeTroubleTorName(controller.node);
   if (controller.proxyRefused) return Copy.proxyRefused;
   final NodeReport? report = controller.nodeReport;
   if (report == null) return controller.lookingForNode ? Copy.nodeLooking : null;
-  // The words name what the look tried, not a setting that came after it.
+  // The words name what the look tried, not a setting that came after it. The proxy of Tor built into the app is
+  // no setting of the user, so the words name Tor rather than its address.
   final node = report.node;
   final proxy = report.proxy ?? '';
+  final tor = controller.torBuiltIn;
   return switch (report.trouble) {
-    ConnectionTrouble.proxyDown => Copy.nodeTroubleProxyDown(proxy),
-    ConnectionTrouble.proxyNotSocks5 => Copy.nodeTroubleNotSocks5(proxy),
-    ConnectionTrouble.hostUnreachableThroughProxy => Copy.nodeTroubleThroughProxy(node, proxy),
+    ConnectionTrouble.proxyDown => tor ? Copy.nodeTroubleTorProxy : Copy.nodeTroubleProxyDown(proxy),
+    ConnectionTrouble.proxyNotSocks5 => tor ? Copy.nodeTroubleTorProxy : Copy.nodeTroubleNotSocks5(proxy),
+    ConnectionTrouble.hostUnreachableThroughProxy =>
+      tor ? Copy.nodeTroubleThroughTor(node) : Copy.nodeTroubleThroughProxy(node, proxy),
     ConnectionTrouble.hostNameUnknown => Copy.nodeTroubleNameUnknown(node),
     ConnectionTrouble.hostDown => Copy.nodeTroubleDown(node),
     ConnectionTrouble.lookFailed => Copy.nodeTroubleLookFailed,
+    ConnectionTrouble.torNotReady => Copy.torStarting,
     null => Copy.nodeTroubleSilent(node),
   };
 }
 
-/// The words about the trouble with the relay, which the look of the app found.
-String relayTroubleText(ConnectionTrouble trouble, {required String? proxy}) => switch (trouble) {
-  ConnectionTrouble.proxyDown => Copy.relayTroubleProxyDown(proxy ?? ''),
-  ConnectionTrouble.proxyNotSocks5 => Copy.relayTroubleNotSocks5(proxy ?? ''),
+/// The reason of a failed start of Tor built into the app, as one line for the settings page: the text of the
+/// failure without its line breaks, cut short.
+String torFailureText(Object failure) {
+  final line = failure.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+  return line.length > 240 ? '${line.substring(0, 239)}…' : line;
+}
+
+/// The words about the trouble with the relay, which the look of the app found; with [tor], the proxy is Tor built
+/// into the app, which the words name rather than its address.
+String relayTroubleText(ConnectionTrouble trouble, {required String? proxy, bool tor = false}) => switch (trouble) {
+  ConnectionTrouble.proxyDown => tor ? Copy.nodeTroubleTorProxy : Copy.relayTroubleProxyDown(proxy ?? ''),
+  ConnectionTrouble.proxyNotSocks5 => tor ? Copy.nodeTroubleTorProxy : Copy.relayTroubleNotSocks5(proxy ?? ''),
   ConnectionTrouble.lookFailed => Copy.relayTroubleLookFailed,
-  ConnectionTrouble.hostUnreachableThroughProxy => Copy.relayTroubleThroughProxy(proxy ?? ''),
+  ConnectionTrouble.hostUnreachableThroughProxy =>
+    tor ? Copy.relayTroubleThroughTor : Copy.relayTroubleThroughProxy(proxy ?? ''),
   ConnectionTrouble.hostNameUnknown => Copy.relayTroubleNameUnknown,
   ConnectionTrouble.hostDown => Copy.relayTroubleDown,
+  ConnectionTrouble.torNotReady => Copy.relayTroubleTor,
 };
 
 /// The words of a failure of the bridge; a relay that does not answer names the trouble that the look found, if any.
-String bridgeFailureText(BridgeException error, {ConnectionTrouble? relayTrouble, String? proxy}) =>
+String bridgeFailureText(BridgeException error, {ConnectionTrouble? relayTrouble, String? proxy, bool tor = false}) =>
     switch (error.failure) {
       BridgeFailure.relayDown =>
         relayTrouble == null
             ? Copy.bridgeRelayDown
-            : '${Copy.bridgeRelayDown} ${relayTroubleText(relayTrouble, proxy: proxy)}',
+            : '${Copy.bridgeRelayDown} ${relayTroubleText(relayTrouble, proxy: proxy, tor: tor)}',
       BridgeFailure.refused => Copy.bridgeRefused(error.detail),
       BridgeFailure.failed => Copy.bridgeFailed(error.detail),
       BridgeFailure.rateExpired => Copy.payRateExpired,

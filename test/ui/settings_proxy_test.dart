@@ -59,7 +59,7 @@ void main() {
       final storage = AppStorage(root.path);
       await storage.prepareWalletFolder(MoneroNetwork.mainnet);
       File('${storage.walletPath(MoneroNetwork.mainnet)}.keys').createSync();
-      await storage.writeSettings(const AppSettings().withProxy('127.0.0.1:9050'));
+      await storage.writeSettings(const AppSettings().withTorBuiltIn(false).withProxy('127.0.0.1:9050'));
       wallet = WalletController(worker: _Wallet(), storage: storage);
       await wallet.start();
       await wallet.unlock('password');

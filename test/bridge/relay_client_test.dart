@@ -252,7 +252,7 @@ void main() {
       // The proxy of the test lets the connection through to nothing, so TLS fails after the proxy has seen it.
       await expectLater(client.readSwap('pay1'), throwsA(isA<BridgeException>()));
       expect(proxy.greetings, [
-        [5, 1, 0],
+        [5, 2, 0, 2],
       ], reason: 'SOCKS5 with one method: no user name');
       expect(proxy.targets, ['relay.kranox.invalid:443'], reason: 'a name that only the proxy could resolve');
     });
@@ -336,9 +336,9 @@ final class _SocksProxy {
     var stage = 0;
     socket.listen((data) {
       bytes.addAll(data);
-      if (stage == 0 && bytes.length >= 3) {
-        greetings.add(bytes.sublist(0, 3));
-        bytes.removeRange(0, 3);
+      if (stage == 0 && bytes.length >= 2 && bytes.length >= 2 + bytes[1]) {
+        greetings.add(bytes.sublist(0, 2 + bytes[1]));
+        bytes.removeRange(0, 2 + bytes[1]);
         stage = 1;
         socket.add([5, method]);
         if (method != 0) socket.close();

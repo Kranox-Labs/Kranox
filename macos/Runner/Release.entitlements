@@ -6,6 +6,11 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Tor built into the app (from 13 Oct 2026) runs its SOCKS5 proxy on 127.0.0.1 at a port of its choice, which
+	     the wallet and the client of the relay connect to; a listening socket, even on loopback, needs this key in
+	     the sandbox. The proxy listens on localhost alone (CHECKED 13 Oct 2026, the plugin binds Listen::new_localhost). -->
+	<key>com.apple.security.network.server</key>
+	<true/>
 	<!-- The hardened runtime ignores DYLD_INSERT_LIBRARIES, so other software cannot inject a library into the
 	     wallet. Its library validation would also refuse the libraries of the app, which carry an ad hoc signature
 	     without a team: the Monero library, which the user may replace under LGPL-3.0, and the frameworks of

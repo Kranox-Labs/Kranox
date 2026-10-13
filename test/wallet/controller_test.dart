@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,12 +8,15 @@ import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/core/connection_probe.dart';
 import 'package:kranox_wallet/core/node_address.dart';
+import 'package:kranox_wallet/core/socks.dart';
+import 'package:kranox_wallet/core/tor_engine.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
 import 'package:kranox_wallet/wallet/models.dart';
 import 'package:kranox_wallet/wallet/settings.dart';
 import 'package:kranox_wallet/wallet/failure.dart';
 import 'package:kranox_wallet/wallet/requests.dart';
 import 'package:kranox_wallet/wallet/storage.dart';
+import 'package:kranox_wallet/wallet/tor_service.dart';
 import 'package:kranox_wallet/wallet/worker.dart';
 
 /// A wallet engine that opens every wallet and keeps the requests it gets, so that a test can check them. With
@@ -79,6 +83,7 @@ final class _RecordingBackend implements WalletBackend {
 
 void main() {
   group('the look for the node', lookTests);
+  group('Tor built into the app', torTests);
   late Directory root;
   late AppStorage storage;
   late _RecordingBackend backend;
@@ -329,5 +334,256 @@ void lookTests() {
     expect(controller.nodeReport?.trouble, isNull);
     await controller.lock();
     expect(controller.nodeReport, isNull);
+  });
+}
+
+/// An engine of Tor of the test: a start that the test completes or fails, and a count of the starts and the stops.
+final class _FakeTorEngine implements TorEngine {
+  Completer<int> starting = Completer<int>();
+  Object? failure;
+  int starts = 0;
+  int stops = 0;
+
+  @override
+  Future<int> start() {
+    starts++;
+    if (failure case final failure?) return Future<int>.error(failure);
+    return starting.future;
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+  }
+}
+
+/// The wallet with Tor built into the app, from 13 Oct 2026: it reaches its node through Tor once Tor is on, and
+/// nothing before.
+void torTests() {
+  late Directory root;
+  late AppStorage storage;
+  late _RecordingBackend backend;
+  late _FakeTorEngine engine;
+  late _FakeProbe probe;
+
+  setUp(() {
+    root = Directory.systemTemp.createTempSync('kranox-controller-tor');
+    storage = AppStorage(root.path);
+    backend = _RecordingBackend();
+    engine = _FakeTorEngine();
+    probe = _FakeProbe(ConnectionTrouble.hostDown);
+  });
+
+  tearDown(() => root.deleteSync(recursive: true));
+
+  // The names that the controller resolved through Tor, and the address it gets back for each.
+  final resolved = <String>[];
+
+  Future<WalletController> started() async {
+    final controller = WalletController(
+      worker: backend,
+      storage: storage,
+      tor: TorService(engine: engine, probe: (_) async {}),
+      probe: probe,
+      resolve: ({required proxy, required host, required timeout}) async {
+        resolved.add('$host through $proxy');
+        if (host == 'no.such.node') throw const SocksException('unknown');
+        return InternetAddress('203.0.113.5');
+      },
+    );
+    await controller.start();
+    addTearDown(controller.dispose);
+    return controller;
+  }
+
+  void makeWallet(MoneroNetwork network) {
+    Directory(storage.walletFolder(network)).createSync(recursive: true);
+    File('${storage.walletPath(network)}.keys').createSync();
+  }
+
+  List<ConnectNode> connects() => backend.requests.whereType<ConnectNode>().toList();
+  List<LeaveNode> leaves() => backend.requests.whereType<LeaveNode>().toList();
+
+  /// The default node of mainnet with its name resolved through Tor, as wallet2 gets it.
+  String resolvedDefault() => '203.0.113.5:${splitNodeAddress(AppConfig.defaultNode(MoneroNetwork.mainnet)).port}';
+
+  test('waits for Tor before it connects, and connects through Tor once it is on', () async {
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    expect(engine.starts, 1, reason: 'Tor starts with the app, as the settings of a new install say');
+    expect(controller.torBuiltIn, isTrue);
+    expect(controller.waitsForTor, isTrue);
+    await controller.unlock('password');
+    expect(controller.phase, WalletPhase.open);
+    expect(connects(), isEmpty, reason: 'the node sees nothing until Tor is on');
+    expect(controller.proxy, isNull);
+    // Nor does the look for the trouble go out: the node is not silent, the wallet waits.
+    await controller.reconnect();
+    expect(probe.looks, isEmpty);
+
+    engine.starting.complete(9150);
+    await pumpEventQueue();
+    expect(controller.waitsForTor, isFalse);
+    expect(controller.proxy, '127.0.0.1:9150');
+    expect(connects(), hasLength(1));
+    expect(connects().single.proxy, '127.0.0.1:9150');
+    // The name of the node went through Tor, and wallet2 got the address (W-07).
+    expect(resolved, ['${splitNodeAddress(AppConfig.defaultNode(MoneroNetwork.mainnet)).host} through 127.0.0.1:9150']);
+    expect(connects().single.address, resolvedDefault());
+  });
+
+  test('a name that Tor cannot resolve keeps the wallet away from the node, and says so', () async {
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    engine.starting.complete(9150);
+    await pumpEventQueue();
+    await controller.unlock('password');
+    await controller.changeNode('no.such.node:18081');
+    expect(connects().where((connect) => connect.address.startsWith('no.such')), isEmpty);
+    expect(controller.torNameFailed, isTrue);
+    await controller.changeNode('my.node:18081');
+    expect(controller.torNameFailed, isFalse);
+    expect(connects().last.address, '203.0.113.5:18081');
+  });
+
+  test('a node of the own network takes no proxy, since Tor cannot reach it and it needs none (W-08)', () async {
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    engine.starting.complete(9150);
+    await pumpEventQueue();
+    await controller.unlock('password');
+    expect(connects().last.proxy, '127.0.0.1:9150');
+    for (final node in ['127.0.0.1:18081', '192.168.1.5:18081', '10.0.0.2:18081']) {
+      await controller.changeNode(node);
+      expect(connects().last.address, node);
+      expect(connects().last.proxy, isNull, reason: node);
+    }
+    await controller.changeNode('my.node:18081');
+    expect(connects().last.proxy, '127.0.0.1:9150');
+    expect(connects().last.address, '203.0.113.5:18081');
+  });
+
+  test('turning Tor built into the app off stops it and connects through the proxy of the settings', () async {
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    engine.starting.complete(9150);
+    await pumpEventQueue();
+    await controller.unlock('password');
+    await controller.changeTorBuiltIn(false);
+    expect(engine.stops, 1);
+    expect(controller.torBuiltIn, isFalse);
+    expect(controller.waitsForTor, isFalse);
+    expect(connects().last.proxy, isNull, reason: 'no proxy of the settings: the node is reached straight');
+    expect(connects().last.address, AppConfig.defaultNode(MoneroNetwork.mainnet), reason: 'the name, as before');
+    expect((await storage.readSettings()).torBuiltIn, isFalse, reason: 'the switch is kept');
+    await controller.changeProxy('127.0.0.1:9050');
+    expect(connects().last.proxy, '127.0.0.1:9050');
+
+    // Back on: the wallet leaves its node before Tor starts, so that nothing goes on straight meanwhile (W-03), a
+    // new start of Tor, and the wallet waits for it again.
+    engine.starting = Completer<int>();
+    final before = connects().length;
+    final on = controller.changeTorBuiltIn(true);
+    await pumpEventQueue();
+    expect(leaves(), hasLength(1));
+    expect(engine.starts, 2);
+    expect(controller.waitsForTor, isTrue);
+    expect(connects(), hasLength(before), reason: 'no connect while Tor starts');
+    engine.starting.complete(9151);
+    await on;
+    await pumpEventQueue();
+    expect(connects().last.proxy, '127.0.0.1:9151');
+  });
+
+  test('the quit of the app locks the wallet and stops Tor, and starts it never again', () async {
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    engine.starting.complete(9150);
+    await pumpEventQueue();
+    await controller.unlock('password');
+    await controller.shutdown();
+    await pumpEventQueue();
+    expect(controller.tor?.state, TorState.off);
+    expect(engine.stops, 1);
+    expect(engine.starts, 1, reason: 'Tor off while the switch is on: the quit, which starts nothing again (W-06)');
+    expect(leaves(), isEmpty, reason: 'the wallet was locked before Tor stopped, so there was no node to leave');
+  });
+
+  test('a proxy typed while Tor built into the app is on is kept for later, and not used (W-01)', () async {
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    engine.starting.complete(9150);
+    await pumpEventQueue();
+    await controller.unlock('password');
+    final before = connects().length;
+    await controller.changeProxy('127.0.0.1:9050');
+    expect(controller.userProxy, '127.0.0.1:9050');
+    expect(controller.proxy, '127.0.0.1:9150', reason: 'the wallet stays on Tor');
+    expect(connects(), hasLength(before), reason: 'no new connection for a proxy that is not in use');
+    expect((await storage.readSettings()).proxy, '127.0.0.1:9050');
+    await controller.changeTorBuiltIn(false);
+    expect(connects().last.proxy, '127.0.0.1:9050', reason: 'the proxy of the user takes over');
+  });
+
+  test('a Tor that dies after it was on takes the wallet off its node, and a look marks it dead (W-03, W-04)', () async {
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    engine.starting.complete(9150);
+    await pumpEventQueue();
+    await controller.unlock('password');
+    expect(connects(), hasLength(1));
+    // The look of the node finds the proxy of Tor not answering: Tor counts as failed, and the wallet leaves the node.
+    backend.status = _silentNode;
+    probe.trouble = ConnectionTrouble.proxyDown;
+    await controller.reconnect();
+    await pumpEventQueue();
+    expect(controller.tor?.state, TorState.failed);
+    expect(controller.waitsForTor, isTrue);
+    expect(leaves(), hasLength(1));
+    // A new start that works brings the wallet back.
+    engine.starting = Completer<int>();
+    final retry = controller.retryTor();
+    await pumpEventQueue();
+    engine.starting.complete(9152);
+    await retry;
+    await pumpEventQueue();
+    expect(controller.tor?.state, TorState.on);
+    expect(connects().last.proxy, '127.0.0.1:9152');
+  });
+
+  test('a start of Tor that fails leaves the wallet waiting, and a retry that works connects', () async {
+    engine.failure = StateError('no network');
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    await pumpEventQueue();
+    expect(controller.tor?.state, TorState.failed);
+    expect(controller.waitsForTor, isTrue);
+    await controller.unlock('password');
+    expect(connects(), isEmpty);
+
+    engine.failure = null;
+    engine.starting.complete(9152);
+    await controller.retryTor();
+    await pumpEventQueue();
+    expect(controller.tor?.state, TorState.on);
+    expect(connects(), isNotEmpty);
+    expect(connects().map((connect) => connect.proxy).toSet(), {'127.0.0.1:9152'});
+  });
+
+  test('keeps a proxy of the user from before the switch, with Tor built into the app off', () async {
+    await storage.writeSettings(const AppSettings().withProxy('127.0.0.1:9050'));
+    // A file of 0.3.2 names no switch; it is written here without it.
+    final file = File('${root.path}/${AppConfig.settingsFileName}');
+    expect(file.existsSync(), isTrue);
+    {
+      final data = (jsonDecode(file.readAsStringSync()) as Map<String, Object?>)..remove('torBuiltIn');
+      file.writeAsStringSync(jsonEncode(data));
+    }
+    makeWallet(MoneroNetwork.mainnet);
+    final controller = await started();
+    expect(controller.torBuiltIn, isFalse);
+    expect(engine.starts, 0, reason: 'Tor does not start when the switch is off');
+    await controller.unlock('password');
+    expect(connects().single.proxy, '127.0.0.1:9050');
   });
 }

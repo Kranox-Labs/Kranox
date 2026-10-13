@@ -51,6 +51,11 @@ The fingerprint of the key is `A874 6F51 F58D 8E30 C23B 8158 439F 7602 F0C5 53D1
   a payment link that names the chain, the coin, and the amount.
 - From 0.3.2, the proxy covers the relay too, a privacy check runs before each receive from Robinhood Chain and as
   each review opens, each open swap has a page of its own, and the file of your swaps on the Mac is encrypted.
+- From 0.3.3, Tor is built into the app: Kranox starts Tor itself and reaches your node and the relay through it,
+  so that both see a Tor exit and not your IP address, with no Tor of your own to run. The name of your node is
+  resolved through Tor as well. It is on from the first start; the switch in Settings turns it off, for a proxy of
+  your own or a straight connection. While Tor starts, the wallet waits rather than connect without it; a node on
+  your own network is reached straight, since Tor cannot reach it.
 
 ## The relay
 
@@ -60,7 +65,8 @@ It sees the addresses and the amounts of a swap, as ChangeNOW does, and never yo
 scan of an address on Robinhood Chain, it sees that address and asks the explorer for you, so the explorer never
 sees your IP address. From 0.3.1 the app trusts an answer of the relay only with the signature of its key, and from
 0.3.2 that signature also covers the request that it answers. From 0.3.2 the proxy in Settings, such as Tor, covers
-the relay as well as the node, so the relay sees the address of the proxy, not yours.
+the relay as well as the node, so the relay sees the address of the proxy, not yours. From 0.3.3 Tor built into the
+app does the same without a proxy of your own.
 
 ## Audit
 
@@ -241,8 +247,9 @@ The full report gives every finding with its impact and its fix:
 
 ## Build from source
 
-You need macOS with Xcode and [fvm](https://fvm.app). The file `.fvmrc` pins Flutter 3.47.6. In the root of this
-repository, run:
+You need macOS with Xcode, [fvm](https://fvm.app), and [rustup](https://rustup.rs): the Tor built into the app is
+arti, a Rust library, which the build compiles on your Mac through the plugin `tor` and its pinned Rust toolchain.
+The file `.fvmrc` pins Flutter 3.47.6. In the root of this repository, run:
 
 ```sh
 fvm install
@@ -268,7 +275,10 @@ text. You can run it, study it, change it, and share it under that license; a co
 source under the same license.
 
 The Monero library inside the app is `monero_c` under the LGPL-3.0. It ships as a separate file, so you can
-replace it with your own build. `THIRD-PARTY-NOTICES.txt` in the disk image lists every license.
+replace it with your own build. The Tor client inside the app is [arti](https://gitlab.torproject.org/tpo/core/arti)
+of the Tor Project, under the MIT and Apache-2.0 licenses, through the plugin
+[tor](https://github.com/Foundation-Devices/tor) of Foundation Devices under the MIT license.
+`THIRD-PARTY-NOTICES.txt` in the disk image lists every license.
 
 ## Links
 

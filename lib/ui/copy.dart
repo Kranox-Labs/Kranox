@@ -131,6 +131,19 @@ abstract final class Copy {
       'Settings.';
   static const String nodeTroubleLookFailed =
       'Kranox could not look for the trouble. Check the node and the proxy in Settings.';
+  // Tor built into the app, from 13 Oct 2026: the app starts Tor itself, and the node and the relay wait for it.
+  static const String torTitle = 'Tor';
+  static const String torStarting =
+      'Connecting to Tor… The wallet reaches its node and the relay once Tor built into the app is on.';
+  static const String torFailed =
+      'Tor built into the app could not connect. Try again, or turn it off in Settings to reach the node and the relay '
+      'without it.';
+  static String nodeTroubleThroughTor(String node) =>
+      'Tor built into the app runs, but it could not reach $node. Tor may still be building its circuits, or the node '
+      'is down.';
+  static const String nodeTroubleTorProxy = 'Tor built into the app stopped answering. Start it again in Settings.';
+  static String nodeTroubleTorName(String node) =>
+      'Tor built into the app could not find an address for $node. Check the node in Settings, or try again.';
   static String nodeTroubleNameUnknown(String node) =>
       'No address answers to the name of $node. Check your network, or the node in Settings.';
   static String nodeTroubleDown(String node) =>
@@ -282,6 +295,9 @@ abstract final class Copy {
   static String privacyNodeProxy(String node, String proxy) =>
       'Your wallet reaches $node through the proxy at $proxy, so the node sees the proxy and not your IP address.';
   static const String privacyNodeProxyLine = 'Through a proxy';
+  static String privacyNodeTor(String node) =>
+      'Your wallet reaches $node through Tor built into the app, so the node sees a Tor exit and not your IP address.';
+  static const String privacyNodeTorLine = 'Through Tor';
   static const String privacyChangeNode = 'Change node';
   static const String privacySubaddressTitle = 'Subaddresses';
   static const String privacySubaddressClear = 'Each subaddress took one payment at most.';
@@ -784,6 +800,22 @@ abstract final class Copy {
   static const String proxyInvalid = 'Enter the proxy as an IP address and a port, such as 127.0.0.1:9050.';
   static const String proxyRefused =
       'The wallet could not use this proxy, so it stays away from its node until you set one that works.';
+  static const String torSwitch = 'Tor built into the app';
+  static const String torSwitchNote =
+      'Kranox starts Tor itself and sends the traffic to the node and to the relay through it, so the node and the '
+      'relay see a Tor exit and not your IP address. No Tor of your own is needed.';
+  static const String torStatusOff = 'Off';
+  static const String torStatusStarting = 'Connecting…';
+  static const String torStatusOn = 'Connected';
+  static const String torStatusFailed = 'Could not connect';
+  static const String torLineOff = 'The wallet reaches the node and the relay straight, or through the proxy below.';
+  static const String torLineStarting = 'Tor is building its first circuits. The node and the relay wait for it.';
+  static const String torLineOn = 'The node and the relay are reached through Tor.';
+  static const String torLineFailed =
+      'Tor could not connect. Try again, or turn it off to reach the node and the relay without it.';
+  static const String torTryAgain = 'Try again';
+  static String torFailureReason(String reason) => 'Tor said: $reason';
+  static const String torProxyOff = 'With Tor built into the app on, the proxy below is not used.';
   static const String relayTitle = 'Relay';
   static const String relayLead =
       'The service of Kranox that talks to ChangeNOW when you receive from Robinhood Chain. It never sees your keys '
@@ -803,6 +835,10 @@ abstract final class Copy {
       'The proxy at $proxy answers, but it is no SOCKS5 proxy, so the relay is out of reach. Check the proxy in '
       'Settings.';
   static const String relayTroubleLookFailed = 'Kranox could not look for the trouble. Check the proxy in Settings.';
+  static const String relayTroubleTor =
+      'Tor built into the app is not on yet, so the relay is out of reach. The relay answers once Tor is on.';
+  static const String relayTroubleThroughTor =
+      'Tor built into the app runs, but it could not reach the relay. Tor may still be building its circuits.';
   static const String relayTroubleSilent =
       'The relay takes a connection, but it did not answer. Try again in a moment.';
   static const String relayTroubleNameUnknown = 'No address answers to the name of the relay. Check your network.';

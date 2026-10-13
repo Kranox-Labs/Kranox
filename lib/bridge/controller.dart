@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/connection_probe.dart';
+import '../core/socks.dart' show SocksException;
 import '../core/evm_address.dart';
 import '../wallet/controller.dart';
 import '../wallet/failure.dart';
@@ -116,6 +117,9 @@ final class BridgeController extends ChangeNotifier {
 
   /// The proxy through which the app reaches the relay, or null; the words about the trouble name it.
   String? get proxy => _wallet.proxy;
+
+  /// Whether the proxy is Tor built into the app, which the words about the trouble name rather than its address.
+  bool get torBuiltIn => _wallet.torBuiltIn;
 
   /// Every swap, the newest first.
   List<BridgeSwap> get swaps => _swaps;
@@ -288,7 +292,16 @@ final class BridgeController extends ChangeNotifier {
       final port = relay.hasPort ? relay.port : (relay.scheme == 'https' ? 443 : 80);
       // The address of the relay is checked at the start of the app; a host that is empty all the same is no look.
       if (relay.host.isEmpty) throw ArgumentError.value(AppConfig.bridgeRelay, 'bridgeRelay', 'has no host');
-      trouble = await probe.run(host: relay.host, port: port, proxy: _wallet.proxy);
+      // A look while the wallet waits for Tor built into the app would reach the relay without it, so the trouble is
+      // Tor, and no look goes out.
+      trouble = _wallet.waitsForTor
+          ? ConnectionTrouble.torNotReady
+          : await probe.run(host: relay.host, port: port, proxy: _wallet.proxy);
+      // A proxy of Tor built into the app that stopped answering: Tor counts as failed (W-04).
+      if (_wallet.torBuiltIn &&
+          (trouble == ConnectionTrouble.proxyDown || trouble == ConnectionTrouble.proxyNotSocks5)) {
+        _wallet.tor?.markDead(const SocksException('The proxy of Tor built into the app stopped answering.'));
+      }
     } on Object catch (error, stack) {
       // A look that fails says so, and the failure reaches the zone of the app (the sharp-edges scan of 13 Oct 2026).
       trouble = ConnectionTrouble.lookFailed;

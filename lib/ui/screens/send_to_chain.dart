@@ -631,7 +631,7 @@ class _QuoteNote extends StatelessWidget {
   Widget build(BuildContext context) => switch ((pay.quoteError, pay.quote)) {
     _ when pay.quoting => const SwapNote(null),
     (final error?, _) => SwapNote(
-      bridgeFailureText(error, relayTrouble: bridge.relayTrouble, proxy: bridge.proxy),
+      bridgeFailureText(error, relayTrouble: bridge.relayTrouble, proxy: bridge.proxy, tor: bridge.torBuiltIn),
       failure: true,
     ),
     (null, PayQuote(:final warning?)) => SwapNote(warning),

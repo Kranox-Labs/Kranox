@@ -54,6 +54,11 @@ final class WalletEngine {
   monero.wallet? _wallet;
   String? _path;
 
+  // Whether the open wallet has a node to ask: false until its first connection succeeded, and again after it left
+  // the node. wallet2 throws through the C interface when a wallet that was never connected is asked about its node
+  // (wallet_not_initialized), and the app would stop with it; while the wallet waits for Tor built into the app, no
+  // connection comes before the reads (W-02 of the scan of 13 Oct 2026).
+  bool _hasNode = false;
   // Whether wallet2 refused the proxy of the last connection. It then keeps the connection of the init before, which
   // may reach the node straight, so the engine asks the node nothing until a connection works.
   bool _proxyRefused = false;
@@ -67,6 +72,7 @@ final class WalletEngine {
     RestoreWallet() => _restore(request),
     OpenWallet() => _open(request),
     ConnectNode() => _connect(request),
+    LeaveNode() => _leave(),
     ReadStatus() => _status(),
     ReadHistory() => _history(),
     ReadReceiveAddress() => _receiveAddress(request),
@@ -128,10 +134,13 @@ final class WalletEngine {
     }
     _wallet = wallet;
     _path = path;
+    _hasNode = false;
   }
 
   Null _connect(ConnectNode request) {
     final wallet = _requireWallet();
+    // A wallet that left its node comes back online before the connection; wallet2 asks nothing while offline.
+    monero.Wallet_setOffline(wallet, offline: false);
     // wallet2 sets the proxy on each init, so an empty one turns a proxy of an earlier connection off.
     final initialized = monero.Wallet_init(wallet, daemonAddress: request.address, proxyAddress: request.proxy ?? '');
     if (!initialized) {
@@ -144,6 +153,7 @@ final class WalletEngine {
       throw WalletException(WalletFailure.nodeUnreachable, message);
     }
     _proxyRefused = false;
+    _hasNode = true;
     monero.Wallet_setTrustedDaemon(wallet, arg: false);
     monero.Wallet_startRefresh(wallet);
     monero.Wallet_setAutoRefreshInterval(wallet, millis: AppConfig.autoRefreshInterval.inMilliseconds);
@@ -151,15 +161,29 @@ final class WalletEngine {
     return null;
   }
 
+  /// Takes the wallet off its node: the scan pauses, and wallet2 goes offline, so that its threads open no
+  /// connection to the node until the next connect. A wallet that never had a node stays as it is.
+  Null _leave() {
+    final wallet = _requireWallet();
+    if (_hasNode) {
+      monero.Wallet_pauseRefresh(wallet);
+      monero.Wallet_setOffline(wallet, offline: true);
+    }
+    _hasNode = false;
+    return null;
+  }
+
   WalletStatus _status() {
     final wallet = _requireWallet();
-    // Both calls below ask the node, which a refused proxy leaves without the proxy.
-    final connection = _proxyRefused ? NodeConnection.disconnected.index : monero.Wallet_connected(wallet);
+    // Both calls below ask the node, which a refused proxy leaves without the proxy, and which a wallet without a
+    // node must not ask at all.
+    final asks = _hasNode && !_proxyRefused;
+    final connection = asks ? monero.Wallet_connected(wallet) : NodeConnection.disconnected.index;
     return WalletStatus(
       balance: XmrAmount(monero.Wallet_balance(wallet, accountIndex: AppConfig.accountIndex)),
       unlocked: XmrAmount(monero.Wallet_unlockedBalance(wallet, accountIndex: AppConfig.accountIndex)),
       walletHeight: monero.Wallet_blockChainHeight(wallet),
-      nodeHeight: _proxyRefused ? 0 : monero.Wallet_daemonBlockChainHeight(wallet),
+      nodeHeight: asks ? monero.Wallet_daemonBlockChainHeight(wallet) : 0,
       synchronized: monero.Wallet_synchronized(wallet),
       connection: connection >= 0 && connection < NodeConnection.values.length
           ? NodeConnection.values[connection]
@@ -366,13 +390,17 @@ final class WalletEngine {
     return null;
   }
 
-  /// A payment asks the node for its outputs and sends to it, which a refused proxy leaves without the proxy.
+  /// A payment asks the node for its outputs and sends to it, which a refused proxy leaves without the proxy, and
+  /// which a wallet without a node cannot do.
   void _refuseWithoutProxy() {
     if (_proxyRefused) {
       throw const WalletException(
         WalletFailure.proxyRefused,
         'The wallet stays away from its node until the proxy works.',
       );
+    }
+    if (!_hasNode) {
+      throw const WalletException(WalletFailure.nodeUnreachable, 'The wallet has no node yet.');
     }
   }
 
@@ -382,6 +410,7 @@ final class WalletEngine {
       return null;
     }
     _proxyRefused = false;
+    _hasNode = false;
     _slot.clear();
     _wallet = null;
     _path = null;

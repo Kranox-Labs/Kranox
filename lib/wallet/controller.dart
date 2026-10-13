@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -7,12 +8,15 @@ import '../config/network.dart';
 import '../core/amount.dart';
 import '../core/connection_probe.dart';
 import '../core/node_address.dart';
+import '../core/socks.dart';
 import '../core/unlock.dart';
+import '../privacy/wallet_privacy.dart' show isOwnNode;
 import 'failure.dart';
 import 'models.dart';
 import 'requests.dart';
 import 'settings.dart';
 import 'storage.dart';
+import 'tor_service.dart';
 import 'worker.dart';
 
 /// The stages of the app: it looks for a wallet, it offers to make one, it waits for the password, or it shows
@@ -34,17 +38,36 @@ final class NodeReport {
   final Duration at;
 }
 
+/// Resolves the name [host] through the SOCKS5 proxy at [proxy], as [resolveThroughSocks] does; a test gives another.
+typedef NameResolver = Future<InternetAddress> Function({
+  required String proxy,
+  required String host,
+  required Duration timeout,
+});
+
 /// The state of the wallet for the screens. Every call to wallet2 goes through the backend: the worker in the app.
 final class WalletController extends ChangeNotifier {
   WalletController({
     required this._worker,
     required this._storage,
+    this._tor,
     this.probe = const ConnectionProbe(),
+    NameResolver? resolve,
     Duration Function()? elapsed,
-  }) : _elapsed = elapsed ?? _monotonic();
+  }) : _resolve = resolve ?? resolveThroughSocks,
+       _elapsed = elapsed ?? _monotonic() {
+    _tor?.addListener(_onTor);
+  }
 
   final WalletBackend _worker;
   final AppStorage _storage;
+
+  /// Tor built into the app, or null in an app without it, such as the tests: the switch of the settings then
+  /// reads as off, and the wallet reaches the node straight or through the proxy of the settings.
+  final TorService? _tor;
+
+  /// The resolver of the name of the node through Tor built into the app.
+  final NameResolver _resolve;
 
   /// The look for the trouble with the node; a test gives another one.
   final ConnectionProbe probe;
@@ -114,6 +137,8 @@ final class WalletController extends ChangeNotifier {
 
   Future<void> start() async {
     _settings = await _storage.readSettings();
+    // Tor starts with the app, so that it is on by the time the wallet unlocks; the wallet waits for it otherwise.
+    if (torBuiltIn) unawaited(_tor!.start());
     await _showWalletOfNetwork();
   }
 
@@ -217,6 +242,13 @@ final class WalletController extends ChangeNotifier {
       await lock();
     }
     _worker.stop();
+    // Tor built into the app stops with the app, within a few seconds: a start in flight cannot be cut short, and the
+    // process ends anyway (W-05).
+    try {
+      await _tor?.stop().timeout(const Duration(seconds: 3));
+    } on Object {
+      // The process ends anyway.
+    }
   }
 
   /// The subaddress that the receive page shows: the one that the settings keep for this network. Without one, or
@@ -314,15 +346,133 @@ final class WalletController extends ChangeNotifier {
   /// an earlier form after it (the sharp-edges scan of 10 Oct 2026).
   Future<void> markFilesSealed() => _worker.call<void>(const MarkFilesSealed());
 
-  /// The SOCKS proxy to the node of every network and to the relay, or null when the wallet reaches both straight.
-  String? get proxy => _settings.proxy;
+  /// Tor built into the app, for the screens; null in an app without it.
+  TorService? get tor => _tor;
+
+  /// Whether Tor built into the app carries the traffic to the node and to the relay: the switch of the settings, in
+  /// an app that has it.
+  bool get torBuiltIn => _tor != null && _settings.torBuiltIn;
+
+  /// Whether the wallet waits for Tor built into the app: the switch is on and Tor is not on yet, starting or failed.
+  /// The wallet reaches neither its node nor the relay meanwhile, so that no connection goes out without Tor.
+  bool get waitsForTor => torBuiltIn && _tor!.state != TorState.on;
+
+  /// Whether a change of the switch of Tor built into the app runs, during which the switch takes no other change.
+  bool get torSwitching => _torSwitching;
+  bool _torSwitching = false;
+
+  /// Whether Tor built into the app could not find an address for the name of the node at the last connection, so
+  /// that the wallet stays away from it.
+  bool get torNameFailed => _torNameFailed;
+  bool _torNameFailed = false;
+
+  /// The SOCKS proxy to the node of every network and to the relay: the proxy of Tor built into the app while it is
+  /// on, or the proxy of the settings; null when the wallet reaches both straight. While [waitsForTor], null as
+  /// well, and nothing may connect.
+  String? get proxy => torBuiltIn ? _tor!.address : _settings.proxy;
+
+  /// The proxy of the settings, the one of the user, whether Tor built into the app is on or not: the field of the
+  /// settings shows this one, never the proxy of Tor (W-01 of the scan of 13 Oct 2026).
+  String? get userProxy => _settings.proxy;
+
+  /// The proxy for a connection to [node]: none for a node of the user's own network, on this Mac or on a private
+  /// address, which Tor cannot reach and which needs no proxy (W-08); otherwise [proxy].
+  String? _proxyFor(String node) => isOwnNode(node) ? null : proxy;
+
+  /// Turns Tor built into the app on or off, and connects the wallet accordingly: through Tor once it is on, or
+  /// straight or through the proxy of the settings when it is off. On the way on, the wallet leaves its node first,
+  /// so that no connection goes on straight while Tor starts (W-03). One change at a time.
+  Future<void> changeTorBuiltIn(bool on) async {
+    final tor = _tor;
+    if (tor == null || on == _settings.torBuiltIn || _torSwitching) return;
+    _torSwitching = true;
+    _settings = _settings.withTorBuiltIn(on);
+    await _storage.writeSettings(_settings);
+    notifyListeners();
+    try {
+      if (on) {
+        await _leaveNode();
+        await tor.start();
+      } else {
+        await tor.stop();
+      }
+    } finally {
+      _torSwitching = false;
+    }
+    await _reachAfterTor();
+  }
+
+  /// Starts Tor built into the app again after a failed start.
+  Future<void> retryTor() async {
+    final tor = _tor;
+    if (tor == null || !_settings.torBuiltIn || _torSwitching) return;
+    _torSwitching = true;
+    notifyListeners();
+    try {
+      await tor.start();
+    } finally {
+      _torSwitching = false;
+    }
+    await _reachAfterTor();
+  }
+
+  /// Connects the wallet with the proxy as it stands now, when a wallet is open, and reads its state.
+  Future<void> _reachAfterTor() async {
+    if (_phase != WalletPhase.open || _disposed) return;
+    try {
+      await _connect();
+      await _readState(withHistory: false);
+    } on WalletException {
+      // The node stays silent: the poll and the look say so.
+    }
+    if (!_disposed) notifyListeners();
+  }
+
+  /// Takes the open wallet off its node, so that wallet2 opens no connection on its own, and reads the state, which
+  /// then says that the node is not connected.
+  Future<void> _leaveNode() async {
+    if (_phase != WalletPhase.open || _disposed) return;
+    _resetLook();
+    try {
+      await _worker.call<void>(const LeaveNode());
+      await _readState(withHistory: false);
+    } on WalletException {
+      // The wallet closed meanwhile, or the node stays as it is: nothing more to leave.
+    }
+  }
+
+  /// Tor built into the app changed: once it is on, the wallet that waited for it connects; when it went off or
+  /// failed while the switch is on, the wallet leaves its node, so that nothing goes on straight (W-03); the screens
+  /// hear of every change. Tor goes off while the switch is on at the quit of the app alone, since the service
+  /// makes the last call win (W-06), so nothing starts it again here.
+  void _onTor() {
+    if (_disposed) return;
+    if (!torBuiltIn) {
+      notifyListeners();
+      return;
+    }
+    switch (_tor!.state) {
+      case TorState.on:
+        unawaited(_reachAfterTor());
+      case TorState.off || TorState.failed:
+        unawaited(_leaveAfterTor());
+      case TorState.starting:
+        notifyListeners();
+    }
+  }
+
+  Future<void> _leaveAfterTor() async {
+    await _leaveNode();
+    if (!_disposed) notifyListeners();
+  }
 
   /// Whether wallet2 refused the proxy at the last connection, so that the wallet stays away from its node until the
   /// user sets one that works. The wallet still opens, so that the user can reach the settings.
   bool get proxyRefused => _proxyRefused;
   bool _proxyRefused = false;
 
-  /// Saves the proxy, such as Tor at 127.0.0.1:9050, or no proxy for empty text, and connects the wallet through it.
+  /// Saves the proxy, such as Tor at 127.0.0.1:9050, or no proxy for empty text, and connects the wallet through it;
+  /// while Tor built into the app is on, the proxy is kept for the time the user turns it off, and nothing connects.
   /// Throws a [NodeAddressException] for an address that is no IP address and port, and a [WalletException] of
   /// [WalletFailure.proxyRefused] when wallet2 refuses the proxy.
   Future<void> changeProxy(String text) async {
@@ -330,7 +480,7 @@ final class WalletController extends ChangeNotifier {
     if (proxy == _settings.proxy && !_proxyRefused) return;
     _settings = _settings.withProxy(proxy);
     await _storage.writeSettings(_settings);
-    if (_phase == WalletPhase.open) {
+    if (_phase == WalletPhase.open && !torBuiltIn) {
       await _connect();
       await _readState(withHistory: false);
     }
@@ -358,8 +508,30 @@ final class WalletController extends ChangeNotifier {
   Future<void> _connect() async {
     // A connect tries the settings as they stand, so a report of an earlier node or proxy says nothing about it.
     _resetLook();
+    _torNameFailed = false;
+    // While the wallet waits for Tor built into the app, nothing connects: the node would see this Mac otherwise.
+    // The wallet connects once Tor is on.
+    if (waitsForTor) return;
+    final proxy = _proxyFor(node);
+    var address = node;
+    // Through Tor built into the app, the name of the node is resolved through Tor as well, and wallet2 gets the
+    // address: wallet2 resolves a name with the resolver of this Mac, proxy or not, which would tell the network
+    // which node the wallet uses (W-07 of the scan of 13 Oct 2026). An address of an onion service goes as a name.
+    if (proxy != null && torBuiltIn) {
+      final (:host, :port) = splitNodeAddress(node);
+      if (InternetAddress.tryParse(host) == null && !host.toLowerCase().endsWith('.onion')) {
+        final InternetAddress found;
+        try {
+          found = await _resolve(proxy: proxy, host: host, timeout: AppConfig.probeTimeout);
+        } on Object {
+          _torNameFailed = true;
+          return;
+        }
+        address = found.type == InternetAddressType.IPv6 ? '[${found.address}]:$port' : '${found.address}:$port';
+      }
+    }
     try {
-      await _worker.call<void>(ConnectNode(address: node, proxy: proxy));
+      await _worker.call<void>(ConnectNode(address: address, proxy: proxy));
       _proxyRefused = false;
     } on WalletException catch (error) {
       switch (error.failure) {
@@ -400,7 +572,7 @@ final class WalletController extends ChangeNotifier {
   /// Looks for what keeps the wallet from its node, once the node has been silent for a while, and again at an
   /// interval; [now] looks at once. A proxy that wallet2 refused needs no look: the settings say so.
   Future<void> _lookForNode({bool now = false}) async {
-    if (_phase != WalletPhase.open || _lookingForNode || _proxyRefused || _disposed) return;
+    if (_phase != WalletPhase.open || _lookingForNode || _proxyRefused || _disposed || waitsForTor) return;
     final moment = _elapsed();
     if (!now) {
       // The silence counts from the first read that found the node silent, which [_readState] notes.
@@ -411,7 +583,7 @@ final class WalletController extends ChangeNotifier {
     _lookingForNode = true;
     final generation = ++_lookGeneration;
     final node = this.node;
-    final proxy = this.proxy;
+    final proxy = _proxyFor(node);
     notifyListeners();
     ConnectionTrouble? trouble;
     try {
@@ -425,6 +597,11 @@ final class WalletController extends ChangeNotifier {
     if (generation != _lookGeneration || _disposed) return;
     _lookingForNode = false;
     _nodeReport = NodeReport(trouble: trouble, node: node, proxy: proxy, at: _elapsed());
+    // A proxy of Tor built into the app that stopped answering: Tor counts as failed, so that the screens offer a
+    // new start and the wallet waits rather than point at a dead port (W-04).
+    if (torBuiltIn && (trouble == ConnectionTrouble.proxyDown || trouble == ConnectionTrouble.proxyNotSocks5)) {
+      _tor!.markDead(const SocksException('The proxy of Tor built into the app stopped answering.'));
+    }
     notifyListeners();
   }
 
@@ -474,6 +651,7 @@ final class WalletController extends ChangeNotifier {
     _disposed = true;
     _lookGeneration++;
     _poll?.cancel();
+    _tor?.removeListener(_onTor);
     super.dispose();
   }
 }

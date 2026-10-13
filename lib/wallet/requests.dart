@@ -49,6 +49,12 @@ final class ConnectNode extends WalletRequest {
   final String? proxy;
 }
 
+/// Takes the open wallet off its node: the scan pauses and wallet2 goes offline, so that no connection to the node
+/// goes out until the next [ConnectNode], as while the wallet waits for Tor built into the app.
+final class LeaveNode extends WalletRequest {
+  const LeaveNode();
+}
+
 final class ReadStatus extends WalletRequest {
   const ReadStatus();
 }

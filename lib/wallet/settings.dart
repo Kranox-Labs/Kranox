@@ -3,22 +3,27 @@ import '../config/network.dart';
 import '../core/node_address.dart';
 
 /// The choices of the user that the app keeps between runs: the network, a node for each network where the user
-/// chose one, the subaddress that the receive page shows on each network, and a proxy to the nodes. A network without
-/// a choice uses its default node.
+/// chose one, the subaddress that the receive page shows on each network, whether Tor built into the app carries the
+/// traffic, and a proxy to the nodes. A network without a choice uses its default node.
 final class AppSettings {
   const AppSettings({
     this.network = AppConfig.defaultNetwork,
     this.nodes = const {},
     this.receiveIndexes = const {},
+    this.torBuiltIn = true,
     this.proxy,
   });
 
   final MoneroNetwork network;
   final Map<MoneroNetwork, String> nodes;
 
+  /// Whether Tor built into the app carries the traffic to the node of every network and to the relay, from 13 Oct
+  /// 2026: on for a new install. While it is on, the wallet reaches neither until Tor is on, and [proxy] is not used.
+  final bool torBuiltIn;
+
   /// The SOCKS proxy, such as Tor at 127.0.0.1:9050, through which the wallet reaches the node of every network
   /// (K-11 of the security review of 0.2.0) and the relay (O-001 of the second review), or null to reach both
-  /// straight.
+  /// straight. A proxy of the user, for when [torBuiltIn] is off.
   final String? proxy;
 
   /// The index of the subaddress that the receive page shows. The bridge makes subaddresses of its own for the
@@ -30,12 +35,13 @@ final class AppSettings {
   int? receiveIndexOf(MoneroNetwork network) => receiveIndexes[network];
 
   AppSettings withNetwork(MoneroNetwork network) =>
-      AppSettings(network: network, nodes: nodes, receiveIndexes: receiveIndexes, proxy: proxy);
+      AppSettings(network: network, nodes: nodes, receiveIndexes: receiveIndexes, torBuiltIn: torBuiltIn, proxy: proxy);
 
   AppSettings withNode(MoneroNetwork network, String node) => AppSettings(
     network: this.network,
     nodes: {...nodes, network: node},
     receiveIndexes: receiveIndexes,
+    torBuiltIn: torBuiltIn,
     proxy: proxy,
   );
 
@@ -43,17 +49,23 @@ final class AppSettings {
     network: this.network,
     nodes: nodes,
     receiveIndexes: {...receiveIndexes, network: index},
+    torBuiltIn: torBuiltIn,
     proxy: proxy,
   );
 
   /// The settings with [proxy], or without one when it is null.
   AppSettings withProxy(String? proxy) =>
-      AppSettings(network: network, nodes: nodes, receiveIndexes: receiveIndexes, proxy: proxy);
+      AppSettings(network: network, nodes: nodes, receiveIndexes: receiveIndexes, torBuiltIn: torBuiltIn, proxy: proxy);
+
+  /// The settings with Tor built into the app on or off.
+  AppSettings withTorBuiltIn(bool on) =>
+      AppSettings(network: network, nodes: nodes, receiveIndexes: receiveIndexes, torBuiltIn: on, proxy: proxy);
 
   Map<String, Object?> toJson() => {
     _networkKey: network.name,
     _nodesKey: {for (final entry in nodes.entries) entry.key.name: entry.value},
     _receiveIndexesKey: {for (final entry in receiveIndexes.entries) entry.key.name: entry.value},
+    _torKey: torBuiltIn,
     _proxyKey: proxy,
   };
 
@@ -100,11 +112,19 @@ final class AppSettings {
     if (proxy != null && proxy is! String) {
       throw const FormatException('The settings hold a proxy that is no text.');
     }
+    final readProxy = proxy == null ? null : _proxyOf(proxy as String);
+    final tor = data[_torKey];
+    if (tor != null && tor is! bool) {
+      throw const FormatException('The settings hold a switch of Tor that is no yes or no.');
+    }
     return AppSettings(
       network: network is String ? _networkNamed(network) : AppConfig.defaultNetwork,
       nodes: nodes,
       receiveIndexes: receiveIndexes,
-      proxy: proxy == null ? null : _proxyOf(proxy as String),
+      // A file from before 13 Oct 2026 names no switch: a user who set a proxy of their own keeps it, and the others
+      // get Tor built into the app, as a new install does.
+      torBuiltIn: tor is bool ? tor : readProxy == null,
+      proxy: readProxy,
     );
   }
 
@@ -140,5 +160,6 @@ final class AppSettings {
   static const String _nodesKey = 'nodes';
   static const String _legacyNodeKey = 'node';
   static const String _receiveIndexesKey = 'receiveIndexes';
+  static const String _torKey = 'torBuiltIn';
   static const String _proxyKey = 'proxy';
 }

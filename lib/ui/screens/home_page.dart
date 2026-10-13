@@ -54,6 +54,7 @@ class HomePage extends StatelessWidget {
       children: [
         if (nodeTroubleText(controller) case final trouble?) ...[
           _NodeNotice(
+            title: controller.waitsForTor ? Copy.torTitle : Copy.nodeOffline,
             text: trouble,
             failure: controller.reconnectFailure,
             busy: controller.reconnecting || controller.lookingForNode,
@@ -116,6 +117,7 @@ class _NodeChip extends StatelessWidget {
 /// settings. The owner asked for it on 13 Oct 2026, after an evening with a proxy that was still starting.
 class _NodeNotice extends StatelessWidget {
   const _NodeNotice({
+    required this.title,
     required this.text,
     required this.failure,
     required this.busy,
@@ -123,6 +125,7 @@ class _NodeNotice extends StatelessWidget {
     required this.onSettings,
   });
 
+  final String title;
   final String text;
 
   /// What wallet2 answered to the last "Try again" when it refused, or null.
@@ -139,7 +142,7 @@ class _NodeNotice extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CardTitle(Copy.nodeOffline),
+          CardTitle(title),
           const SizedBox(height: 4),
           Text(text, style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft)),
           if (failure case final failure?) ErrorLine(failureText(failure)),
