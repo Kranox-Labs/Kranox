@@ -203,6 +203,23 @@ report names.
 The full report gives every finding with its impact and its fix:
 [audit/security-review-sharp-edges-2026-10-13-starknet.md](audit/security-review-sharp-edges-2026-10-13-starknet.md).
 
+### Seventh scan: Zcash as the third way into the web app
+
+Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
+commit `f0bed8d` of the web app and the commit `781ce77` of the relay that opened Zcash as the third chain the coins
+can come from, through NEAR Intents, ChangeNOW, and SimpleSwap, at transparent addresses. Not an audit by Trail of
+Bits.
+
+Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another
+firm read the code. The scan found 15 findings, 2 Medium, 4 Low, and 9 Info, and nothing High or Critical. The
+Medium ones: the app said nothing about the transparent side of Zcash, so that "All clear" could stand over a swap
+whose deposit pairs the user's own transparent address with the arrival; and the relay read the field of SimpleSwap
+that holds the deposit expected as the coin that arrives, which the first real exchange showed. Nothing lets a swap
+go to another address or amount than the one the user saw. Every finding is fixed but one note, as the report says.
+
+The full report gives every finding with its impact and its fix:
+[audit/security-review-sharp-edges-2026-10-13-zcash.md](audit/security-review-sharp-edges-2026-10-13-zcash.md).
+
 ## Build from source
 
 You need macOS with Xcode and [fvm](https://fvm.app). The file `.fvmrc` pins Flutter 3.47.6. In the root of this
