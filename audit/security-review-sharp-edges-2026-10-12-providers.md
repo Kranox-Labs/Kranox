@@ -1,8 +1,8 @@
 # Security scan of the second provider of the Kranox web app and of the relay for it
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 12 Oct 2026, on the change after the
-commit [`ab6c1e2`](https://github.com/Kranox-Labs/App-Web/tree/ab6c1e2) of the web app and the commit
-[`7a30027`](https://github.com/Kranox-Labs/Relay/tree/7a30027) of the relay, with the deploy tools of the relay.
+commit [`b237241`](https://github.com/Kranox-Labs/App-Web/tree/b237241) of the web app and the commit
+[`49b55fd`](https://github.com/Kranox-Labs/Relay/tree/49b55fd) of the relay, with the deploy tools of the relay.
 Not an audit by Trail of Bits.
 
 This report covers a quick scan of the change that gave the web app of Kranox its second provider, SimpleSwap,
@@ -21,8 +21,8 @@ app, which was named the door then.
 
 | Part | What the scan read | Version |
 |---|---|---|
-| Relay | The change to [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the new `src/exchanger.mts` (the shapes that the exchangers share) and `src/simpleswap.mts` (the client of SimpleSwap v3), the provider in the routes of pay of `src/server.mts`, the limiter with a window in `src/limiter.mts`, the optional key in `src/config.mts` and `src/main.mts`, and the deploy tools `scripts/deploy/relay.mts`, `server/relay.sh`, `server/nginx-relay.conf`, and `deploy/config.mts` of the workspace, which carry the key and add the origin of the dev server to the live relay. | After `7a30027` |
-| Web app | The change to [Kranox-Labs/App-Web](https://github.com/Kranox-Labs/App-Web): the end of the sample mode, the provider in `src/gate/` and in the pages of receive, the page of a swap, the records of swaps, the settings of the dev server, and the marks of the chains as SVG. | After `ab6c1e2` |
+| Relay | The change to [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the new `src/exchanger.mts` (the shapes that the exchangers share) and `src/simpleswap.mts` (the client of SimpleSwap v3), the provider in the routes of pay of `src/server.mts`, the limiter with a window in `src/limiter.mts`, the optional key in `src/config.mts` and `src/main.mts`, and the deploy tools `scripts/deploy/relay.mts`, `server/relay.sh`, `server/nginx-relay.conf`, and `deploy/config.mts` of the workspace, which carry the key and add the origin of the dev server to the live relay. | After `49b55fd` |
+| Web app | The change to [Kranox-Labs/App-Web](https://github.com/Kranox-Labs/App-Web): the end of the sample mode, the provider in `src/gate/` and in the pages of receive, the page of a swap, the records of swaps, the settings of the dev server, and the marks of the chains as SVG. | After `b237241` |
 
 The web app runs in the browser of a phone or of a desktop. The user connects the wallet that receives, and receive
 walks through the chain the coins come from, the amount, the provider with its quote, the privacy review, and the
@@ -70,8 +70,8 @@ Every finding but four is fixed, with tests where a test fits. The four that sta
 that the relay does not know still stops a read, on purpose; the order of the arguments of the limiter; the default
 provider written in an effect; and the origin of the dev server on the live relay, kept on its own port with its
 caveat written down. The fixes of the web app are in its commit
-[`5bce371`](https://github.com/Kranox-Labs/App-Web/commit/5bce371), together with the change that the scan read, and
-the fixes of the relay in its commit [`f665e33`](https://github.com/Kranox-Labs/Relay/commit/f665e33), the same way.
+[`c212808`](https://github.com/Kranox-Labs/App-Web/commit/c212808), together with the change that the scan read, and
+the fixes of the relay in its commit [`22e28e7`](https://github.com/Kranox-Labs/Relay/commit/22e28e7), the same way.
 
 ## Findings
 

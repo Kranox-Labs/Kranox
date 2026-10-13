@@ -1,7 +1,7 @@
 # Security scan of the look for the trouble with the node, and of the close of a running card
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026, on the change after the
-commit [`c241565`](https://github.com/Kranox-Labs/Kranox/tree/c241565) of the Mac app. Not an audit by Trail of
+commit [`489f3d5`](https://github.com/Kranox-Labs/Kranox/tree/489f3d5) of the Mac app. Not an audit by Trail of
 Bits.
 
 This report covers a quick scan of the change that lets the Mac app say why its node or the relay does not answer,

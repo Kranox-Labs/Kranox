@@ -1,7 +1,7 @@
 # Security review of Kranox 0.2.0
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 7 Oct 2026, at the commit
-[`10bc27f`](https://github.com/Kranox-Labs/Kranox/tree/10bc27fa88236f17d244837c7678036132080247) of the wallet.
+[`fa32ef7`](https://github.com/Kranox-Labs/Kranox/tree/fa32ef79005005cac1cc618a7f6e153006512667) of the wallet.
 Not an audit by Trail of Bits.
 
 This report covers a security review of the Kranox wallet 0.2.0 for macOS and of its relay. Claude ran the skills
@@ -13,7 +13,7 @@ After you read this report, you know what the review covered, what it found, and
 
 | Part | What the review read | Version |
 |---|---|---|
-| Wallet app | `lib/`, `macos/`, `tool/`, and `pubspec.yaml` of this repository | Kranox 0.2.0: the commit `10bc27f`, the tag `v0.2.0` |
+| Wallet app | `lib/`, `macos/`, `tool/`, and `pubspec.yaml` of this repository | Kranox 0.2.0: the commit `fa32ef7`, the tag `v0.2.0` |
 | Relay | `src/`, `package.json`, `.env.example`, and the TypeScript settings of [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay) | The release that ran on 7 Oct 2026, before its fixes |
 | Server of the relay | The setup of nginx and systemd | Not public |
 
@@ -53,10 +53,10 @@ The review found 24 distinct findings: 3 High, 10 Medium, and 11 Low.
 | Low | 11 | 10 | 1 | 0 |
 | Total | 24 | 22 | 2 | 0 |
 
-The first fixes of the wallet are in the commit [`b70aedb`](https://github.com/Kranox-Labs/Kranox/commit/b70aedb)
+The first fixes of the wallet are in the commit [`a1e83fd`](https://github.com/Kranox-Labs/Kranox/commit/a1e83fd)
 and ship in [Kranox 0.2.1 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.2.1). The rest, in the
-commits [`76d2179`](https://github.com/Kranox-Labs/Kranox/commit/76d2179) and
-[`aab392a`](https://github.com/Kranox-Labs/Kranox/commit/aab392a), ship in
+commits [`1abc199`](https://github.com/Kranox-Labs/Kranox/commit/1abc199) and
+[`94bf973`](https://github.com/Kranox-Labs/Kranox/commit/94bf973), ship in
 [Kranox 0.3.1 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.1). The fixes of the relay are in
 [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay), and the relay runs all of them from 8 Oct 2026. Two
 findings stay partly fixed, K-11 and K-18. A second review, of 0.3.1, ran on 8 Oct 2026 with another skill. It lists

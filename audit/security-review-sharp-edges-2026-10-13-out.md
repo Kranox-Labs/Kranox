@@ -1,8 +1,8 @@
 # Security scan of the way out of the Kranox web app: USDG and ETH on Robinhood Chain into Monero, Zcash, and Starknet
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026, on the change after the
-commit [`02d78bd`](https://github.com/Kranox-Labs/App-Web/tree/02d78bd) of the web app and the commit
-[`64c6d5b`](https://github.com/Kranox-Labs/Relay/tree/64c6d5b) of the relay. Not an audit by Trail of Bits.
+commit [`dbc95f8`](https://github.com/Kranox-Labs/App-Web/tree/dbc95f8) of the web app and the commit
+[`ed906e2`](https://github.com/Kranox-Labs/Relay/tree/ed906e2) of the relay. Not an audit by Trail of Bits.
 
 This report covers a quick scan of the change that opened the way out: the user sends USDG or ETH from the wallet
 they connected on Robinhood Chain to a deposit address of ChangeNOW, SimpleSwap, or NEAR Intents on that chain, and
@@ -25,8 +25,8 @@ reports of the earlier reviews are [security-review-0.2.0.md](security-review-0.
 
 | Part | What the scan read | Version |
 |---|---|---|
-| Relay | The change to [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the way out in `src/exchanger.mts` (the methods of the exchangers, the decimals of the coins on Robinhood Chain), in the three exchangers `src/changenow.mts`, `src/simpleswap.mts`, and `src/oneclick.mts` (with the minimums and the dry quotes of the way out, and the check of `/ready`), the minimums in `src/config.mts`, and the three routes with their checks in `src/server.mts`, with the tests of each. | After `64c6d5b` |
-| Web app | The change to [Kranox-Labs/App-Web](https://github.com/Kranox-Labs/App-Web): the transfer of the wallet in `src/wallet/transfer.ts`, the way out in the client of the relay, the store of swaps with the direction of a swap, the draft, the privacy check, the amounts, the five steps of the way out in `src/ui/pages/out/`, the page of a swap with the button that sends, the routes with the move of `/receive` to `/in`, and the copy. | After `02d78bd` |
+| Relay | The change to [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the way out in `src/exchanger.mts` (the methods of the exchangers, the decimals of the coins on Robinhood Chain), in the three exchangers `src/changenow.mts`, `src/simpleswap.mts`, and `src/oneclick.mts` (with the minimums and the dry quotes of the way out, and the check of `/ready`), the minimums in `src/config.mts`, and the three routes with their checks in `src/server.mts`, with the tests of each. | After `ed906e2` |
+| Web app | The change to [Kranox-Labs/App-Web](https://github.com/Kranox-Labs/App-Web): the transfer of the wallet in `src/wallet/transfer.ts`, the way out in the client of the relay, the store of swaps with the direction of a swap, the draft, the privacy check, the amounts, the five steps of the way out in `src/ui/pages/out/`, the page of a swap with the button that sends, the routes with the move of `/receive` to `/in`, and the copy. | After `dbc95f8` |
 
 The web app runs in the browser of a phone or of a desktop. Out walks through the chain the coins go to, the amount
 of USDG or ETH to send, the provider with its quote, the address on that chain with the privacy review of the wallet

@@ -1,9 +1,9 @@
 # Security review of Kranox 0.3.1
 
 Scanned with [repo-security-review](https://github.com/Consensys/repo-security-review), a skill of Consensys, on
-8 Oct 2026, at the commit [`56d16b3`](https://github.com/Kranox-Labs/Kranox/tree/56d16b3f5dc10cc51b93fc0f500c5eb808c66587)
+8 Oct 2026, at the commit [`0ac8786`](https://github.com/Kranox-Labs/Kranox/tree/0ac878605c52506271fa49fa21b6cf1d98800a69)
 of the wallet and the commit
-[`ef0cdc5`](https://github.com/Kranox-Labs/Relay/tree/ef0cdc56513201948b3e8b53c68108d6b7cf15a7) of the relay. Not an
+[`7593b21`](https://github.com/Kranox-Labs/Relay/tree/7593b21dfa1f635a012186abb20d271cf8fc7990) of the relay. Not an
 audit by Consensys.
 
 This report covers the second security review of the Kranox wallet 0.3.1 beta for macOS and of its relay. Claude ran
@@ -17,8 +17,8 @@ first review, of Kranox 0.2.0, is [security-review-0.2.0.md](security-review-0.2
 
 | Part | What the review read | Version |
 |---|---|---|
-| Wallet app | This repository | Kranox 0.3.1 beta: the commit `56d16b3`, the tag `v0.3.1` |
-| Relay | [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay) | The commit `ef0cdc5`, which the relay runs from 8 Oct 2026 |
+| Wallet app | This repository | Kranox 0.3.1 beta: the commit `0ac8786`, the tag `v0.3.1` |
+| Relay | [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay) | The commit `7593b21`, which the relay runs from 8 Oct 2026 |
 
 The review left out the setup of the server, with its nginx and systemd files, because no repository holds it. It also
 left out the site, ChangeNOW, Alchemy, Blockscout, and the inside of the Monero library `monero_c`.
@@ -135,7 +135,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
   (`lib/bridge/socks.dart`) hands the name of the relay to the proxy, and TLS runs inside the tunnel with the usual
   check of the certificate. A proxy that fails fails the call, and the app never falls back to a straight
   connection. Since S-01 of the third scan, the proxy is an IP address and a port, the only form that wallet2 takes.
-  Commit [`1f81a4f`](https://github.com/Kranox-Labs/Kranox/commit/1f81a4f).
+  Commit [`df6bb5b`](https://github.com/Kranox-Labs/Kranox/commit/df6bb5b).
 
 ### Wallet O-003: the signature of an answer did not bind the request
 
@@ -150,8 +150,8 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Fix:** the relay signs each answer a second time, over the nonce, the method, the path with its query, the
   SHA-256 of the body of the request, the status, and the body of the answer. The app checks only that signature,
   and it compares the id of a state and the refund address of a new swap or payment with what it asked for. Commit
-  [`a08eccf`](https://github.com/Kranox-Labs/Kranox/commit/a08eccf), with the relay commit
-  [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c).
+  [`1379494`](https://github.com/Kranox-Labs/Kranox/commit/1379494), with the relay commit
+  [`f4dcd28`](https://github.com/Kranox-Labs/Relay/commit/f4dcd28).
 
 ### Wallet O-007: the file of the swaps was not encrypted
 
@@ -164,8 +164,8 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Fix:** the file is sealed with AES-256-GCM (`lib/core/file_cipher.dart`) under a key that only the open wallet
   gives, so the swaps open when the wallet opens and close when it locks. Since S-06 of the third scan, the key
   comes from the secret spend key. The plain file of 0.3.1 is sealed at the first unlock, and after that, a plain
-  file moves aside (S-05 of the third scan). Commits [`a08eccf`](https://github.com/Kranox-Labs/Kranox/commit/a08eccf)
-  and [`a27472f`](https://github.com/Kranox-Labs/Kranox/commit/a27472f).
+  file moves aside (S-05 of the third scan). Commits [`1379494`](https://github.com/Kranox-Labs/Kranox/commit/1379494)
+  and [`39cf24d`](https://github.com/Kranox-Labs/Kranox/commit/39cf24d).
 
 ### Wallet O-004: one round of the KDF, and a password of 8 characters
 
@@ -177,7 +177,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
   not.
 - **Fix:** a new password needs 12 characters, and since S-07 of the third scan the controller checks it too, by
   code points. A wallet made before keeps its password. Commit
-  [`a08eccf`](https://github.com/Kranox-Labs/Kranox/commit/a08eccf).
+  [`1379494`](https://github.com/Kranox-Labs/Kranox/commit/1379494).
 - **What stays:** more rounds of the key function. The shipped Monero library takes a number of rounds only when it
   restores a wallet, not when it makes or opens one, so this part waits for more research. Until then, choose a long
   password, such as a phrase of several random words.
@@ -211,7 +211,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Impact:** a party that controlled the connection to the relay could send a very large answer, and make the app
   slow or stop it. No data leaked, and funds were not at risk.
 - **Fix:** the app reads at most 1 MiB of an answer, with or without its length, before it checks the signature.
-  Commit [`a08eccf`](https://github.com/Kranox-Labs/Kranox/commit/a08eccf).
+  Commit [`1379494`](https://github.com/Kranox-Labs/Kranox/commit/1379494).
 
 ### Wallet A-007: neither repository shows how the prebuilt Monero library was built
 
@@ -265,7 +265,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Fix:** every answer to a request with a nonce carries a second signature, over the nonce, the method, the path
   with its query, the SHA-256 of the body of the request, the status, and the body. The first signature stays for
   the apps 0.3.1, and a request without a nonce gets no signature. Since S-11 of the third scan, the signer itself
-  refuses a nonce of another form. Commit [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c).
+  refuses a nonce of another form. Commit [`f4dcd28`](https://github.com/Kranox-Labs/Relay/commit/f4dcd28).
 - **Later:** once the apps before 0.3.1 are gone, refuse a request without a nonce on the routes that create
   exchanges.
 
@@ -277,7 +277,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Impact:** URLs often go into the logs of a server. A person who read such logs at ChangeNOW, or at a proxy on the
   way, could use the key and its budget. Funds were not at risk.
 - **Fix:** receive asks version 2 of the API for its range and its estimate, as pay does, so the key travels in the
-  header only. Commit [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c).
+  header only. Commit [`f4dcd28`](https://github.com/Kranox-Labs/Relay/commit/f4dcd28).
 
 ### Relay O-006: addresses from Alchemy went into a URL without encoding
 
@@ -288,7 +288,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
 - **Impact:** only a compromised Alchemy could use this finding, and only to change the names that a scan shows. The
   host and the path of the URL are fixed.
 - **Fix:** only addresses of `0x` and 40 hex digits count, and the query is built with `URLSearchParams`. Commit
-  [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c). The third scan found the same kind of issue in
+  [`f4dcd28`](https://github.com/Kranox-Labs/Relay/commit/f4dcd28). The third scan found the same kind of issue in
   the reader of Blockscout, S-09.
 
 ### Relay O-007: the relay records no security event
@@ -310,7 +310,7 @@ Paths of the wallet point at this repository. Paths of the relay point at
   creation of the flood needed a valid request, and it made a real exchange within the limits of the server.
 - **Fix:** a full store refuses a new key with 503 and keeps every live key, and it holds 20,000 keys, more than the
   budget of calls to ChangeNOW can fill in the lifetime of a key. Since S-12 of the third scan, the relay checks that
-  sum as it starts. Commit [`cfa4a3c`](https://github.com/Kranox-Labs/Relay/commit/cfa4a3c).
+  sum as it starts. Commit [`f4dcd28`](https://github.com/Kranox-Labs/Relay/commit/f4dcd28).
 
 ### Relay A-006: the relay serves plain HTTP behind a proxy that no repository defines
 

@@ -1,9 +1,9 @@
 # Security scan of the Kranox door and of the relay for it
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 12 Oct 2026, at the commit
-[`bdeb2e8`](https://github.com/Kranox-Labs/Door/tree/bdeb2e8a254ccb7283561a1c0f8a4fbcd938c192) of the door and the
+[`8720912`](https://github.com/Kranox-Labs/Door/tree/8720912d46862fe86898e3fe584a2b13b108cbef) of the door and the
 change of the relay after its commit
-[`dd886be`](https://github.com/Kranox-Labs/Relay/tree/dd886be) that lets the door in. Not an audit by Trail of
+[`1bc103a`](https://github.com/Kranox-Labs/Relay/tree/1bc103a) that lets the door in. Not an audit by Trail of
 Bits.
 
 This report covers a quick scan of the Kranox door, the web app of Kranox, before its first release, and of the
@@ -19,8 +19,8 @@ reports of the earlier reviews are [security-review-0.2.0.md](security-review-0.
 
 | Part | What the scan read | Version |
 |---|---|---|
-| Door | `src/` of [Kranox-Labs/Door](https://github.com/Kranox-Labs/Door): the settings, the client of the relay with its check of the signatures, the swaps kept in the browser, the privacy check, the wallet of the user, its balances, and the steps of receive | The first commit, `bdeb2e8` |
-| Relay | The change to `src/config.mts`, `src/server.mts`, and `src/main.mts` of [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the origins of the web app, the answer to the question of a browser, and the headers that let the web app read | After `dd886be`, before the fixes below |
+| Door | `src/` of [Kranox-Labs/Door](https://github.com/Kranox-Labs/Door): the settings, the client of the relay with its check of the signatures, the swaps kept in the browser, the privacy check, the wallet of the user, its balances, and the steps of receive | The first commit, `8720912` |
+| Relay | The change to `src/config.mts`, `src/server.mts`, and `src/main.mts` of [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the origins of the web app, the answer to the question of a browser, and the headers that let the web app read | After `1bc103a`, before the fixes below |
 
 The door is a web app in the browser of a phone or of a desktop. The user connects the wallet that receives (an
 extension such as MetaMask or Rabby, or the browser of a wallet app), and receive walks through the chain the coins
@@ -67,8 +67,8 @@ The scan found 22 findings: 2 Medium, 13 Low, and 7 Info. Nothing is High or Cri
 
 Every finding but two is fixed, with tests. The two that stay are notes: a limit of nginx that the deploy of the
 relay keeps on purpose, and a check that waits for wallets of another kind. The fixes of the door are in its commit
-[`4d343b8`](https://github.com/Kranox-Labs/Door/commit/4d343b8), and the fixes of the relay are in its commit
-[`99860a8`](https://github.com/Kranox-Labs/Relay/commit/99860a8), together with the change that lets the door in.
+[`52e7e37`](https://github.com/Kranox-Labs/Door/commit/52e7e37), and the fixes of the relay are in its commit
+[`2016b2f`](https://github.com/Kranox-Labs/Relay/commit/2016b2f), together with the change that lets the door in.
 
 ## Findings
 

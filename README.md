@@ -75,7 +75,7 @@ second one. None of them is an audit by a firm.
 
 ### First review: Kranox 0.2.0
 
-Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 7 Oct 2026, at the commit `10bc27f`
+Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 7 Oct 2026, at the commit `fa32ef7`
 of Kranox 0.2.0. Not an audit by Trail of Bits.
 
 Claude ran the skills in Claude Code on the wallet and on the relay, and wrote every finding. No person at Trail
@@ -108,7 +108,7 @@ The full report gives every finding with its impact and its fix:
 ### Second review: Kranox 0.3.1
 
 Scanned with [repo-security-review](https://github.com/Consensys/repo-security-review), a skill of Consensys, on
-8 Oct 2026, at the commit `56d16b3` of Kranox 0.3.1 beta and the commit `ef0cdc5` of the relay. Not an audit by
+8 Oct 2026, at the commit `0ac8786` of Kranox 0.3.1 beta and the commit `7593b21` of the relay. Not an audit by
 Consensys.
 
 Claude ran the skill in Claude Code on the wallet and on the relay, and wrote every finding. No person at Consensys
@@ -140,8 +140,8 @@ The full report gives every finding with its impact and its fix:
 
 ### Third scan: the code after 0.3.1
 
-Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 10 Oct 2026, at the commit `630c1ea`
-of the wallet and the commit `c30fc70` of the relay. Not an audit by Trail of Bits.
+Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 10 Oct 2026, at the commit `1193857`
+of the wallet and the commit `c330bb7` of the relay. Not an audit by Trail of Bits.
 
 Claude ran the skill `sharp-edges` in Claude Code on the code that the wallet and the relay gained after the second
 review, and wrote every finding. No person at Trail of Bits or at another firm read the code. The skill looks for
@@ -163,7 +163,7 @@ The full report gives every finding with its impact and its fix:
 ### Fourth scan: the web app before its first release
 
 Scanned twice with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 12 Oct 2026: the web app of
-Kranox at its commit `bdeb2e8` with the change of the relay that answers it, and later that day the change that
+Kranox at its commit `8720912` with the change of the relay that answers it, and later that day the change that
 gave the web app its second provider, SimpleSwap, with the relay and the deploy tools for it. Not audits by Trail of
 Bits.
 
@@ -180,7 +180,7 @@ The full reports give every finding with its impact and its fix:
 ### Fifth scan: the node that does not answer, and the close of a running card
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
-commit `c241565` that lets the app say why its node or the relay does not answer, such as a proxy that is not
+commit `489f3d5` that lets the app say why its node or the relay does not answer, such as a proxy that is not
 running, and lets the user close the card of a swap that still runs. Not an audit by Trail of Bits.
 
 Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another
@@ -195,7 +195,7 @@ The full report gives every finding with its impact and its fix:
 ### Sixth scan: Starknet as the second way into the web app
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
-commit `684f45e` of the web app and the commit `f665e33` of the relay that opened Starknet as the second chain the
+commit `5d88089` of the web app and the commit `22e28e7` of the relay that opened Starknet as the second chain the
 coins can come from, through the 1Click API of NEAR Intents and through ChangeNOW. Not an audit by Trail of Bits.
 
 Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another
@@ -212,7 +212,7 @@ The full report gives every finding with its impact and its fix:
 ### Seventh scan: Zcash as the third way into the web app
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
-commit `f0bed8d` of the web app and the commit `781ce77` of the relay that opened Zcash as the third chain the coins
+commit `ccef264` of the web app and the commit `06ae1c0` of the relay that opened Zcash as the third chain the coins
 can come from, through NEAR Intents, ChangeNOW, and SimpleSwap, at transparent addresses. Not an audit by Trail of
 Bits.
 
@@ -229,7 +229,7 @@ The full report gives every finding with its impact and its fix:
 ### Eighth scan: the way out of the web app
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
-commit `02d78bd` of the web app and the commit `64c6d5b` of the relay that opened the way out, USDG or ETH on
+commit `dbc95f8` of the web app and the commit `ed906e2` of the relay that opened the way out, USDG or ETH on
 Robinhood Chain into Monero, Zcash, or Starknet through the three providers, with the connected wallet sending the
 deposit in one transfer. Not an audit by Trail of Bits.
 
@@ -248,7 +248,7 @@ The full report gives every finding with its impact and its fix:
 ### Ninth scan: Tor built into the app
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
-commit `3b5571e` of the app that built Tor into it, arti through the plugin `tor` of Foundation Devices, with the
+commit `e18f8d5` of the app that built Tor into it, arti through the plugin `tor` of Foundation Devices, with the
 wallet and the relay reached through it. Not an audit by Trail of Bits.
 
 Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another

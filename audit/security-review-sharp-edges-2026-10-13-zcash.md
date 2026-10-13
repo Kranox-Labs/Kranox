@@ -1,8 +1,8 @@
 # Security scan of Zcash as the third way into the Kranox web app, through NEAR Intents, ChangeNOW, and SimpleSwap
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026, on the change after the
-commit [`f0bed8d`](https://github.com/Kranox-Labs/App-Web/tree/f0bed8d) of the web app and the commit
-[`781ce77`](https://github.com/Kranox-Labs/Relay/tree/781ce77) of the relay. Not an audit by Trail of Bits.
+commit [`ccef264`](https://github.com/Kranox-Labs/App-Web/tree/ccef264) of the web app and the commit
+[`06ae1c0`](https://github.com/Kranox-Labs/Relay/tree/06ae1c0) of the relay. Not an audit by Trail of Bits.
 
 This report covers a quick scan of the change that opened Zcash as the third chain the coins can come from: the user
 sends ZEC from their own Zcash wallet to a transparent deposit address of NEAR Intents, ChangeNOW, or SimpleSwap, and
@@ -22,8 +22,8 @@ reports of the earlier reviews are [security-review-0.2.0.md](security-review-0.
 
 | Part | What the scan read | Version |
 |---|---|---|
-| Relay | The change to [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the new `src/zcash.mts` (the transparent addresses of the Zcash mainnet), ZEC as a coin of origin in `src/exchanger.mts`, `src/changenow.mts`, `src/simpleswap.mts`, and `src/oneclick.mts` (with the refund address of a dry quote by coin), its minimum at 1Click in `src/config.mts`, and its addresses in `src/server.mts`, with the tests of each. | After `781ce77` |
-| Web app | The change to [Kranox-Labs/App-Web](https://github.com/Kranox-Labs/App-Web): the new `src/gate/zcash-address.ts`, the facts of Zcash in `src/gate/chains.ts` with its link of payment, the catalog with three providers of ZEC in `src/gate/catalog.ts`, the copy, and the pages of receive and of a swap as they read the facts of the chain. | After `f0bed8d` |
+| Relay | The change to [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the new `src/zcash.mts` (the transparent addresses of the Zcash mainnet), ZEC as a coin of origin in `src/exchanger.mts`, `src/changenow.mts`, `src/simpleswap.mts`, and `src/oneclick.mts` (with the refund address of a dry quote by coin), its minimum at 1Click in `src/config.mts`, and its addresses in `src/server.mts`, with the tests of each. | After `06ae1c0` |
+| Web app | The change to [Kranox-Labs/App-Web](https://github.com/Kranox-Labs/App-Web): the new `src/gate/zcash-address.ts`, the facts of Zcash in `src/gate/chains.ts` with its link of payment, the catalog with three providers of ZEC in `src/gate/catalog.ts`, the copy, and the pages of receive and of a swap as they read the facts of the chain. | After `ccef264` |
 
 The web app runs in the browser of a phone or of a desktop. The user connects the wallet that receives, and receive
 walks through the chain the coins come from, the amount, the provider with its quote, the privacy review, and the

@@ -1,8 +1,8 @@
 # Security scan of Starknet as the second way into the Kranox web app, through NEAR Intents and ChangeNOW
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026, on the change after the
-commit [`684f45e`](https://github.com/Kranox-Labs/App-Web/tree/684f45e) of the web app and the commit
-[`f665e33`](https://github.com/Kranox-Labs/Relay/tree/f665e33) of the relay, with the deploy tools of the relay.
+commit [`5d88089`](https://github.com/Kranox-Labs/App-Web/tree/5d88089) of the web app and the commit
+[`22e28e7`](https://github.com/Kranox-Labs/Relay/tree/22e28e7) of the relay, with the deploy tools of the relay.
 Not an audit by Trail of Bits.
 
 This report covers a quick scan of the change that opened Starknet as the second chain the coins can come from: the
@@ -22,8 +22,8 @@ reports of the earlier reviews are [security-review-0.2.0.md](security-review-0.
 
 | Part | What the scan read | Version |
 |---|---|---|
-| Relay | The change to [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the new `src/oneclick.mts` (the client of the 1Click API of NEAR Intents) and `src/starknet.mts` (the addresses of Starknet), the coin of origin in `src/exchanger.mts`, `src/changenow.mts`, and `src/simpleswap.mts`, the routes of pay with the coin of origin, its addresses, and the names of XMR for the Mac app in `src/server.mts`, the settings of 1Click and its optional partner key in `src/config.mts` and `src/main.mts`, and the deploy tools `scripts/deploy/relay.mts`, `server/relay.sh`, and `deploy/config.mts` of the workspace, which carry the key. | After `f665e33` |
-| Web app | The change to [Kranox-Labs/App-Web](https://github.com/Kranox-Labs/App-Web): the facts of the chains in `src/gate/chains.ts` and `src/gate/starknet-address.ts`, the catalog of chains and providers with their rates, the chain of origin in the shapes, the client of the relay, the records of swaps and their upgrade, the privacy check, the copy, and the pages of receive and of a swap. | After `684f45e` |
+| Relay | The change to [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): the new `src/oneclick.mts` (the client of the 1Click API of NEAR Intents) and `src/starknet.mts` (the addresses of Starknet), the coin of origin in `src/exchanger.mts`, `src/changenow.mts`, and `src/simpleswap.mts`, the routes of pay with the coin of origin, its addresses, and the names of XMR for the Mac app in `src/server.mts`, the settings of 1Click and its optional partner key in `src/config.mts` and `src/main.mts`, and the deploy tools `scripts/deploy/relay.mts`, `server/relay.sh`, and `deploy/config.mts` of the workspace, which carry the key. | After `22e28e7` |
+| Web app | The change to [Kranox-Labs/App-Web](https://github.com/Kranox-Labs/App-Web): the facts of the chains in `src/gate/chains.ts` and `src/gate/starknet-address.ts`, the catalog of chains and providers with their rates, the chain of origin in the shapes, the client of the relay, the records of swaps and their upgrade, the privacy check, the copy, and the pages of receive and of a swap. | After `5d88089` |
 
 The web app runs in the browser of a phone or of a desktop. The user connects the wallet that receives, and receive
 walks through the chain the coins come from, the amount, the provider with its quote, the privacy review, and the

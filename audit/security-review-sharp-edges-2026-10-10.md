@@ -1,8 +1,8 @@
 # Security scan of the code after Kranox 0.3.1
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 10 Oct 2026, at the commit
-[`630c1ea`](https://github.com/Kranox-Labs/Kranox/tree/630c1ea9d2fc580d8468f9085825bf3714ad354c) of the wallet and the
-commit [`c30fc70`](https://github.com/Kranox-Labs/Relay/tree/c30fc704527e35666d5b3f0c55f7343b18d223d0) of the relay.
+[`1193857`](https://github.com/Kranox-Labs/Kranox/tree/11938577aba249808148dd34849b520708a49245) of the wallet and the
+commit [`c330bb7`](https://github.com/Kranox-Labs/Relay/tree/c330bb7d8debec50c0c470f6cb9c742c3d51c951) of the relay.
 Not an audit by Trail of Bits.
 
 This report covers a quick scan of the code that the wallet and the relay gained after the second security review.
@@ -17,8 +17,8 @@ reports of the earlier reviews are [security-review-0.2.0.md](security-review-0.
 
 | Part | What the scan read | Versions |
 |---|---|---|
-| Wallet app | The changes to `lib/` of this repository: 36 files | From `56d16b3`, the second review, to `630c1ea` |
-| Relay | The changes to `src/` of [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): 10 files | From `ef0cdc5`, the second review, to `c30fc70` |
+| Wallet app | The changes to `lib/` of this repository: 36 files | From `0ac8786`, the second review, to `1193857` |
+| Relay | The changes to `src/` of [Kranox-Labs/Relay](https://github.com/Kranox-Labs/Relay): 10 files | From `7593b21`, the second review, to `c330bb7` |
 
 The new code holds the client of the relay through the proxy of Settings, the second form of the signature of an
 answer, the sealed file of the swaps, the rule of a new password, the pages of the swaps, the scans of addresses on
@@ -58,8 +58,8 @@ The scan found 13 findings: 1 High, 3 Medium, and 9 Low. Nothing is Critical.
 
 Every finding is fixed, with tests. The fixes of the wallet ship in
 [Kranox 0.3.2 beta](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.2), in the commit
-[`a27472f`](https://github.com/Kranox-Labs/Kranox/commit/a27472f). The fixes of the relay are in its commit
-[`dd886be`](https://github.com/Kranox-Labs/Relay/commit/dd886be), and the relay runs them from 11 Oct 2026.
+[`39cf24d`](https://github.com/Kranox-Labs/Kranox/commit/39cf24d). The fixes of the relay are in its commit
+[`1bc103a`](https://github.com/Kranox-Labs/Relay/commit/1bc103a), and the relay runs them from 11 Oct 2026.
 
 ## Findings
 

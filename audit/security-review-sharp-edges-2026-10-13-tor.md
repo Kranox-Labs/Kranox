@@ -1,7 +1,7 @@
 # Security scan of Tor built into the Kranox app for Mac
 
 Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026, on the change after the
-commit [`3b5571e`](https://github.com/Kranox-Labs/Kranox/tree/3b5571e) of the app. Not an audit by Trail of Bits.
+commit [`e18f8d5`](https://github.com/Kranox-Labs/Kranox/tree/e18f8d5) of the app. Not an audit by Trail of Bits.
 
 This report covers a quick scan of the change that built Tor into the app: arti, the Tor client of the Tor Project,
 starts inside the app through the plugin `tor` of Foundation Devices and runs a SOCKS5 proxy on this Mac, and the
@@ -24,7 +24,7 @@ reports of the earlier reviews are [security-review-0.2.0.md](security-review-0.
 
 | Part | What the scan read | Version |
 |---|---|---|
-| App | The change to [Kranox-Labs/Kranox](https://github.com/Kranox-Labs/Kranox): the engine of Tor on the plugin (`lib/core/tor_engine.dart`), the service with its states (`lib/wallet/tor_service.dart`), the switch in the settings (`lib/wallet/settings.dart`), the controller of the wallet (the wait for Tor, the proxy, the node of the own network, the start and the stop), the client of the relay and the bridge (no call and no look while the wallet waits), the trouble of a connection, the screens (Settings, the home, Privacy), the words, the start of the app, the entitlements, the Podfile, the packaging with its notices, and the tests; and the plugin at the pinned commit, with the parts of arti 1.7.0 it leans on. | After `3b5571e` |
+| App | The change to [Kranox-Labs/Kranox](https://github.com/Kranox-Labs/Kranox): the engine of Tor on the plugin (`lib/core/tor_engine.dart`), the service with its states (`lib/wallet/tor_service.dart`), the switch in the settings (`lib/wallet/settings.dart`), the controller of the wallet (the wait for Tor, the proxy, the node of the own network, the start and the stop), the client of the relay and the bridge (no call and no look while the wallet waits), the trouble of a connection, the screens (Settings, the home, Privacy), the words, the start of the app, the entitlements, the Podfile, the packaging with its notices, and the tests; and the plugin at the pinned commit, with the parts of arti 1.7.0 it leans on. | After `e18f8d5` |
 
 The app is a self-custodial Monero wallet for Mac with a bridge to Robinhood Chain through the relay of Kranox. Until
 this change the user could set a SOCKS5 proxy of their own, such as a Tor on this Mac, in Settings; the wallet and the
