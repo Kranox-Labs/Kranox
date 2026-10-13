@@ -220,6 +220,25 @@ go to another address or amount than the one the user saw. Every finding is fixe
 The full report gives every finding with its impact and its fix:
 [audit/security-review-sharp-edges-2026-10-13-zcash.md](audit/security-review-sharp-edges-2026-10-13-zcash.md).
 
+### Eighth scan: the way out of the web app
+
+Scanned with [Trail of Bits Skills](https://github.com/trailofbits/skills) on 13 Oct 2026: the change after the
+commit `02d78bd` of the web app and the commit `64c6d5b` of the relay that opened the way out, USDG or ETH on
+Robinhood Chain into Monero, Zcash, or Starknet through the three providers, with the connected wallet sending the
+deposit in one transfer. Not an audit by Trail of Bits.
+
+Claude ran the skill `sharp-edges` in Claude Code and wrote every finding. No person at Trail of Bits or at another
+firm read the code. The scan found 10 findings, 1 High, 1 Medium, and 8 Low, and nothing Critical. The High one: the
+transfer the button asked of the wallet named no chain, and the page checked the address of the wallet but not its
+network, so a wallet switched to another network could have sent the coins of that network to an address only
+Robinhood Chain knows; the transfer now names Robinhood Chain and the page shows the switch instead of the button. The
+Medium one: a wallet that answers no hash after sending was taken as not having sent, with the button offered again.
+Nothing lets the amount the wallet transfers differ from the amount of the swap, or the deposit address come from
+anywhere but a checked answer of the relay. Every finding is fixed, as the report says.
+
+The full report gives every finding with its impact and its fix:
+[audit/security-review-sharp-edges-2026-10-13-out.md](audit/security-review-sharp-edges-2026-10-13-out.md).
+
 ## Build from source
 
 You need macOS with Xcode and [fvm](https://fvm.app). The file `.fvmrc` pins Flutter 3.47.6. In the root of this
