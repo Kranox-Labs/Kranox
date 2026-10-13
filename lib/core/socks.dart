@@ -3,13 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import '../core/node_address.dart';
+import 'node_address.dart';
 
-/// A failure of a SOCKS proxy: it refused the connection, or it answered in a form that is not SOCKS5.
+/// A failure of a SOCKS proxy: it refused the connection, or, with [notSocks5], it answered in a form that is not
+/// SOCKS5, as the control port of Tor or an HTTP proxy would.
 final class SocksException implements Exception {
-  const SocksException(this.message);
+  const SocksException(this.message, {this.notSocks5 = false});
 
   final String message;
+  final bool notSocks5;
 
   @override
   String toString() => 'SocksException: $message';
@@ -55,18 +57,40 @@ Future<ConnectionTask<SecureSocket>> connectTlsThroughSocks({
   });
 }
 
+/// Checks that the SOCKS5 proxy at [proxy] opens a connection to [host] at [port], for a look at the way to a host,
+/// and closes the connection at once: it carries nothing. A step that takes longer than [timeout] fails with a
+/// [TimeoutException], and a proxy that refuses the way, or that is no SOCKS5 proxy, throws a [SocksException].
+Future<void> checkThroughSocks({
+  required String proxy,
+  required String host,
+  required int port,
+  required Duration timeout,
+}) async {
+  final target = _targetAddress(host);
+  final (host: proxyHost, port: proxyPort) = splitNodeAddress(proxy);
+  final socket = await Socket.connect(proxyHost, proxyPort, timeout: timeout);
+  try {
+    await _handshake(socket, _Replies(socket), target: target, port: port).timeout(timeout);
+  } finally {
+    socket.destroy();
+  }
+}
+
 /// Asks the proxy for a connection to [target] at [port]: the greeting without a user name, then the command
 /// CONNECT, as RFC 1928 gives them.
 Future<void> _handshake(Socket socket, _Replies replies, {required List<int> target, required int port}) async {
   socket.add(const [_version, 1, _noAuthentication]);
   final choice = await replies.take(2);
   if (choice[0] != _version || choice[1] != _noAuthentication) {
-    throw const SocksException('The proxy is no SOCKS5 proxy that takes a connection without a user name.');
+    throw const SocksException(
+      'The proxy is no SOCKS5 proxy that takes a connection without a user name.',
+      notSocks5: true,
+    );
   }
   socket.add([_version, _connect, 0, ...target, port >> 8, port & 0xff]);
   final head = await replies.take(4);
   if (head[0] != _version) {
-    throw const SocksException('The proxy answered in a form that is not SOCKS5.');
+    throw const SocksException('The proxy answered in a form that is not SOCKS5.', notSocks5: true);
   }
   if (head[1] != _succeeded) {
     throw SocksException('The proxy could not open the connection: SOCKS5 reply ${head[1]}.');

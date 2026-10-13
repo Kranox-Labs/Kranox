@@ -31,6 +31,7 @@ class _KranoxAppState extends State<KranoxApp> {
   // reads the settings; the swaps open with the wallet, so their notice can come later.
   late bool _noticeOpen = widget.controller.settingsRecoveredFrom != null;
   String? _swapsNoticed;
+  final GlobalKey<NavigatorState> _navigator = GlobalKey<NavigatorState>();
   late final AppLifecycleListener _lifecycle;
   late final IdleLock _idle = IdleLock(
     isOpen: () => widget.controller.phase == WalletPhase.open,
@@ -71,9 +72,15 @@ class _KranoxAppState extends State<KranoxApp> {
     });
   }
 
-  // The time without use starts again when the wallet opens, so that a wallet never locks right after its unlock.
+  // The time without use starts again when the wallet opens, so that a wallet never locks right after its unlock. A
+  // lock closes every sheet over the page, such as the question before a card closes, so that no answer reaches a
+  // wallet that is gone (the sharp-edges scan of 13 Oct 2026).
   void _onPhase() {
-    if (widget.controller.phase == WalletPhase.open) _idle.touch();
+    if (widget.controller.phase == WalletPhase.open) {
+      _idle.touch();
+    } else {
+      _navigator.currentState?.popUntil((route) => route.isFirst);
+    }
   }
 
   @override
@@ -88,6 +95,7 @@ class _KranoxAppState extends State<KranoxApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
+    navigatorKey: _navigator,
     title: Copy.appName,
     debugShowCheckedModeBanner: false,
     theme: KranoxTheme.build(Palette.of(activeLook)),

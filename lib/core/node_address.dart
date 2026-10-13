@@ -3,6 +3,11 @@ import 'dart:io';
 /// The highest port number of TCP.
 const int _maxPort = 65535;
 
+/// The longest host name, as DNS gives it: 253 characters, in labels of 63 at most. A name within these bounds fits
+/// the command CONNECT of SOCKS5 too, which carries at most 255 bytes of name.
+const int _maxHostLength = 253;
+const int _maxLabelLength = 63;
+
 final class NodeAddressException implements Exception {
   const NodeAddressException();
 
@@ -20,6 +25,10 @@ String parseNodeAddress(String text) {
   }
   final port = int.parse(match.group(2)!);
   if (port < 1 || port > _maxPort) {
+    throw const NodeAddressException();
+  }
+  final host = match.group(1)!;
+  if (host.length > _maxHostLength || host.split('.').any((label) => label.length > _maxLabelLength)) {
     throw const NodeAddressException();
   }
   return value;

@@ -7,10 +7,12 @@ import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/address.dart';
 import '../core/amount.dart';
+import '../core/connection_probe.dart';
 import '../core/evm_address.dart';
 import '../core/seed.dart';
-import '../wallet/controller.dart' show isLongEnoughPassword;
+import '../wallet/controller.dart' show NodeReport, WalletController, isLongEnoughPassword;
 import '../wallet/failure.dart';
+import '../wallet/models.dart';
 import 'copy.dart';
 
 /// The number of decimals of an amount in a list or on a card. The send screen shows every decimal.
@@ -139,12 +141,48 @@ String formatDecimal(double value, {int decimals = 6}) {
   return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
 }
 
-String bridgeFailureText(BridgeException error) => switch (error.failure) {
-  BridgeFailure.relayDown => Copy.bridgeRelayDown,
-  BridgeFailure.refused => Copy.bridgeRefused(error.detail),
-  BridgeFailure.failed => Copy.bridgeFailed(error.detail),
-  BridgeFailure.rateExpired => Copy.payRateExpired,
+/// The words about the trouble with the node for the home page and the sidebar: what the look of the app found, or
+/// that it runs; null while the node answers, and before the first look.
+String? nodeTroubleText(WalletController controller) {
+  if (controller.status.connection != NodeConnection.disconnected) return null;
+  if (controller.proxyRefused) return Copy.proxyRefused;
+  final NodeReport? report = controller.nodeReport;
+  if (report == null) return controller.lookingForNode ? Copy.nodeLooking : null;
+  // The words name what the look tried, not a setting that came after it.
+  final node = report.node;
+  final proxy = report.proxy ?? '';
+  return switch (report.trouble) {
+    ConnectionTrouble.proxyDown => Copy.nodeTroubleProxyDown(proxy),
+    ConnectionTrouble.proxyNotSocks5 => Copy.nodeTroubleNotSocks5(proxy),
+    ConnectionTrouble.hostUnreachableThroughProxy => Copy.nodeTroubleThroughProxy(node, proxy),
+    ConnectionTrouble.hostNameUnknown => Copy.nodeTroubleNameUnknown(node),
+    ConnectionTrouble.hostDown => Copy.nodeTroubleDown(node),
+    ConnectionTrouble.lookFailed => Copy.nodeTroubleLookFailed,
+    null => Copy.nodeTroubleSilent(node),
+  };
+}
+
+/// The words about the trouble with the relay, which the look of the app found.
+String relayTroubleText(ConnectionTrouble trouble, {required String? proxy}) => switch (trouble) {
+  ConnectionTrouble.proxyDown => Copy.relayTroubleProxyDown(proxy ?? ''),
+  ConnectionTrouble.proxyNotSocks5 => Copy.relayTroubleNotSocks5(proxy ?? ''),
+  ConnectionTrouble.lookFailed => Copy.relayTroubleLookFailed,
+  ConnectionTrouble.hostUnreachableThroughProxy => Copy.relayTroubleThroughProxy(proxy ?? ''),
+  ConnectionTrouble.hostNameUnknown => Copy.relayTroubleNameUnknown,
+  ConnectionTrouble.hostDown => Copy.relayTroubleDown,
 };
+
+/// The words of a failure of the bridge; a relay that does not answer names the trouble that the look found, if any.
+String bridgeFailureText(BridgeException error, {ConnectionTrouble? relayTrouble, String? proxy}) =>
+    switch (error.failure) {
+      BridgeFailure.relayDown =>
+        relayTrouble == null
+            ? Copy.bridgeRelayDown
+            : '${Copy.bridgeRelayDown} ${relayTroubleText(relayTrouble, proxy: proxy)}',
+      BridgeFailure.refused => Copy.bridgeRefused(error.detail),
+      BridgeFailure.failed => Copy.bridgeFailed(error.detail),
+      BridgeFailure.rateExpired => Copy.payRateExpired,
+    };
 
 String evmAddressProblemText(EvmAddressProblem problem) => switch (problem) {
   EvmAddressProblem.empty || EvmAddressProblem.wrongForm => Copy.payRecipientWrongForm,

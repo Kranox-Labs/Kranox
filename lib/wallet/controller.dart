@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../config/app_config.dart';
 import '../config/network.dart';
 import '../core/amount.dart';
+import '../core/connection_probe.dart';
 import '../core/node_address.dart';
 import '../core/unlock.dart';
 import 'failure.dart';
@@ -18,12 +19,58 @@ import 'worker.dart';
 /// the open wallet.
 enum WalletPhase { starting, noWallet, locked, open }
 
+/// What the app found when it looked for the way to its node, after wallet2 had reported no connection for a while:
+/// the trouble, or null when a plain connection opened, so that the trouble lies above the connection.
+final class NodeReport {
+  const NodeReport({required this.trouble, required this.node, required this.proxy, required this.at});
+
+  final ConnectionTrouble? trouble;
+
+  /// The node and the proxy that the look tried, so that the words name them and not a setting that came after.
+  final String node;
+  final String? proxy;
+
+  /// When the look ended, on the clock of the controller, which only moves forward.
+  final Duration at;
+}
+
 /// The state of the wallet for the screens. Every call to wallet2 goes through the backend: the worker in the app.
 final class WalletController extends ChangeNotifier {
-  WalletController({required this._worker, required this._storage});
+  WalletController({
+    required this._worker,
+    required this._storage,
+    this.probe = const ConnectionProbe(),
+    Duration Function()? elapsed,
+  }) : _elapsed = elapsed ?? _monotonic();
 
   final WalletBackend _worker;
   final AppStorage _storage;
+
+  /// The look for the trouble with the node; a test gives another one.
+  final ConnectionProbe probe;
+
+  /// The clock of the look, which only moves forward: a change of the clock of the Mac moves no look. A test gives
+  /// its own.
+  final Duration Function() _elapsed;
+
+  static Duration Function() _monotonic() {
+    final watch = Stopwatch()..start();
+    return () => watch.elapsed;
+  }
+
+  // The look for the trouble while the node does not answer: since when it has been silent, the last report, whether
+  // a look runs, and a count that lets a look that ends after a connect, a lock, or a dispose change nothing.
+  Duration? _nodeSilentSince;
+  NodeReport? _nodeReport;
+  bool _lookingForNode = false;
+  int _lookGeneration = 0;
+  bool _disposed = false;
+
+  // One reconnect at a time, for the button of the notice: a click during one joins it. A failure of wallet2 in it
+  // stays for the notice until the next reconnect.
+  Future<void>? _reconnectInFlight;
+  bool _reconnecting = false;
+  WalletException? _reconnectFailure;
 
   WalletPhase _phase = WalletPhase.starting;
   WalletStatus _status = WalletStatus.unknown;
@@ -39,6 +86,17 @@ final class WalletController extends ChangeNotifier {
 
   WalletPhase get phase => _phase;
   WalletStatus get status => _status;
+
+  /// What keeps the wallet from its node, as the app found by its own attempt to connect, while wallet2 reports no
+  /// connection; null while the node answers, and before the first look.
+  NodeReport? get nodeReport => _status.connection == NodeConnection.disconnected ? _nodeReport : null;
+
+  /// Whether a look for the trouble with the node runs.
+  bool get lookingForNode => _lookingForNode;
+
+  /// Whether a reconnect runs, and what wallet2 answered to the last one when it refused.
+  bool get reconnecting => _reconnecting;
+  WalletException? get reconnectFailure => _reconnectFailure;
   List<WalletTransfer> get transfers => _transfers;
   ReceiveAddress? get receiveAddress => _receiveAddress;
 
@@ -136,10 +194,21 @@ final class WalletController extends ChangeNotifier {
     _poll = null;
     await _pollInFlight;
     await _sendInFlight;
+    await _reconnectInFlight;
     await _worker.call<void>(const CloseWallet());
     _status = WalletStatus.unknown;
     _transfers = const [];
     _receiveAddress = null;
+    _resetLook();
+    _reconnectFailure = null;
+  }
+
+  /// Forgets the look: a look in flight changes nothing when it ends, and the report goes.
+  void _resetLook() {
+    _lookGeneration++;
+    _lookingForNode = false;
+    _nodeReport = null;
+    _nodeSilentSince = null;
   }
 
   /// Closes the wallet before the app quits, so that wallet2 writes its file.
@@ -287,6 +356,8 @@ final class WalletController extends ChangeNotifier {
   /// Connects the wallet to its node. A node that does not answer leaves the wallet open and offline; so does a proxy
   /// that wallet2 refused, after which the engine asks the node nothing.
   Future<void> _connect() async {
+    // A connect tries the settings as they stand, so a report of an earlier node or proxy says nothing about it.
+    _resetLook();
     try {
       await _worker.call<void>(ConnectNode(address: node, proxy: proxy));
       _proxyRefused = false;
@@ -300,6 +371,61 @@ final class WalletController extends ChangeNotifier {
           rethrow;
       }
     }
+  }
+
+  /// Connects the wallet to its node again, for the user who set things right outside the app, such as a Tor that
+  /// started, and looks for the trouble at once when the node still does not answer. One runs at a time: a second
+  /// call joins the first. A refusal of wallet2 stays in [reconnectFailure], so that the notice can say it.
+  Future<void> reconnect() => _reconnectInFlight ??= _reconnect().whenComplete(() {
+    _reconnectInFlight = null;
+    _reconnecting = false;
+    if (!_disposed) notifyListeners();
+  });
+
+  Future<void> _reconnect() async {
+    if (_phase != WalletPhase.open) return;
+    _reconnecting = true;
+    _reconnectFailure = null;
+    notifyListeners();
+    try {
+      await _connect();
+      await _readState(withHistory: false);
+    } on WalletException catch (failure) {
+      if (_phase == WalletPhase.open) _reconnectFailure = failure;
+      return;
+    }
+    if (_status.connection == NodeConnection.disconnected) await _lookForNode(now: true);
+  }
+
+  /// Looks for what keeps the wallet from its node, once the node has been silent for a while, and again at an
+  /// interval; [now] looks at once. A proxy that wallet2 refused needs no look: the settings say so.
+  Future<void> _lookForNode({bool now = false}) async {
+    if (_phase != WalletPhase.open || _lookingForNode || _proxyRefused || _disposed) return;
+    final moment = _elapsed();
+    if (!now) {
+      // The silence counts from the first read that found the node silent, which [_readState] notes.
+      final since = _nodeSilentSince;
+      if (since == null || moment - since < AppConfig.nodeLookDelay) return;
+      if (_nodeReport case final report? when moment - report.at < AppConfig.lookInterval) return;
+    }
+    _lookingForNode = true;
+    final generation = ++_lookGeneration;
+    final node = this.node;
+    final proxy = this.proxy;
+    notifyListeners();
+    ConnectionTrouble? trouble;
+    try {
+      final (:host, :port) = splitNodeAddress(node);
+      trouble = await probe.run(host: host, port: port, proxy: proxy);
+    } on Object catch (error, stack) {
+      // A look that fails says so, and the failure reaches the zone of the app (the sharp-edges scan of 13 Oct 2026).
+      trouble = ConnectionTrouble.lookFailed;
+      Zone.current.handleUncaughtError(error, stack);
+    }
+    if (generation != _lookGeneration || _disposed) return;
+    _lookingForNode = false;
+    _nodeReport = NodeReport(trouble: trouble, node: node, proxy: proxy, at: _elapsed());
+    notifyListeners();
   }
 
   void _pollOnce() {
@@ -328,6 +454,13 @@ final class WalletController extends ChangeNotifier {
       await _worker.call<void>(const StoreWallet());
     }
     _status = status;
+    // The state "unknown" is no read of the node, so it starts no look.
+    if (status.connection == NodeConnection.disconnected && !identical(status, WalletStatus.unknown)) {
+      _nodeSilentSince ??= _elapsed();
+      unawaited(_lookForNode());
+    } else if (_nodeSilentSince != null || _lookingForNode) {
+      _resetLook();
+    }
     notifyListeners();
   }
 
@@ -338,6 +471,8 @@ final class WalletController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _lookGeneration++;
     _poll?.cancel();
     super.dispose();
   }

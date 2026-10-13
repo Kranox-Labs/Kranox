@@ -291,6 +291,10 @@ final class BridgeSwap {
 
   BridgeSwap close() => _copy(closed: true);
 
+  /// The swap with its card back in view, for a swap whose card the user closed while it ran and that then left the
+  /// good way: a failure, a hold, a refund, or a deposit that did not come needs the user (13 Oct 2026).
+  BridgeSwap reopen() => _copy(closed: false);
+
   /// The payment once its XMR left the wallet in the Monero transaction [hash].
   BridgeSwap withDeposit(String hash) => _copy(depositHash: hash);
 

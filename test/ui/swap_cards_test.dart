@@ -12,6 +12,7 @@ import 'package:kranox_wallet/config/network.dart';
 import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/ui/copy.dart';
 import 'package:kranox_wallet/ui/screens/receive_page.dart';
+import 'package:kranox_wallet/ui/screens/wallet_shell.dart';
 import 'package:kranox_wallet/ui/theme/kranox_theme.dart';
 import 'package:kranox_wallet/ui/theme/palette.dart';
 import 'package:kranox_wallet/ui/widgets/qr_card.dart';
@@ -181,6 +182,114 @@ void main() {
     return tester.widget<QrCard>(find.byType(QrCard)).data!;
   }
 
+  testWidgets('a card that runs closes after a word with the user, and its swap stays in the list', (tester) async {
+    await tester.runAsync(
+      () => start([_swap('running', _depositRunning, 25, const Duration(minutes: 5), SwapStage.waiting)]),
+    );
+    final reselect = ValueNotifier(0);
+    await show(tester, reselect);
+    expect(find.text(Copy.bridgeOpenSwaps(1).toUpperCase()), findsOneWidget);
+
+    // The close of a card that runs asks first, and "Keep it open" leaves the card where it is. The tap that opens the
+    // question runs in the real zone, since the close that follows the answer writes the file of the swaps.
+    await tapAndSave(tester, find.byTooltip(Copy.bridgeClose));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(Copy.bridgeCloseTitle(SwapStage.waiting)), findsOneWidget);
+    expect(
+      find.text(Copy.bridgeCloseRunning(SwapDirection.receive, SwapStage.waiting, BridgeAsset.usdg)),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(Copy.bridgeKeepCard));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(Copy.bridgeCloseTitle(SwapStage.waiting)), findsNothing);
+    expect(find.text(Copy.bridgeOpenSwaps(1).toUpperCase()), findsOneWidget);
+
+    // "Close card" closes it: the card goes, the swap stays in the list, and the app follows it all the same.
+    await tapAndSave(tester, find.byTooltip(Copy.bridgeClose));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tapAndSave(tester, find.text(Copy.bridgeCloseCard));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(bridge.swaps.single.closed, isTrue, reason: 'the close reached the bridge');
+    expect(find.text(Copy.bridgeCloseTitle(SwapStage.waiting)), findsNothing);
+    expect(find.text(Copy.bridgeOpenSwaps(1).toUpperCase()), findsNothing);
+    expect(find.text(Copy.bridgeSwapLine('25', BridgeAsset.usdg)), findsOneWidget);
+    expect(bridge.swaps.single.closed, isTrue);
+    expect(bridge.activeSwap?.id, 'running', reason: 'the app keeps following the swap');
+  });
+
+  testWidgets('the page of a running swap closes its card after the same word, and leads back to the list', (
+    tester,
+  ) async {
+    await tester.runAsync(
+      () => start([_swap('running', _depositRunning, 25, const Duration(minutes: 5), SwapStage.waiting)]),
+    );
+    final reselect = ValueNotifier(0);
+    await show(tester, reselect);
+    await tester.tap(find.text(Copy.bridgeSwapTitle('25', BridgeAsset.usdg)).first);
+    await tester.pump();
+    expect(find.byType(QrCard), findsOneWidget, reason: 'the page of the swap');
+    await tapAndSave(tester, find.text(Copy.bridgeClose));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(Copy.bridgeCloseTitle(SwapStage.waiting)), findsOneWidget);
+    await tapAndSave(tester, find.text(Copy.bridgeCloseCard));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byType(QrCard), findsNothing, reason: 'back on the form');
+    expect(find.text(Copy.bridgeReview), findsOneWidget);
+    expect(find.text(Copy.bridgeOpenSwaps(1).toUpperCase()), findsNothing);
+    expect(find.text(Copy.bridgeSwapLine('25', BridgeAsset.usdg)), findsOneWidget, reason: 'the list keeps it');
+    expect(bridge.swaps.single.closed, isTrue);
+  });
+
+  testWidgets('the close of a failed card asks first, since the app stops checking for a refund', (tester) async {
+    await tester.runAsync(
+      () => start([_swap('failed', _depositRunning, 25, const Duration(hours: 1), SwapStage.failed)]),
+    );
+    final reselect = ValueNotifier(0);
+    await show(tester, reselect);
+    await tapAndSave(tester, find.byTooltip(Copy.bridgeClose));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(Copy.bridgeCloseTitle(SwapStage.failed)), findsOneWidget);
+    expect(
+      find.text(Copy.bridgeCloseRunning(SwapDirection.receive, SwapStage.failed, BridgeAsset.usdg)),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(Copy.bridgeKeepCard));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text(Copy.bridgeOpenSwaps(1).toUpperCase()), findsOneWidget, reason: 'the card stays');
+    expect(bridge.activeSwap?.id, 'failed', reason: 'the app still checks for a refund');
+  });
+
+  testWidgets('the activity page lists the swaps, and a click opens the page of one on the page of its way', (
+    tester,
+  ) async {
+    await tester.runAsync(
+      () => start([_swap('running', _depositRunning, 25, const Duration(minutes: 5), SwapStage.waiting)]),
+    );
+    await tester.binding.setSurfaceSize(const Size(1400, 2400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KranoxTheme.build(Palette.of(activeLook)),
+        home: WalletShell(controller: wallet, bridge: bridge),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text(Copy.navActivity));
+    await tester.pump();
+    expect(find.text(Copy.activitySwaps), findsOneWidget);
+    await tester.tap(find.text(Copy.bridgeSwapLine('25', BridgeAsset.usdg)));
+    await tester.pump();
+    expect(find.byType(QrCard), findsOneWidget, reason: 'the page of the swap, on the receive page');
+    // Receive in the sidebar, the first of the two "Receive" (the page of a swap has a way back of that name too),
+    // leaves the page of the swap for the form.
+    await tester.tap(find.text(Copy.navReceive).first);
+    await tester.pump();
+    expect(find.byType(QrCard), findsNothing);
+    expect(find.text(Copy.bridgeReview), findsOneWidget);
+  });
+
   testWidgets('each open swap has a simple card under the form, and a click opens its page', (tester) async {
     await tester.runAsync(
       () => start([
@@ -223,7 +332,11 @@ void main() {
     expect(find.text(Copy.bridgeExpired(BridgeAsset.usdg)), findsOneWidget);
     expect(find.byType(QrCard), findsNothing);
     expect(find.text(Copy.bridgeRefresh), findsNothing, reason: 'an ended swap has nothing left to check');
+    // The app still checks an expired swap for a late deposit, so the close asks first.
     await tapAndSave(tester, find.text(Copy.bridgeClose));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tapAndSave(tester, find.text(Copy.bridgeCloseCard));
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text(Copy.bridgeOpenSwaps(2).toUpperCase()), findsOneWidget);
 
     // Its line in the list still opens its page, without a card to close.

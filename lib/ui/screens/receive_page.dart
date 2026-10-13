@@ -30,7 +30,14 @@ enum _ReceiveWay { monero, robinhood }
 /// on the send page; the owner asked for that on 6 Oct 2026 ("receive belum simple dan di tengah"). The page of a swap
 /// from Robinhood Chain shows in its place until the user goes back.
 class ReceivePage extends StatefulWidget {
-  const ReceivePage({super.key, required this.controller, required this.bridge, this.scans, this.reselect = 0});
+  const ReceivePage({
+    super.key,
+    required this.controller,
+    required this.bridge,
+    this.scans,
+    this.reselect = 0,
+    this.openSwapId,
+  });
 
   final WalletController controller;
   final BridgeController bridge;
@@ -41,25 +48,37 @@ class ReceivePage extends StatefulWidget {
   /// Counts the clicks on Receive in the sidebar while this page shows, so that a click leaves the page of a swap.
   final int reselect;
 
+  /// The swap whose page shows first, when the activity page opened it; null for the page itself.
+  final String? openSwapId;
+
   @override
   State<ReceivePage> createState() => _ReceivePageState();
 }
 
 class _ReceivePageState extends State<ReceivePage> {
-  // A swap on its way brings the user back to its deposit address.
-  late _ReceiveWay _way = widget.bridge.activeSwapOf(SwapDirection.receive) == null
+  // A card in view brings the user back to the way from Robinhood Chain; a swap whose card the user closed does not.
+  late _ReceiveWay _way = widget.bridge.openSwapsOf(SwapDirection.receive).isEmpty
       ? _ReceiveWay.monero
       : _ReceiveWay.robinhood;
   bool _busy = false;
   String? _error;
 
   // The swap whose page shows in place of this page, or null.
-  String? _swapId;
+  late String? _swapId = widget.openSwapId;
 
   @override
   void didUpdateWidget(ReceivePage old) {
     super.didUpdateWidget(old);
     if (widget.reselect != old.reselect) _swapId = null;
+  }
+
+  /// Leaves the page of a swap for the way from Robinhood Chain, where the list of the swaps is.
+  void _leaveSwap() {
+    if (!mounted) return;
+    setState(() {
+      _swapId = null;
+      _way = _ReceiveWay.robinhood;
+    });
   }
 
   Future<void> _newAddress() async {
@@ -79,7 +98,7 @@ class _ReceivePageState extends State<ReceivePage> {
   @override
   Widget build(BuildContext context) {
     if (_swapId case final id?) {
-      return ReceiveSwapPage(bridge: widget.bridge, swapId: id, onBack: () => setState(() => _swapId = null));
+      return ReceiveSwapPage(bridge: widget.bridge, swapId: id, onBack: _leaveSwap);
     }
     final fromChain = _way == _ReceiveWay.robinhood;
     return PageFrame(

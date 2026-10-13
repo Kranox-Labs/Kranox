@@ -40,6 +40,19 @@ abstract final class AppConfig {
   /// The app reads the state of the open wallet this often.
   static const Duration statusInterval = Duration(seconds: 2);
 
+  // The look for the trouble when the node or the relay does not answer, from 13 Oct 2026: the owner asked that the
+  // app says why, such as a proxy that is not running.
+
+  /// Each step of a look, a connection to the proxy or to the host, may take this long.
+  static const Duration probeTimeout = Duration(seconds: 4);
+
+  /// The app looks for the trouble once the node has stayed silent this long, so that the moment of a connection
+  /// at the open of the wallet raises no notice.
+  static const Duration nodeLookDelay = Duration(seconds: 5);
+
+  /// The app looks again at most this often while the node stays silent; "Try again" looks at once.
+  static const Duration lookInterval = Duration(seconds: 20);
+
   /// An open wallet locks itself after this long without a key or a move of the pointer, the default of the desktop
   /// wallet of Monero (CHECKED 7 Oct 2026, monero-gui main.qml: lockOnUserInActivity with 10 minutes). The app reads
   /// the clock of the Mac, so a Mac that slept for longer finds its wallet locked.

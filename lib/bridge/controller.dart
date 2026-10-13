@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
 import '../config/network.dart';
+import '../core/connection_probe.dart';
 import '../core/evm_address.dart';
 import '../wallet/controller.dart';
 import '../wallet/failure.dart';
@@ -21,9 +22,25 @@ import 'store.dart';
 /// The state of the bridge for its pages: the receive form with its live quote, pay in [pay], and the swaps of both
 /// ways that the app follows. The exchanger works on the Monero mainnet only.
 final class BridgeController extends ChangeNotifier {
-  BridgeController({required this._client, required this._store, required this._wallet, this._scanner});
+  BridgeController({
+    required this._client,
+    required this._store,
+    required this._wallet,
+    this._scanner,
+    this.probe = const ConnectionProbe(),
+  });
 
   final BridgeClient _client;
+
+  /// The look for the trouble with the relay; a test gives another one.
+  final ConnectionProbe probe;
+
+  // The look for the trouble while the relay does not answer: the last report, whether a look runs, and a count that
+  // lets a look that ends after the swaps closed change nothing.
+  ConnectionTrouble? _relayTrouble;
+  DateTime? _relayLookedAt;
+  bool _lookingForRelay = false;
+  int _relayLookGeneration = 0;
 
   /// The scan of an address on Robinhood Chain for the menu Privacy, when the relay of the app offers it.
   final ChainScanClient? _scanner;
@@ -61,6 +78,8 @@ final class BridgeController extends ChangeNotifier {
     record: _addSwap,
     update: _replaceSwap,
     forget: _removeSwap,
+    relayFailed: _noteRelayFailure,
+    relayAnswered: _noteRelayAnswer,
   );
   PayController? _pay;
 
@@ -84,9 +103,19 @@ final class BridgeController extends ChangeNotifier {
     return quote != null && quote.estimatedXmr == null && double.parse(quote.amount) < quote.minAmount;
   }
 
-  /// Whether the relay answered at the last check; null before the first check.
+  /// Whether the relay answered at the last check or the last call; null before the first.
   bool? get relayOnline => _relayOnline;
   bool get checkingRelay => _checkingRelay;
+
+  /// What keeps the app from the relay, as the app found by its own attempt to connect, while the relay does not
+  /// answer; null while it answers, before the first look, and when a plain connection opened.
+  ConnectionTrouble? get relayTrouble => _relayOnline == false ? _relayTrouble : null;
+
+  /// Whether a look for the trouble with the relay runs.
+  bool get lookingForRelay => _lookingForRelay;
+
+  /// The proxy through which the app reaches the relay, or null; the words about the trouble name it.
+  String? get proxy => _wallet.proxy;
 
   /// Every swap, the newest first.
   List<BridgeSwap> get swaps => _swaps;
@@ -120,17 +149,21 @@ final class BridgeController extends ChangeNotifier {
     return null;
   }
 
-  /// The swaps of one way that its page shows with their steps, the newest first: every one that runs, and every one
-  /// that ended and that the user has not closed yet, so that a result, above all a failure or a refund, stays in view
-  /// until the user has read it.
+  /// The swaps of one way that its page shows with their steps, the newest first: every one whose card the user has
+  /// not closed yet, whether it runs or ended, so that a result, above all a failure or a refund, stays in view until
+  /// the user has read it, and a card that waits goes when the user wants it gone (13 Oct 2026).
   List<BridgeSwap> openSwapsOf(SwapDirection direction) => [
     for (final swap in swapsOf(direction))
-      if (!swap.stage.isFinal || !swap.closed) swap,
+      if (!swap.closed) swap,
   ];
 
-  /// Closes the card of an ended swap. The swap stays in the list.
+  /// Closes the card of a swap. The swap stays in the list, and a swap that runs stays followed: the owner asked on
+  /// 13 Oct 2026 that a card never has to stay in view while it waits, so the screens ask the user first for a swap
+  /// that has not ended.
   Future<void> closeSwap(String id) async {
-    _swaps = [for (final swap in _swaps) swap.id == id && swap.stage.isFinal ? swap.close() : swap];
+    // A close after a lock, or of a swap that is gone, does nothing: the file of the swaps is closed then.
+    if (!_swapsOpen || _swapOf(id) == null) return;
+    _swaps = [for (final swap in _swaps) swap.id == id ? swap.close() : swap];
     await _store.write(_swaps);
     if (activeSwap == null) {
       _poll?.cancel();
@@ -198,17 +231,73 @@ final class BridgeController extends ChangeNotifier {
       _store.close();
       _swaps = const [];
       _checkedAt = null;
+      // The relay is looked at afresh with the next wallet, and a look in flight changes nothing.
+      _relayLookGeneration++;
+      _lookingForRelay = false;
+      _relayTrouble = null;
+      _relayLookedAt = null;
+      _relayOnline = null;
     }
     if (!_disposed) notifyListeners();
   }
 
-  /// Asks the relay whether it answers, for the settings page.
+  /// Asks the relay whether it answers, for the settings page, and looks for the trouble when it does not.
   Future<void> checkRelay() async {
     if (_checkingRelay) return;
     _checkingRelay = true;
     notifyListeners();
-    _relayOnline = await _client.isOnline();
+    final online = _relayOnline = await _client.isOnline();
+    if (_disposed) return;
     _checkingRelay = false;
+    notifyListeners();
+    if (online) {
+      _relayTrouble = null;
+    } else {
+      await _lookForRelay(now: true);
+    }
+  }
+
+  /// Notes a call that the relay did not answer, and looks for the trouble; another failure says nothing about the way
+  /// to the relay.
+  void _noteRelayFailure(BridgeException error) {
+    if (error.failure != BridgeFailure.relayDown) return;
+    _relayOnline = false;
+    unawaited(_lookForRelay());
+  }
+
+  /// Notes a call that the relay answered.
+  void _noteRelayAnswer() {
+    _relayOnline = true;
+    _relayTrouble = null;
+    // A relay that fails again soon after gets a fresh look.
+    _relayLookedAt = null;
+  }
+
+  /// Looks for what keeps the app from the relay, at most once an interval; [now] looks at once.
+  Future<void> _lookForRelay({bool now = false}) async {
+    if (_lookingForRelay || _disposed) return;
+    if (!now) {
+      if (_relayLookedAt case final at? when DateTime.now().difference(at) < AppConfig.lookInterval) return;
+    }
+    _lookingForRelay = true;
+    final generation = ++_relayLookGeneration;
+    notifyListeners();
+    ConnectionTrouble? trouble;
+    try {
+      final relay = Uri.parse(AppConfig.bridgeRelay);
+      final port = relay.hasPort ? relay.port : (relay.scheme == 'https' ? 443 : 80);
+      // The address of the relay is checked at the start of the app; a host that is empty all the same is no look.
+      if (relay.host.isEmpty) throw ArgumentError.value(AppConfig.bridgeRelay, 'bridgeRelay', 'has no host');
+      trouble = await probe.run(host: relay.host, port: port, proxy: _wallet.proxy);
+    } on Object catch (error, stack) {
+      // A look that fails says so, and the failure reaches the zone of the app (the sharp-edges scan of 13 Oct 2026).
+      trouble = ConnectionTrouble.lookFailed;
+      Zone.current.handleUncaughtError(error, stack);
+    }
+    if (generation != _relayLookGeneration || _disposed) return;
+    _lookingForRelay = false;
+    _relayTrouble = trouble;
+    _relayLookedAt = DateTime.now();
     notifyListeners();
   }
 
@@ -228,7 +317,11 @@ final class BridgeController extends ChangeNotifier {
   void _scheduleQuote() => _quote.follow(available && isBridgeAmount(_amount) ? (_asset, _amount) : null);
 
   void _quoteChanged() {
-    if (_quote.value case final quote?) _minimums[quote.asset] = quote.minAmount;
+    if (_quote.value case final quote?) {
+      _minimums[quote.asset] = quote.minAmount;
+      _noteRelayAnswer();
+    }
+    if (_quote.error case final error?) _noteRelayFailure(error);
     notifyListeners();
   }
 
@@ -258,7 +351,11 @@ final class BridgeController extends ChangeNotifier {
       );
     } on FormatException catch (failure) {
       throw BridgeException(BridgeFailure.failed, failure.message);
+    } on BridgeException catch (failure) {
+      _noteRelayFailure(failure);
+      rethrow;
     }
+    _noteRelayAnswer();
     _receiveAttempt = null;
     _checkCreated(created, address: address.address, amount: amount, refundAddress: refundAddress);
     final swap = BridgeSwap(
@@ -340,7 +437,11 @@ final class BridgeController extends ChangeNotifier {
   }
 
   /// Asks the exchanger for the state of every swap that has not ended.
-  Future<void> refresh() => _pollInFlight ??= _readStates().whenComplete(() => _pollInFlight = null);
+  Future<void> refresh() => _pollInFlight ??= _readStates()
+      // A read that fails, such as a write of the file that the disk refused, reaches the zone of the app once and
+      // stops nothing that waits for the read, such as a lock.
+      .catchError((Object error, StackTrace stack) => Zone.current.handleUncaughtError(error, stack))
+      .whenComplete(() => _pollInFlight = null);
 
   /// Reads the state of the open swaps now and then at an interval, until every swap has ended.
   void _followSwaps() {
@@ -350,31 +451,53 @@ final class BridgeController extends ChangeNotifier {
   }
 
   Future<void> _readStates() async {
-    final next = <String, BridgeSwap>{};
+    var changed = false;
     var answered = false;
-    for (final swap in _swaps.where((swap) => swap.watched).toList()) {
+    for (final id in [
+      for (final swap in _swaps)
+        if (swap.watched) swap.id,
+    ]) {
+      final swap = _swapOf(id);
+      if (swap == null) continue;
+      final SwapState state;
       try {
-        final updated = swap.withState(await _client.readSwap(swap.id, token: swap.readToken));
-        answered = true;
-        if (jsonEncode(updated.toJson()) != jsonEncode(swap.toJson())) next[swap.id] = updated;
-      } on BridgeException {
+        state = await _client.readSwap(id, token: swap.readToken);
+      } on BridgeException catch (failure) {
         // The relay or the exchanger did not answer this time; the next round asks again.
+        _noteRelayFailure(failure);
+        continue;
       } on FormatException {
         // An answer of an unknown form; the next round asks again.
+        continue;
       }
+      if (_disposed) return;
+      answered = true;
+      // The swap as it stands now: a card closed or a swap dropped during the read must not come back (CHECKED 13 Oct
+      // 2026 by the test of a card that closes while a read runs).
+      final latest = _swapOf(id);
+      if (latest == null) continue;
+      var updated = latest.withState(state);
+      // A card closed while the swap ran comes back when the swap leaves the good way: a failure, a hold, a refund, or
+      // a deposit that did not come needs the user, and the app follows a failed swap only while its card is open.
+      if (latest.closed && !latest.stage.isFinal && updated.stage.isOffPath) updated = updated.reopen();
+      if (jsonEncode(updated.toJson()) == jsonEncode(latest.toJson())) continue;
+      _swaps = [for (final kept in _swaps) kept.id == id ? updated : kept];
+      changed = true;
     }
-    if (next.isNotEmpty) {
-      // A swap made while the states were on their way stays in the list.
-      _swaps = [for (final swap in _swaps) next[swap.id] ?? swap];
-      await _store.write(_swaps);
+    if (changed) await _store.write(_swaps);
+    if (_disposed) return;
+    if (answered) {
+      _checkedAt = DateTime.now();
+      _noteRelayAnswer();
     }
-    if (answered) _checkedAt = DateTime.now();
-    if (next.isNotEmpty || answered) notifyListeners();
+    if (changed || answered) notifyListeners();
     if (activeSwap == null) {
       _poll?.cancel();
       _poll = null;
     }
   }
+
+  BridgeSwap? _swapOf(String id) => _swaps.where((swap) => swap.id == id).firstOrNull;
 
   @override
   void dispose() {

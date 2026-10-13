@@ -26,6 +26,7 @@ class Sidebar extends StatelessWidget {
     required this.status,
     required this.network,
     required this.node,
+    required this.nodeTrouble,
   });
 
   final WalletPage page;
@@ -34,6 +35,9 @@ class Sidebar extends StatelessWidget {
   final WalletStatus status;
   final MoneroNetwork network;
   final String node;
+
+  /// Why the node does not answer, as the look of the app found it, or null while the node answers.
+  final String? nodeTrouble;
 
   /// The pages of the upper group, with their icons.
   static const List<(WalletPage, IconData)> _pages = [
@@ -86,7 +90,7 @@ class Sidebar extends StatelessWidget {
                     ),
                     _NavItem(label: Copy.navLock, icon: Icons.lock_rounded, active: false, onTap: onLock),
                     const SizedBox(height: Metrics.gapSmall),
-                    _SyncCard(status: status, node: node),
+                    _SyncCard(status: status, node: node, trouble: nodeTrouble),
                   ],
                 ),
               ),
@@ -212,19 +216,24 @@ class _NavItem extends StatelessWidget {
 }
 
 class _SyncCard extends StatelessWidget {
-  const _SyncCard({required this.status, required this.node});
+  const _SyncCard({required this.status, required this.node, required this.trouble});
 
   final WalletStatus status;
   final String node;
+  final String? trouble;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final label = switch (status) {
-      WalletStatus(synchronized: true) => Copy.synced,
-      WalletStatus(nodeHeight: > 0) => Copy.syncing,
-      _ => Copy.connecting,
-    };
+    // A node that stays silent is offline, not "connecting", once the app has looked for the trouble.
+    final offline = trouble != null;
+    final label = offline
+        ? Copy.nodeOffline
+        : switch (status) {
+            WalletStatus(synchronized: true) => Copy.synced,
+            WalletStatus(nodeHeight: > 0) => Copy.syncing,
+            _ => Copy.connecting,
+          };
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.surface,
@@ -239,7 +248,7 @@ class _SyncCard extends StatelessWidget {
             Row(
               children: [
                 // The spinner of Apple while the wallet connects or catches up, as beside every amount.
-                if (!status.synchronized) ...[
+                if (!status.synchronized && !offline) ...[
                   CupertinoActivityIndicator(radius: 6, color: palette.inkSoft),
                   const SizedBox(width: 8),
                 ],
@@ -252,6 +261,10 @@ class _SyncCard extends StatelessWidget {
             const SizedBox(height: 10),
             SyncDots(share: status.syncShare),
             const SizedBox(height: 10),
+            if (trouble case final trouble?) ...[
+              Text(trouble, style: KranoxType.small.copyWith(color: palette.inkSoft)),
+              const SizedBox(height: 6),
+            ],
             Text(
               node,
               style: KranoxType.small.copyWith(color: palette.inkFaint),

@@ -23,6 +23,15 @@ void main() {
     }
   });
 
+  test('keeps a host name within the bounds of DNS, which fit the command of a SOCKS5 proxy', () {
+    final label = 'a' * 63;
+    final longest = [label, label, label, 'a' * 61].join('.');
+    expect(longest.length, 253);
+    expect(parseNodeAddress('$longest:18081'), '$longest:18081');
+    expect(() => parseNodeAddress('${longest}a:18081'), throwsA(isA<NodeAddressException>()), reason: '254');
+    expect(() => parseNodeAddress('${'a' * 64}.org:18081'), throwsA(isA<NodeAddressException>()), reason: 'a label');
+  });
+
   test('takes a proxy as an IP address and a port only, as wallet2 does', () {
     expect(parseProxyAddress(' 127.0.0.1:9050 '), '127.0.0.1:9050');
     expect(parseProxyAddress('[::1]:9150'), '[::1]:9150');

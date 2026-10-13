@@ -288,6 +288,11 @@ class _SendToChainState extends State<SendToChain> {
             swaps: open,
             headline: _paymentTitle,
             onOpen: widget.onOpenSwap,
+            onClose: (swap) async {
+              if (await confirmCloseSwap(context, swap)) await widget.bridge.closeSwap(swap.id);
+            },
+            // A payment whose XMR has not left yet is on its way out of the wallet: its card stays until it has.
+            closable: (swap) => swap.depositHash != null,
           ),
           if (payments.isNotEmpty) ...[
             const SizedBox(height: Metrics.gap),
@@ -366,7 +371,7 @@ class _SendToChainState extends State<SendToChain> {
               footer: _FeesLine(pay: pay),
             ),
           ),
-          _QuoteNote(pay: pay),
+          _QuoteNote(pay: pay, bridge: widget.bridge),
           const SizedBox(height: Metrics.gap),
           Text(Copy.payRateTitle.toUpperCase(), style: KranoxType.label.copyWith(color: palette.inkSoft)),
           const SizedBox(height: Metrics.gapTiny),
@@ -615,14 +620,20 @@ class _FundsLine extends StatelessWidget {
 /// What the quote says beside a good estimate: why there is none, or a warning of the exchanger. The box of the XMR
 /// shows the range of the fixed rate.
 class _QuoteNote extends StatelessWidget {
-  const _QuoteNote({required this.pay});
+  const _QuoteNote({required this.pay, required this.bridge});
 
   final PayController pay;
+
+  /// The bridge, for the trouble with the relay that its look found.
+  final BridgeController bridge;
 
   @override
   Widget build(BuildContext context) => switch ((pay.quoteError, pay.quote)) {
     _ when pay.quoting => const SwapNote(null),
-    (final error?, _) => SwapNote(bridgeFailureText(error), failure: true),
+    (final error?, _) => SwapNote(
+      bridgeFailureText(error, relayTrouble: bridge.relayTrouble, proxy: bridge.proxy),
+      failure: true,
+    ),
     (null, PayQuote(:final warning?)) => SwapNote(warning),
     _ => const SwapNote(null),
   };
@@ -776,12 +787,13 @@ class PaymentPage extends StatelessWidget {
             transfer: _sentTransfer(swap, wallet.transfers),
             checkedAt: bridge.checkedAt,
             onRefresh: bridge.refresh,
-            onClose: swap.stage.isFinal && !swap.closed
-                ? () async {
+            onClose: swap.closed || swap.depositHash == null
+                ? null
+                : () async {
+                    if (!await confirmCloseSwap(context, swap)) return;
                     await bridge.closeSwap(swap.id);
                     onBack();
-                  }
-                : null,
+                  },
           ),
         ],
       );
@@ -808,7 +820,7 @@ class _PaymentCard extends StatelessWidget {
   final DateTime? checkedAt;
   final Future<void> Function() onRefresh;
 
-  /// Closes the card of an ended payment; null while the payment runs, or once the user closed it.
+  /// Closes the card of the payment, after a word with the user while the payment runs; null once the user closed it.
   final VoidCallback? onClose;
 
   @override

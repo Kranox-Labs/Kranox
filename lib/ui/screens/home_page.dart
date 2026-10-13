@@ -4,6 +4,7 @@ import '../../config/app_config.dart';
 import '../../core/amount.dart';
 import '../../core/unlock.dart';
 import '../../wallet/controller.dart';
+import '../../wallet/failure.dart';
 import '../../wallet/models.dart';
 import '../copy.dart';
 import '../format.dart';
@@ -51,6 +52,16 @@ class HomePage extends StatelessWidget {
         _NodeChip(connection: status.connection),
       ],
       children: [
+        if (nodeTroubleText(controller) case final trouble?) ...[
+          _NodeNotice(
+            text: trouble,
+            failure: controller.reconnectFailure,
+            busy: controller.reconnecting || controller.lookingForNode,
+            onTryAgain: controller.reconnect,
+            onSettings: () => onNavigate(WalletPage.settings),
+          ),
+          const SizedBox(height: Metrics.gap),
+        ],
         LayoutBuilder(
           builder: (context, constraints) => constraints.maxWidth >= _twoColumnWidth
               ? IntrinsicHeight(
@@ -98,6 +109,51 @@ class _NodeChip extends StatelessWidget {
       NodeConnection.disconnected => StatusChip(label: Copy.nodeOffline, dot: palette.danger),
       NodeConnection.wrongVersion => StatusChip(label: Copy.nodeWrongVersion, dot: palette.danger),
     };
+  }
+}
+
+/// Why the node does not answer, as the look of the app found it, with a way to connect again and the way to the
+/// settings. The owner asked for it on 13 Oct 2026, after an evening with a proxy that was still starting.
+class _NodeNotice extends StatelessWidget {
+  const _NodeNotice({
+    required this.text,
+    required this.failure,
+    required this.busy,
+    required this.onTryAgain,
+    required this.onSettings,
+  });
+
+  final String text;
+
+  /// What wallet2 answered to the last "Try again" when it refused, or null.
+  final WalletException? failure;
+  final bool busy;
+  final Future<void> Function() onTryAgain;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Surface(
+      border: palette.danger.withValues(alpha: 0.45),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CardTitle(Copy.nodeOffline),
+          const SizedBox(height: 4),
+          Text(text, style: KranoxType.bodyRegular.copyWith(color: palette.inkSoft)),
+          if (failure case final failure?) ErrorLine(failureText(failure)),
+          const SizedBox(height: Metrics.gap),
+          Row(
+            children: [
+              PillButton(label: Copy.nodeTryAgain, tone: PillTone.solid, busy: busy, onPressed: onTryAgain),
+              const SizedBox(width: Metrics.gapSmall),
+              PillButton(label: Copy.nodeSettings, tone: PillTone.quiet, onPressed: onSettings),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 

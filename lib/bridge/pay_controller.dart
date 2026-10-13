@@ -52,7 +52,10 @@ final class PayController extends ChangeNotifier {
     required this._record,
     required this._update,
     required this._forget,
-  }) {
+    void Function(BridgeException failure)? relayFailed,
+    void Function()? relayAnswered,
+  }) : _relayFailed = relayFailed ?? _ignoreFailure,
+       _relayAnswered = relayAnswered ?? _ignore {
     _wallet.addListener(_followWallet);
   }
 
@@ -61,6 +64,13 @@ final class PayController extends ChangeNotifier {
   final Future<void> Function(BridgeSwap swap) _record;
   final Future<void> Function(BridgeSwap swap) _update;
   final Future<void> Function(String id) _forget;
+
+  // The bridge hears what the relay did, so that it can look for the trouble when the relay does not answer.
+  final void Function(BridgeException failure) _relayFailed;
+  final void Function() _relayAnswered;
+
+  static void _ignoreFailure(BridgeException failure) {}
+  static void _ignore() {}
 
   // A review on its way: the exchanger makes the payment and the wallet builds it. The send page keeps its choice of
   // the way until it ends, so that no plain payment is built meanwhile.
@@ -75,8 +85,15 @@ final class PayController extends ChangeNotifier {
   String _xmrText = '';
   late final LiveQuote<(BridgeAsset, PayRate, String), PayQuote> _quote = LiveQuote(
     fetch: _fetchQuote,
-    onChanged: notifyListeners,
+    onChanged: _quoteChanged,
   );
+
+  void _quoteChanged() {
+    if (_quote.value != null) _relayAnswered();
+    if (_quote.error case final error?) _relayFailed(error);
+    notifyListeners();
+  }
+
   PayReview? _review;
 
   // The range of one payment for each coin and rate, so that the form shows the least amount before the user types.
@@ -142,8 +159,10 @@ final class PayController extends ChangeNotifier {
         if (_disposed) return;
         _ranges[(asset, rate)] = range;
         _rangeError = null;
+        _relayAnswered();
       } on BridgeException catch (failure) {
         _rangeError = failure;
+        _relayFailed(failure);
       } on FormatException catch (failure) {
         _rangeError = BridgeException(BridgeFailure.failed, failure.message);
       }
@@ -279,7 +298,12 @@ final class PayController extends ChangeNotifier {
     _preparing = true;
     notifyListeners();
     try {
-      return await _prepareReview(quote, recipient);
+      final review = await _prepareReview(quote, recipient);
+      _relayAnswered();
+      return review;
+    } on BridgeException catch (failure) {
+      _relayFailed(failure);
+      rethrow;
     } finally {
       _preparing = false;
       if (!_disposed) notifyListeners();

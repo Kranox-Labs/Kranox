@@ -68,7 +68,7 @@ final class AppSettings {
     final nodes = <MoneroNetwork, String>{};
     final legacyNode = data[_legacyNodeKey];
     if (legacyNode is String) {
-      nodes[MoneroNetwork.stagenet] = legacyNode;
+      nodes[MoneroNetwork.stagenet] = _nodeOf(legacyNode, _legacyNodeKey);
     }
     final savedNodes = data[_nodesKey];
     if (savedNodes is Map<String, Object?>) {
@@ -77,7 +77,7 @@ final class AppSettings {
         if (node is! String) {
           throw FormatException('The settings hold a node that is no text.', entry.key);
         }
-        nodes[_networkNamed(entry.key)] = node;
+        nodes[_networkNamed(entry.key)] = _nodeOf(node, entry.key);
       }
     } else if (savedNodes != null) {
       throw const FormatException('The settings hold nodes that are no object.');
@@ -118,6 +118,16 @@ final class AppSettings {
       return parseProxyAddress(host.toLowerCase() == 'localhost' ? '127.0.0.1:$port' : text);
     } on NodeAddressException {
       throw const FormatException('The settings hold a proxy that is no IP address and port.');
+    }
+  }
+
+  /// A node of the file in the form that [parseNodeAddress] takes, so that no hand-edited file hands the wallet or the
+  /// look a node of another form (the sharp-edges scan of 13 Oct 2026).
+  static String _nodeOf(String text, String key) {
+    try {
+      return parseNodeAddress(text);
+    } on NodeAddressException {
+      throw FormatException('The settings hold a node that is no host and port.', key);
     }
   }
 

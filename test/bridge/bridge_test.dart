@@ -11,6 +11,7 @@ import 'package:kranox_wallet/core/amount.dart';
 import 'package:kranox_wallet/bridge/store.dart';
 import 'package:kranox_wallet/config/app_config.dart';
 import 'package:kranox_wallet/config/network.dart';
+import 'package:kranox_wallet/core/connection_probe.dart';
 import 'package:kranox_wallet/core/file_cipher.dart';
 import 'package:kranox_wallet/wallet/controller.dart';
 import 'package:kranox_wallet/wallet/failure.dart';
@@ -125,6 +126,9 @@ final class _SampleBridge implements BridgeClient {
 
   /// Holds a new payment at the exchanger until the test completes it, as a slow relay does.
   Completer<void>? holdCreatePay;
+
+  /// Holds every read of a swap until the test completes it, as a slow relay does.
+  Completer<void>? holdRead;
 
   /// Whether the exchanger leaves out the time of its fixed rate.
   bool noValidUntil = false;
@@ -252,6 +256,7 @@ final class _SampleBridge implements BridgeClient {
 
   @override
   Future<SwapState> readSwap(String id, {String? token}) async {
+    if (holdRead case final hold?) await hold.future;
     readTokens.add(token);
     return SwapState(stage: stage, amountOut: 0.0274, validUntil: noValidUntil ? null : DateTime.now().add(payWindow));
   }
@@ -734,6 +739,78 @@ void main() {
       expect((await BridgeStore(storage.bridgePath).read(_keys)).single.closed, isTrue);
     });
 
+    test('closes the card of a swap that runs, after which the swap stays followed', () async {
+      bridge.setAmount('0.0055');
+      await _quoteSettles();
+      final swap = await bridge.createSwap();
+      // The first read of the swap, which its creation started, settles before the card closes.
+      await bridge.refresh();
+      expect(bridge.openSwapsOf(SwapDirection.receive).single.id, swap.id);
+      await bridge.closeSwap(swap.id);
+      expect(bridge.openSwapsOf(SwapDirection.receive), isEmpty, reason: 'the card is gone');
+      expect(bridge.swaps.single.closed, isTrue);
+      expect(bridge.activeSwap?.id, swap.id, reason: 'the app follows the swap all the same');
+      exchanger.stage = SwapStage.finished;
+      await bridge.refresh();
+      expect(bridge.swaps.single.stage, SwapStage.finished);
+      expect(
+        bridge.openSwapsOf(SwapDirection.receive),
+        isEmpty,
+        reason: 'a closed card stays closed when the swap ends',
+      );
+      expect(bridge.activeSwap, isNull);
+    });
+
+    test('keeps a card closed during a read closed (the race of 13 Oct 2026)', () async {
+      bridge.setAmount('0.0055');
+      await _quoteSettles();
+      final swap = await bridge.createSwap();
+      await bridge.refresh();
+      // A read starts and hangs at the relay; the card closes meanwhile; the read ends with a change of the state.
+      final hold = exchanger.holdRead = Completer<void>();
+      final reading = bridge.refresh();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await bridge.closeSwap(swap.id);
+      exchanger.stage = SwapStage.confirming;
+      hold.complete();
+      await reading;
+      expect(bridge.swaps.single.stage, SwapStage.confirming, reason: 'the read reached the swap');
+      expect(bridge.swaps.single.closed, isTrue, reason: 'the close during the read held');
+      expect((await BridgeStore(storage.bridgePath).read(_keys)).single.closed, isTrue);
+    });
+
+    test('brings the card of a closed swap back when the swap fails, and follows it to its refund', () async {
+      bridge.setAmount('0.0055');
+      await _quoteSettles();
+      final swap = await bridge.createSwap();
+      await bridge.refresh();
+      await bridge.closeSwap(swap.id);
+      expect(bridge.openSwapsOf(SwapDirection.receive), isEmpty);
+      exchanger.stage = SwapStage.failed;
+      await bridge.refresh();
+      expect(bridge.openSwapsOf(SwapDirection.receive).single.stage, SwapStage.failed, reason: 'the card is back');
+      expect(bridge.activeSwap?.id, swap.id, reason: 'a failed swap may still be refunded');
+      exchanger.stage = SwapStage.refunded;
+      await bridge.refresh();
+      expect(bridge.openSwapsOf(SwapDirection.receive).single.stage, SwapStage.refunded);
+      expect(bridge.activeSwap, isNull);
+    });
+
+    test('closes nothing after the wallet locked', () async {
+      bridge.setAmount('0.0055');
+      await _quoteSettles();
+      final swap = await bridge.createSwap();
+      await bridge.refresh();
+      await wallet.lock();
+      // The bridge follows the lock a moment later, and closes the file of the swaps.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(bridge.swaps, isEmpty);
+      await bridge.closeSwap(swap.id);
+      await wallet.unlock('password');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(bridge.swaps.single.closed, isFalse, reason: 'the file kept the swap as it was');
+    });
+
     test('keeps every swap that runs open, and an expired one until its card closes', () async {
       bridge.setAmount('0.0055');
       await _quoteSettles();
@@ -750,6 +827,31 @@ void main() {
       await bridge.closeSwap(second.id);
       expect(bridge.openSwapsOf(SwapDirection.receive), isEmpty);
       expect(bridge.activeSwap, isNull);
+    });
+
+    test('looks for the trouble with the relay when it does not answer, and at once on a check', () async {
+      final probe = _Probe(ConnectionTrouble.proxyDown);
+      final looking = BridgeController(
+        client: exchanger,
+        store: BridgeStore(storage.bridgePath),
+        wallet: wallet,
+        probe: probe,
+      );
+      addTearDown(looking.dispose);
+      await looking.start();
+      expect(looking.relayTrouble, isNull);
+      exchanger.online = false;
+      await looking.checkRelay();
+      expect(looking.relayOnline, isFalse);
+      expect(looking.relayTrouble, ConnectionTrouble.proxyDown);
+      expect(probe.looks, 1);
+      // A relay that answers again drops the trouble, and one that fails again soon after gets a fresh look.
+      exchanger.online = true;
+      await looking.checkRelay();
+      expect(looking.relayTrouble, isNull);
+      exchanger.online = false;
+      await looking.checkRelay();
+      expect(probe.looks, 2);
     });
 
     test('reports whether the relay answers', () async {
@@ -1092,4 +1194,18 @@ void main() {
       expect(bridge.canSwap, isFalse);
     });
   });
+}
+
+/// A look of the test: it answers [trouble] and counts the looks.
+final class _Probe extends ConnectionProbe {
+  _Probe(this.trouble);
+
+  final ConnectionTrouble? trouble;
+  int looks = 0;
+
+  @override
+  Future<ConnectionTrouble?> run({required String host, required int port, required String? proxy}) async {
+    looks++;
+    return trouble;
+  }
 }

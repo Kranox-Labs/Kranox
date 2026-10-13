@@ -17,6 +17,8 @@ final class WalletStatus {
     required this.connection,
   });
 
+  /// The state before the first read of the wallet. The app treats this very object as "no read yet", so a backend of
+  /// a test that reports it starts no look for the trouble with the node; the engine always builds a state of its own.
   static const WalletStatus unknown = WalletStatus(
     balance: XmrAmount.zero,
     unlocked: XmrAmount.zero,

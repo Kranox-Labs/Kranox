@@ -45,6 +45,22 @@ void main() {
     expect(read.nodeOf(MoneroNetwork.mainnet), AppConfig.defaultNode(MoneroNetwork.mainnet));
   });
 
+  test('refuses a node of the file that is no host and port', () {
+    expect(
+      () => AppSettings.fromJson({
+        'nodes': {'mainnet': 'http://node:18081'},
+      }),
+      throwsA(isA<FormatException>()),
+    );
+    expect(() => AppSettings.fromJson({'node': 'no port'}), throwsA(isA<FormatException>()));
+    expect(
+      AppSettings.fromJson({
+        'nodes': {'mainnet': 'node:18081'},
+      }).nodeOf(MoneroNetwork.mainnet),
+      'node:18081',
+    );
+  });
+
   test('reads the proxy of an earlier release as wallet2 does: localhost as its address, empty text as none', () {
     AppSettings read(String proxy) => AppSettings.fromJson({'proxy': proxy});
     expect(read('localhost:9050').proxy, '127.0.0.1:9050');

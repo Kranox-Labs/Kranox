@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../bridge/controller.dart';
+import '../../bridge/models.dart';
 import '../../wallet/controller.dart';
 import '../copy.dart';
+import '../format.dart';
 import '../theme/kranox_theme.dart';
 import '../theme/metrics.dart';
 import '../theme/typography.dart';
@@ -9,13 +12,19 @@ import '../widgets/bits.dart';
 import '../widgets/buttons.dart';
 import '../widgets/page_frame.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/swap_steps.dart';
 import '../widgets/transfer_row.dart';
 
-/// Every transaction of the wallet, the newest first, each with a button that copies its id.
+/// Every transaction of the wallet, the newest first, each with a button that copies its id, and under them every swap
+/// with Robinhood Chain of this device, so that a swap whose card the user closed stays in reach (13 Oct 2026).
 class ActivityPage extends StatelessWidget {
-  const ActivityPage({super.key, required this.controller});
+  const ActivityPage({super.key, required this.controller, required this.bridge, required this.onOpenSwap});
 
   final WalletController controller;
+  final BridgeController bridge;
+
+  /// Opens the page of a swap, on the page of its way.
+  final ValueChanged<BridgeSwap> onOpenSwap;
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +71,48 @@ class ActivityPage extends StatelessWidget {
                   ],
                 ),
         ),
+        ListenableBuilder(
+          listenable: bridge,
+          builder: (context, _) {
+            final swaps = bridge.swaps;
+            if (swaps.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: Metrics.gap),
+              child: SwapHistory(
+                title: Copy.activitySwaps,
+                swaps: swaps,
+                line: _line,
+                trailing: _trailing,
+                onOpen: onOpenSwap,
+              ),
+            );
+          },
+        ),
       ],
     );
+  }
+
+  /// What a swap did: the coin that came in for XMR, or the XMR that went out for a coin.
+  static String _line(BridgeSwap swap) => switch (swap.direction) {
+    SwapDirection.receive => Copy.bridgeSwapLine(formatDecimal(swap.amount, decimals: 8), swap.asset),
+    SwapDirection.pay => Copy.activityPayLine(switch (swap.xmrAmount) {
+      final xmr? => formatDecimal(xmr, decimals: 8),
+      null => '…',
+    }, swap.asset),
+  };
+
+  /// What the swap gave, once it did: the XMR of a receive, or the XMR that a payment took.
+  static String? _trailing(BridgeSwap swap) {
+    if (swap.stage.withoutPayout) return null;
+    return switch (swap.direction) {
+      SwapDirection.receive => switch (swap.amountOut ?? swap.xmrAmount) {
+        final xmr? => Copy.bridgeOut(formatDecimal(xmr)),
+        null => null,
+      },
+      SwapDirection.pay => switch (swap.xmrAmount) {
+        final xmr? => Copy.payOut(formatDecimal(xmr, decimals: 8)),
+        null => null,
+      },
+    };
   }
 }

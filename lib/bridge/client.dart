@@ -9,7 +9,7 @@ import '../config/app_config.dart';
 import 'chain_scan.dart';
 import 'models.dart';
 import 'relay_signature.dart';
-import 'socks.dart';
+import '../core/socks.dart';
 
 /// The ways in which a call of the bridge can fail. The screens show a sentence for each one.
 enum BridgeFailure {

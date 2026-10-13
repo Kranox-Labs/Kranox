@@ -163,7 +163,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const SizedBox(height: Metrics.gap),
-                _RelayCard(bridge: widget.bridge),
+                _RelayCard(bridge: widget.bridge, proxy: widget.controller.proxy),
                 const SizedBox(height: Metrics.gap),
                 Surface(
                   child: Column(
@@ -265,9 +265,12 @@ class _SettingsPageState extends State<SettingsPage> {
 /// The relay of the bridge: its address and whether it answers. The app does not let the user change it: another
 /// relay would need its own key of ChangeNOW. The address is fixed in [AppConfig.bridgeRelay].
 class _RelayCard extends StatelessWidget {
-  const _RelayCard({required this.bridge});
+  const _RelayCard({required this.bridge, required this.proxy});
 
   final BridgeController bridge;
+
+  /// The proxy of the settings, which the words about the trouble name.
+  final String? proxy;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -301,6 +304,19 @@ class _RelayCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (bridge.lookingForRelay)
+              Padding(
+                padding: const EdgeInsets.only(top: Metrics.gapSmall),
+                child: Text(Copy.relayLooking, style: KranoxType.small.copyWith(color: palette.inkSoft)),
+              )
+            else if (bridge.relayOnline == false)
+              Padding(
+                padding: const EdgeInsets.only(top: Metrics.gapSmall),
+                child: Text(switch (bridge.relayTrouble) {
+                  final trouble? => relayTroubleText(trouble, proxy: proxy),
+                  null => Copy.relayTroubleSilent,
+                }, style: KranoxType.small.copyWith(color: palette.danger)),
+              ),
           ],
         ),
       );

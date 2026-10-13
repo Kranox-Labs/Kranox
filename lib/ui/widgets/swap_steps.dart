@@ -11,6 +11,7 @@ import 'bits.dart';
 import 'buttons.dart';
 import 'page_frame.dart';
 import 'surfaces.dart';
+import 'confirm_sheet.dart';
 
 // The steps of a swap of the bridge, from its deposit to its payout, as the receive and the send pages show them.
 
@@ -273,12 +274,36 @@ SwapMark swapMarkOf(SwapStage stage) => switch (stage) {
   SwapStage.waiting || SwapStage.confirming || SwapStage.exchanging || SwapStage.sending => SwapMark.active,
 };
 
-/// The swaps of one way that a page keeps in view under its form, the newest first: every one that runs, and every one
-/// that ended until the user closes it. The owner asked on 10 Oct 2026 for each in a simple card of its own, so that a
-/// user can start another swap while one runs, and for its steps on a page of its own, which a click on the card
-/// opens through [onOpen]. Without swaps it shows nothing; with swaps, it keeps the room of a gap above them.
+/// Asks the user whether to close the card of [swap] while the app still follows it, and says what that means: a swap
+/// that runs stays followed, and an ended one that may still be refunded stops being checked. A swap that is done, or
+/// refunded, closes without a word. The owner asked on 13 Oct 2026 that no card has to stay in view while it waits.
+Future<bool> confirmCloseSwap(BuildContext context, BridgeSwap swap) {
+  if (!swap.watched) return Future.value(true);
+  return confirmSheet(
+    context,
+    title: Copy.bridgeCloseTitle(swap.stage),
+    text: Copy.bridgeCloseRunning(swap.direction, swap.stage, swap.asset),
+    confirmLabel: Copy.bridgeCloseCard,
+    cancelLabel: Copy.bridgeKeepCard,
+  );
+}
+
+/// The swaps of one way that a page keeps in view under its form, the newest first: every one whose card the user has
+/// not closed. The owner asked on 10 Oct 2026 for each in a simple card of its own, so that a user can start another
+/// swap while one runs, and for its steps on a page of its own, which a click on the card opens through [onOpen].
+/// Without swaps it shows nothing; with swaps, it keeps the room of a gap above them.
 class SwapCards extends StatelessWidget {
-  const SwapCards({super.key, required this.title, required this.swaps, required this.headline, required this.onOpen});
+  const SwapCards({
+    super.key,
+    required this.title,
+    required this.swaps,
+    required this.headline,
+    required this.onOpen,
+    required this.onClose,
+    this.closable = _always,
+  });
+
+  static bool _always(BridgeSwap swap) => true;
 
   final String title;
   final List<BridgeSwap> swaps;
@@ -286,6 +311,12 @@ class SwapCards extends StatelessWidget {
   /// The title of a swap, as its page names it.
   final String Function(BridgeSwap swap) headline;
   final ValueChanged<BridgeSwap> onOpen;
+
+  /// Closes the card of a swap, after a word with the user when the swap runs.
+  final ValueChanged<BridgeSwap> onClose;
+
+  /// Whether the card of a swap has a close: a payment whose XMR has not left yet has none.
+  final bool Function(BridgeSwap swap) closable;
 
   @override
   Widget build(BuildContext context) {
@@ -326,6 +357,15 @@ class SwapCards extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: Metrics.gapSmall),
+                  if (closable(swap)) ...[
+                    RoundButton(
+                      icon: Icons.close_rounded,
+                      tooltip: Copy.bridgeClose,
+                      size: Metrics.smallRound,
+                      onPressed: () => onClose(swap),
+                    ),
+                    const SizedBox(width: Metrics.gapTiny),
+                  ],
                   Icon(Icons.chevron_right_rounded, color: palette.inkFaint),
                 ],
               ),

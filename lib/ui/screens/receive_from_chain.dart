@@ -196,6 +196,9 @@ class _ReceiveFromChainState extends State<ReceiveFromChain> {
               swaps: open,
               headline: _swapTitle,
               onOpen: widget.onOpenSwap,
+              onClose: (swap) async {
+                if (await confirmCloseSwap(context, swap)) await bridge.closeSwap(swap.id);
+              },
             ),
           ],
           if (bridge.swapsOf(SwapDirection.receive) case final swaps when swaps.isNotEmpty) ...[
@@ -480,7 +483,10 @@ class _QuoteNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) => switch ((bridge.quoteError, bridge.quote)) {
     _ when bridge.quoting => const SwapNote(null),
-    (final error?, _) => SwapNote(bridgeFailureText(error), failure: true),
+    (final error?, _) => SwapNote(
+      bridgeFailureText(error, relayTrouble: bridge.relayTrouble, proxy: bridge.proxy),
+      failure: true,
+    ),
     (null, BridgeQuote(:final warning?)) => SwapNote(warning),
     _ => const SwapNote(null),
   };
@@ -519,12 +525,13 @@ class ReceiveSwapPage extends StatelessWidget {
             swap: swap,
             checkedAt: bridge.checkedAt,
             onRefresh: bridge.refresh,
-            onClose: swap.stage.isFinal && !swap.closed
-                ? () async {
+            onClose: swap.closed
+                ? null
+                : () async {
+                    if (!await confirmCloseSwap(context, swap)) return;
                     await bridge.closeSwap(swap.id);
                     onBack();
-                  }
-                : null,
+                  },
           ),
         ],
       );
@@ -542,7 +549,7 @@ class _SwapCard extends StatelessWidget {
   final DateTime? checkedAt;
   final Future<void> Function() onRefresh;
 
-  /// Closes the card of an ended swap; null while the swap runs, or once the user closed it.
+  /// Closes the card of the swap, after a word with the user while the swap runs; null once the user closed it.
   final VoidCallback? onClose;
 
   @override

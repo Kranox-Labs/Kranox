@@ -109,10 +109,36 @@ abstract final class Copy {
   static const String noActivity = 'No transactions yet. Receive XMR to see them here.';
   static const String activityAfterSync = 'The list fills in when the wallet has caught up with the chain.';
   static const String activityUpdating = 'Syncing. New payments show when the wallet has caught up.';
+  // The swaps with Robinhood Chain on the activity page, from 13 Oct 2026, so that a swap whose card the user closed
+  // stays in reach.
+  static const String activitySwaps = 'Swaps with Robinhood Chain';
+  static String activityPayLine(String xmr, BridgeAsset asset) => '$xmr XMR to ${asset.label}';
   static const String balanceUpdating = 'Updating while the wallet catches up with the chain.';
   static const String nodeOnline = 'Node online';
   static const String nodeOffline = 'Node offline';
   static const String nodeWrongVersion = 'Node too old';
+  // The trouble with the node, from 13 Oct 2026: the app looks for the way to its node when wallet2 reports no
+  // connection for a while, and says what it found, so that a user knows what to fix. The owner asked for it after
+  // an evening with a proxy that was still starting ("pastikan ada info di app yang bisa ngasih tau user bawa node
+  // mati karna misal procy mati").
+  static const String nodeLooking = 'Looking for what is wrong…';
+  static String nodeTroubleProxyDown(String proxy) =>
+      'Your proxy at $proxy takes no connection. Start Tor, or clear the proxy in Settings.';
+  static String nodeTroubleThroughProxy(String node, String proxy) =>
+      'The proxy at $proxy runs, but it could not reach $node. Tor may still be starting, or the node is down.';
+  static String nodeTroubleNotSocks5(String proxy) =>
+      'The proxy at $proxy answers, but it is no SOCKS5 proxy. Tor listens at 127.0.0.1:9050; check the proxy in '
+      'Settings.';
+  static const String nodeTroubleLookFailed =
+      'Kranox could not look for the trouble. Check the node and the proxy in Settings.';
+  static String nodeTroubleNameUnknown(String node) =>
+      'No address answers to the name of $node. Check your network, or the node in Settings.';
+  static String nodeTroubleDown(String node) =>
+      'The node at $node takes no connection. Check your network, or choose another node in Settings.';
+  static String nodeTroubleSilent(String node) =>
+      'The node at $node takes a connection, but the wallet got no answer from it yet. Try again in a moment.';
+  static const String nodeTryAgain = 'Try again';
+  static const String nodeSettings = 'Settings';
 
   // Send.
   static const String sendTitle = 'Send XMR';
@@ -587,6 +613,34 @@ abstract final class Copy {
   static const String bridgePayoutHash = 'XMR transaction';
   static const String bridgeRefundHash = 'Refund';
   static const String bridgeClose = 'Close';
+  // A card that runs can close too, from 13 Oct 2026, after a word with the user: the owner asked that no card has to
+  // stay in view while it waits ("ada opsi tutup atas konfirmasi user agar tidak loading terus").
+  /// The question before the card of a swap that the app still follows closes: a running one, or an ended one that
+  /// may still be refunded.
+  static String bridgeCloseTitle(SwapStage stage) => stage.isFinal ? 'Stop checking this swap?' : 'Close this card?';
+  static String bridgeCloseRunning(SwapDirection direction, SwapStage stage, BridgeAsset asset) {
+    final list = direction == SwapDirection.receive ? bridgeSwapsTitle : paymentsTitle;
+    return switch ((direction, stage)) {
+      (_, SwapStage.verifying) =>
+        'ChangeNOW holds this swap for a check: write to $exchangerSupport with the swap ID. Kranox keeps following '
+            'it, and the card comes back when it moves. Find it under $list.',
+      (_, SwapStage.failed || SwapStage.expired) =>
+        'Kranox stops checking this swap. A refund that ChangeNOW sends later does not show here; write to '
+            '$exchangerSupport with the swap ID if you need one.',
+      (SwapDirection.receive, SwapStage.waiting) =>
+        'The swap stays open at ChangeNOW for about a day, and its deposit address stays on its page under $list. '
+            'Kranox keeps following it: a failure or a refund brings the card back.',
+      (SwapDirection.receive, _) =>
+        'ChangeNOW goes on with the swap, and Kranox keeps following it: a failure or a refund brings the card back, '
+            'and the XMR shows in your history when it arrives. Find it under $list.',
+      (SwapDirection.pay, _) =>
+        'Your XMR has left, and ChangeNOW goes on with the payment. Kranox keeps following it: a failure or a refund '
+            'brings the card back. Find it under $list.',
+    };
+  }
+
+  static const String bridgeCloseCard = 'Close card';
+  static const String bridgeKeepCard = 'Keep it open';
   static const String bridgeRelayDown = 'The bridge service does not answer. Try again in a moment.';
   static String bridgeRefused(String detail) => 'ChangeNOW refused: $detail';
   static String bridgeFailed(String detail) => 'The bridge failed: $detail';
@@ -738,6 +792,21 @@ abstract final class Copy {
   static const String relayOffline = 'Relay offline';
   static const String relayChecking = 'Checking';
   static const String relayCheck = 'Check';
+  // The trouble with the relay, found the same way as the trouble with the node.
+  static const String relayLooking = 'Looking for what is wrong…';
+  static String relayTroubleProxyDown(String proxy) =>
+      'Your proxy at $proxy takes no connection, so the relay is out of reach. Start Tor, or clear the proxy in '
+      'Settings.';
+  static String relayTroubleThroughProxy(String proxy) =>
+      'The proxy at $proxy runs, but it could not reach the relay. Tor may still be starting.';
+  static String relayTroubleNotSocks5(String proxy) =>
+      'The proxy at $proxy answers, but it is no SOCKS5 proxy, so the relay is out of reach. Check the proxy in '
+      'Settings.';
+  static const String relayTroubleLookFailed = 'Kranox could not look for the trouble. Check the proxy in Settings.';
+  static const String relayTroubleSilent =
+      'The relay takes a connection, but it did not answer. Try again in a moment.';
+  static const String relayTroubleNameUnknown = 'No address answers to the name of the relay. Check your network.';
+  static const String relayTroubleDown = 'The relay takes no connection right now. Try again in a moment.';
   static const String networkTitle = 'Network';
   static const String networkLead =
       'Each network keeps its own wallet and its own node. A switch locks this wallet and opens the wallet of the '

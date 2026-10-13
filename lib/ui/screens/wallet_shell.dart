@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../bridge/controller.dart';
+import '../../bridge/models.dart';
 import '../../privacy/chain_scans.dart';
 import '../../wallet/controller.dart';
+import '../format.dart';
 import '../theme/metrics.dart';
 import '../widgets/backdrop.dart';
 import '../widgets/sidebar.dart';
@@ -49,10 +51,20 @@ class _WalletShellState extends State<WalletShell> {
   // The clicks on the page that shows already, which take its page of a swap back to the page itself.
   int _reselect = 0;
 
+  // A swap whose page the activity page opened, on the page of its way.
+  String? _openSwapId;
+
   void _go(WalletPage page) => setState(() {
     if (page == _page) _reselect++;
     _page = page;
     _startOnPay = false;
+    _openSwapId = null;
+  });
+
+  void _openSwap(BridgeSwap swap) => setState(() {
+    _page = swap.direction == SwapDirection.receive ? WalletPage.receive : WalletPage.send;
+    _startOnPay = false;
+    _openSwapId = swap.id;
   });
 
   void _payNewAddress() => setState(() {
@@ -80,6 +92,7 @@ class _WalletShellState extends State<WalletShell> {
               status: controller.status,
               network: controller.network,
               node: controller.node,
+              nodeTrouble: nodeTroubleText(controller),
             ),
             Expanded(
               // A toast such as "Copied" floats at the foot of the page, in the middle beside the sidebar.
@@ -95,14 +108,20 @@ class _WalletShellState extends State<WalletShell> {
                           scans: _scans,
                           startOnPay: _startOnPay,
                           reselect: _reselect,
+                          openSwapId: _openSwapId,
                         ),
                         WalletPage.receive => ReceivePage(
                           controller: controller,
                           bridge: widget.bridge,
                           scans: _scans,
                           reselect: _reselect,
+                          openSwapId: _openSwapId,
                         ),
-                        WalletPage.activity => ActivityPage(controller: controller),
+                        WalletPage.activity => ActivityPage(
+                          controller: controller,
+                          bridge: widget.bridge,
+                          onOpenSwap: _openSwap,
+                        ),
                         WalletPage.privacy => PrivacyPage(
                           controller: controller,
                           bridge: widget.bridge,

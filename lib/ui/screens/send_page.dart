@@ -44,6 +44,7 @@ class SendPage extends StatefulWidget {
     this.scans,
     this.startOnPay = false,
     this.reselect = 0,
+    this.openSwapId,
   });
 
   final WalletController controller;
@@ -59,6 +60,9 @@ class SendPage extends StatefulWidget {
   /// Counts the clicks on Send in the sidebar while this page shows, so that a click leaves the page of a payment.
   final int reselect;
 
+  /// The payment whose page shows first, when the activity page opened it; null for the page itself.
+  final String? openSwapId;
+
   @override
   State<SendPage> createState() => _SendPageState();
 }
@@ -70,7 +74,7 @@ class _SendPageState extends State<SendPage> {
   // A payment on its way, under review, or in preparation brings the user back to pay.
   late _SendWay _way =
       !widget.startOnPay &&
-          widget.bridge.activeSwapOf(SwapDirection.pay) == null &&
+          widget.bridge.openSwapsOf(SwapDirection.pay).isEmpty &&
           widget.bridge.pay.review == null &&
           !widget.bridge.pay.preparing
       ? _SendWay.monero
@@ -80,7 +84,7 @@ class _SendPageState extends State<SendPage> {
   final _password = TextEditingController();
 
   // The payment whose page shows in place of this page, or null.
-  String? _swapId;
+  late String? _swapId = widget.openSwapId;
   String? _addressError;
   String? _amountError;
 
@@ -95,6 +99,15 @@ class _SendPageState extends State<SendPage> {
   // The privacy check of the payment under review, made once for each review, so that its suggestion stays put.
   PrivacyReport? _privacy;
   final Random _random = Random.secure();
+
+  /// Leaves the page of a payment for the way to Robinhood Chain, where the list of the payments is.
+  void _leaveSwap() {
+    if (!mounted) return;
+    setState(() {
+      _swapId = null;
+      _way = _SendWay.robinhood;
+    });
+  }
 
   @override
   void didUpdateWidget(SendPage old) {
@@ -287,12 +300,7 @@ class _SendPageState extends State<SendPage> {
 
   Widget _page(BuildContext context) {
     if (_swapId case final id?) {
-      return PaymentPage(
-        bridge: widget.bridge,
-        wallet: widget.controller,
-        swapId: id,
-        onBack: () => setState(() => _swapId = null),
-      );
+      return PaymentPage(bridge: widget.bridge, wallet: widget.controller, swapId: id, onBack: _leaveSwap);
     }
     final toChain = _way == _SendWay.robinhood;
     final pay = widget.bridge.pay;
