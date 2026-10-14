@@ -15,9 +15,9 @@ Robinhood Chain as XMR. ChangeNOW handles each exchange.
 - **Kranox 0.2.0** is the current release. Get it from
   [the latest release](https://github.com/Kranox-Labs/Kranox/releases/latest) or from
   [kranox.cash/downloads](https://kranox.cash/downloads).
-- **Kranox 0.3.2 beta** holds the privacy check, the menu Privacy, and the fixes of the
+- **Kranox 0.4.0 beta** holds Tor built into the app, the privacy check, the menu Privacy, and the fixes of the
   [security reviews](#audit). Get it from
-  [its release page](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.3.2), and start with small amounts.
+  [its release page](https://github.com/Kranox-Labs/Kranox/releases/tag/v0.4.0), and start with small amounts.
 
 Kranox runs on macOS 12 or later, on Apple Silicon and Intel. Apple has not notarized it yet, so macOS blocks it
 the first time. To open it, go to System Settings, then Privacy & Security, and click "Open Anyway" next to the
@@ -51,7 +51,7 @@ The fingerprint of the key is `A874 6F51 F58D 8E30 C23B 8158 439F 7602 F0C5 53D1
   a payment link that names the chain, the coin, and the amount.
 - From 0.3.2, the proxy covers the relay too, a privacy check runs before each receive from Robinhood Chain and as
   each review opens, each open swap has a page of its own, and the file of your swaps on the Mac is encrypted.
-- From 0.3.3, Tor is built into the app: Kranox starts Tor itself and reaches your node and the relay through it,
+- From 0.4.0, Tor is built into the app: Kranox starts Tor itself and reaches your node and the relay through it,
   so that both see a Tor exit and not your IP address, with no Tor of your own to run. The name of your node is
   resolved through Tor as well. It is on from the first start; the switch in Settings turns it off, for a proxy of
   your own or a straight connection. While Tor starts, the wallet waits rather than connect without it; a node on
@@ -65,7 +65,7 @@ It sees the addresses and the amounts of a swap, as ChangeNOW does, and never yo
 scan of an address on Robinhood Chain, it sees that address and asks the explorer for you, so the explorer never
 sees your IP address. From 0.3.1 the app trusts an answer of the relay only with the signature of its key, and from
 0.3.2 that signature also covers the request that it answers. From 0.3.2 the proxy in Settings, such as Tor, covers
-the relay as well as the node, so the relay sees the address of the proxy, not yours. From 0.3.3 Tor built into the
+the relay as well as the node, so the relay sees the address of the proxy, not yours. From 0.4.0 Tor built into the
 app does the same without a proxy of your own.
 
 ## Audit
@@ -257,7 +257,7 @@ the proxy of the user could be overwritten by "Save node" while Tor built in was
 starting would have stopped the app, since wallet2 answers a question about a node it was never connected to with
 an exception; and the connection of wallet2 to the node stayed straight while Tor started. All three are fixed,
 with tests, and so are the rest but a window inside the plugin and a note. Nothing lets the relay be reached
-without Tor while the switch is on.
+without Tor while the switch is on. The fixes ship in Kranox 0.4.0 beta.
 
 The full report gives every finding with its impact and its fix:
 [audit/security-review-sharp-edges-2026-10-13-tor.md](audit/security-review-sharp-edges-2026-10-13-tor.md).
