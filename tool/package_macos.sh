@@ -103,10 +103,15 @@ for id in sorted(shipped, key=lambda id: (packages[id]["name"], packages[id]["ve
 BUILT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${APP}/Contents/Info.plist")"
 [ "${BUILT}" = "${VERSION}" ] || fail "The build is version ${BUILT}, not ${VERSION}. Build it again."
 codesign --verify --deep --strict "${APP}" || fail "The signature of the app does not verify."
-if codesign -d --entitlements - --xml "${APP}" 2>/dev/null | grep -q 'get-task-allow'; then
+# Each answer of codesign is read whole before grep looks at it: with pipefail, a grep -q that stops at its first
+# match lets codesign die of SIGPIPE, and the pipeline fails although the signature is fine (CHECKED 14 Oct 2026, two
+# failures in ten runs on a release build with the hardened runtime).
+ENTITLEMENTS="$(codesign -d --entitlements - --xml "${APP}" 2>/dev/null || true)"
+if printf '%s' "${ENTITLEMENTS}" | grep -q 'get-task-allow'; then
   fail "The app carries the entitlement get-task-allow. Build the release configuration."
 fi
-codesign -d --verbose=2 "${APP}" 2>&1 | grep -q '^CodeDirectory .*flags=0x[0-9a-f]*(.*runtime' ||
+SIGNATURE="$(codesign -d --verbose=2 "${APP}" 2>&1 || true)"
+printf '%s\n' "${SIGNATURE}" | grep -q '^CodeDirectory .*flags=0x[0-9a-f]*(.*runtime' ||
   fail "The app runs without the hardened runtime. Build the release configuration."
 # The framework of Tor built into the app carries the static library of arti, built for both parts as well.
 for binary in "${APP}/Contents/MacOS/Kranox" "${LIBRARY}" "${APP}/Contents/Frameworks/tor.framework/tor"; do
